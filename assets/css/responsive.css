@@ -9,6 +9,7 @@
   .audit-layout { grid-template-columns: 1fr; }
   .score-grid { grid-template-columns: repeat(3, 1fr); }
   .content { padding: var(--sp-6); }
+  .metric-card-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* ---- Sidebar collapses to icon rail / off-canvas ---- */
@@ -53,9 +54,13 @@
   .dtable { font-size: 12px; }
   .settings-layout { grid-template-columns: 1fr; }
   .btn--lg { padding: 12px 18px; }
+  .metric-card-grid { grid-template-columns: 1fr 1fr; }
+  .severity-dist { flex-direction: column; align-items: stretch; }
+  .severity-dist__chart { align-self: center; }
 }
 
 @media (max-width: 420px) {
   .stat-grid { grid-template-columns: 1fr; }
   .score-grid { grid-template-columns: 1fr 1fr; }
+  .metric-card-grid { grid-template-columns: 1fr; }
 }

@@ -40,12 +40,12 @@ from reportlab.platypus import (
 )
 
 from pdf.appendix import build_appendix_flowables
-from pdf.charts import build_charts_flowables
+from pdf.charts import build_charts_flowables, build_severity_distribution_flowables
 from pdf.cover import build_cover_flowables
 from pdf.evidence import build_evidence_flowables
 from pdf.recommendations import build_recommendations_flowables
 from pdf.screenshots import build_screenshot_flowables
-from pdf.summary import build_summary_flowables
+from pdf.summary import build_critical_findings_flowables, build_summary_flowables
 from pdf.theme import BORDER, PAGE_MARGIN_MM, PDF_LAYOUT_VERSION, STYLES, esc
 from reports.generator import ReportPayload
 
@@ -73,9 +73,16 @@ def generate_pdf_report(payload: ReportPayload, screenshot_path: Optional[str] =
     story.append(NextPageTemplate(_CONTENT_TEMPLATE))
     story.append(cover_flowables[-1])
 
+    # Phase 2 (Professional Content Structure): the section list now follows
+    # the target report structure's order (docx §2) — Executive Summary is
+    # followed by its own Score & Module Performance, Severity Distribution
+    # and Critical Findings sections rather than one undifferentiated
+    # "Score Breakdown" block, so each gets its own Table of Contents entry.
     sections = [
         ("Executive Summary", build_summary_flowables(payload)),
-        ("Score Breakdown", build_charts_flowables(payload)),
+        ("Overall Score & Module Performance", build_charts_flowables(payload)),
+        ("Finding Severity Distribution", build_severity_distribution_flowables(payload)),
+        ("Critical Findings", build_critical_findings_flowables(payload)),
         ("Page Preview", build_screenshot_flowables(screenshot_path, payload.url)),
         ("Business Impact & Action Plan", build_recommendations_flowables(payload)),
         ("Analytics & Consent Evidence", build_evidence_flowables(payload)),

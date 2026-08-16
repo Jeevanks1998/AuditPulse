@@ -28,16 +28,9 @@ from reportlab.lib import colors
 from reportlab.lib.units import mm
 from reportlab.platypus import Flowable, Image, Paragraph, Spacer, Table, TableStyle
 
-from pdf.theme import BORDER, ERROR, STYLES, SUCCESS, SURFACE_SUNKEN, TEXT_TERTIARY, esc
+from pdf.theme import BORDER, ERROR, STATUS_LABELS, STYLES, SUCCESS, SURFACE_SUNKEN, TEXT_TERTIARY, esc
 from reports.generator import ReportPayload
 from utils.screenshots import screenshot_url_to_path
-
-_STATUS_LABELS = {
-    "passed": "PASSED",
-    "failed": "FAILED",
-    "not_tested": "NOT TESTED",
-    "not_applicable": "N/A",
-}
 
 _SCREENSHOT_MAX_WIDTH_MM = 78
 _SCREENSHOT_MAX_HEIGHT_MM = 90
@@ -83,7 +76,7 @@ def _build_analytics_section(analytics: Optional[dict]) -> List[Flowable]:
             ("page_view_status", "scroll_status", "click_status", "custom_event_status"), start=1
         ):
             status = vendor.get(key, "not_tested")
-            cells.append(Paragraph(esc(_STATUS_LABELS.get(status, status.upper())), STYLES["TableCell"]))
+            cells.append(Paragraph(esc(STATUS_LABELS.get(status, status.upper())), STYLES["TableCell"]))
             status_cells.append((row_index, col_index, status))
 
         duplicate = vendor.get("duplicate_page_view", False)
@@ -218,25 +211,32 @@ def _bool_cell(value: Optional[bool]) -> Paragraph:
 
 
 def _build_consent_evidence(screenshots: List[dict]) -> List[Flowable]:
-    """Embeds the four consent-flow screenshots (initial/preferences/reject/accept) in a 2x2 grid."""
-    consent_shots = [s for s in screenshots if s.get("key", "").startswith("consent-")]
-    if not consent_shots:
-        return []
+    """Embeds the consent-flow screenshots in a 2x2 grid.
+
+    The Initial Banner slot always renders — with an "Evidence not
+    captured" placeholder if it's missing — since §3.11 expects it under
+    Consent Evidence regardless; Preferences/Reject/Accept are optional and
+    are only shown when actually captured (§3.11/§10).
+    """
+    consent_shots = {s.get("key"): s for s in screenshots if s.get("key", "").startswith("consent-")}
 
     story: List[Flowable] = [Paragraph("Consent Evidence", STYLES["H1"])]
 
     cells = []
-    for shot in consent_shots:
+    initial = consent_shots.get("consent-initial")
+    image = _load_evidence_image(initial.get("url")) if initial else None
+    label = initial.get("label", "Initial Banner") if initial else "Initial Banner"
+    caption = Paragraph(esc(label), STYLES["Caption"])
+    cells.append(_evidence_cell_table(image if image is not None else _evidence_not_captured(), caption))
+
+    for key, shot in consent_shots.items():
+        if key == "consent-initial":
+            continue
         image = _load_evidence_image(shot.get("url"))
         if image is None:
             continue
-        caption = Paragraph(esc(shot.get("label", shot.get("key", ""))), STYLES["Caption"])
+        caption = Paragraph(esc(shot.get("label", key)), STYLES["Caption"])
         cells.append(_evidence_cell_table(image, caption))
-
-    if not cells:
-        story.append(Paragraph("Screenshots were not available for this audit.", STYLES["BodyMuted"]))
-        story.append(Spacer(1, 10))
-        return story
 
     # Lay out two screenshots per row.
     grid_rows = []
@@ -258,7 +258,21 @@ def _build_consent_evidence(screenshots: List[dict]) -> List[Flowable]:
     return story
 
 
-def _evidence_cell_table(image: Image, caption: Paragraph) -> Table:
+def _evidence_not_captured() -> Table:
+    """Neutral placeholder standing in for a missing consent screenshot (§10)."""
+    cell = Paragraph("Evidence not captured", STYLES["BodyMuted"])
+    box = Table([[cell]], colWidths=[_SCREENSHOT_MAX_WIDTH_MM * mm], rowHeights=[40 * mm])
+    box.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), SURFACE_SUNKEN),
+        ("BOX", (0, 0), (-1, -1), 0.75, BORDER),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TEXTCOLOR", (0, 0), (-1, -1), TEXT_TERTIARY),
+    ]))
+    return box
+
+
+def _evidence_cell_table(image, caption: Paragraph) -> Table:
     """Wraps one screenshot + caption as a mini single-cell table so it lays out as one grid unit."""
     inner = Table([[image], [caption]], colWidths=[80 * mm])
     inner.setStyle(TableStyle([

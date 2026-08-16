@@ -24,6 +24,7 @@ from typing import Any, Optional
 
 from config.logging import logger
 from config.settings import settings
+from pdf.theme import PDF_LAYOUT_VERSION
 
 
 def _reports_dir() -> Path:
@@ -32,6 +33,14 @@ def _reports_dir() -> Path:
 
 def _path_for(audit_id: int, extension: str) -> Path:
     return _reports_dir() / f"{audit_id}.{extension}"
+
+
+def _pdf_path_for(audit_id: int) -> Path:
+    """The PDF cache path is versioned on pdf.theme.PDF_LAYOUT_VERSION (§11 "Cache" /
+    the PDF validation checklist's "not accidentally served from an outdated cache") —
+    a layout change bumps the version, which changes the filename, so a stale PDF
+    rendered under the old layout is never mistaken for a cache hit under the new one."""
+    return _reports_dir() / f"{audit_id}.v{PDF_LAYOUT_VERSION}.pdf"
 
 
 # --------------------------------------------------------------------------
@@ -86,17 +95,20 @@ def load_json(audit_id: int) -> Optional[Any]:
 # PDF
 # --------------------------------------------------------------------------
 def save_pdf(audit_id: int, pdf_bytes: bytes) -> str:
-    """Writes the rendered PDF report to disk and returns the path it was written to."""
+    """Writes the rendered PDF report to disk (under a layout-versioned filename,
+    see `_pdf_path_for`) and returns the path it was written to."""
     out_dir = _reports_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = _path_for(audit_id, "pdf")
+    out_path = _pdf_path_for(audit_id)
     out_path.write_bytes(pdf_bytes)
     return str(out_path)
 
 
 def load_pdf(audit_id: int) -> Optional[bytes]:
-    """Returns the cached PDF report for `audit_id`, or None if nothing's cached yet."""
-    path = _path_for(audit_id, "pdf")
+    """Returns the cached PDF report for `audit_id`, or None if nothing's cached for the
+    *current* `PDF_LAYOUT_VERSION` — a PDF cached under a previous layout version is a
+    miss here, not a hit, so callers naturally re-render instead of serving a stale layout."""
+    path = _pdf_path_for(audit_id)
     if not path.exists():
         return None
     try:
@@ -110,11 +122,27 @@ def load_pdf(audit_id: int) -> Optional[bytes]:
 # Cleanup
 # --------------------------------------------------------------------------
 def delete_cached_report(audit_id: int) -> None:
-    """Removes any cached HTML/JSON/PDF exports for `audit_id` (e.g. when an audit is deleted or re-run)."""
-    for extension in ("html", "json", "pdf"):
+    """Removes any cached HTML/JSON/PDF exports for `audit_id` (e.g. when an audit is deleted or
+    re-run) — including PDFs cached under any previous `PDF_LAYOUT_VERSION`, so a re-run never
+    leaves an orphaned old-layout PDF sitting next to the current one."""
+    for extension in ("html", "json"):
         path = _path_for(audit_id, extension)
         if path.exists():
             try:
                 path.unlink()
             except OSError as exc:  # noqa: BLE001 — best-effort cleanup only
                 logger.warning(f"report_storage: failed to delete {path}: {exc}")
+
+    for pdf_path in _reports_dir().glob(f"{audit_id}.v*.pdf"):
+        try:
+            pdf_path.unlink()
+        except OSError as exc:  # noqa: BLE001 — best-effort cleanup only
+            logger.warning(f"report_storage: failed to delete {pdf_path}: {exc}")
+
+    # Pre-versioning cache files (audit_id.pdf, from before PDF_LAYOUT_VERSION existed).
+    legacy_pdf = _path_for(audit_id, "pdf")
+    if legacy_pdf.exists():
+        try:
+            legacy_pdf.unlink()
+        except OSError as exc:  # noqa: BLE001 — best-effort cleanup only
+            logger.warning(f"report_storage: failed to delete {legacy_pdf}: {exc}")

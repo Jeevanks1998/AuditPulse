@@ -1,0 +1,15 @@
+{
+  "buildCommand": "bash scripts/generate-env.sh",
+  "outputDirectory": ".",
+  "rewrites": [
+    { "source": "/", "destination": "/login.html" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
+    }
+  ]
+}

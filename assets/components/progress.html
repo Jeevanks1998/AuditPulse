@@ -1,0 +1,58 @@
+<!-- ==========================================================================
+     components/progress.html
+     The audit-run progress UI (ring + step checklist + ETA) used on
+     audit.html. Extracted here as a reference/reuse template — audit.html
+     ships this inline since assets/js/audit.js queries these ids
+     synchronously on DOMContentLoaded and shouldn't have to wait on a
+     network fetch to find them.
+
+     Step ids/labels come from window.APP_CONFIG.AUDIT_STEPS
+     (assets/js/config.js) — keep this markup's check-item ids in sync with
+     that list if you add/remove/rename a step.
+
+     Optional loader: assets/js/include.js → Components.include('progress')
+     ========================================================================== -->
+<div class="progress-hero scan-line" id="progressSection" style="display:none;">
+  <div class="vring vring--md" data-band="mid" id="progressRing">
+    <svg width="96" height="96" viewBox="0 0 96 96">
+      <circle class="vring__track" cx="48" cy="48" r="38" stroke-width="8"/>
+      <circle class="vring__value" id="progressRingCircle" cx="48" cy="48" r="38" stroke-width="8" stroke-dasharray="239" stroke-dashoffset="239"/>
+    </svg>
+    <div class="vring__label"><span id="progressPercentLabel">0</span><small>%</small></div>
+  </div>
+  <h3 id="progressHeading">Analyzing example.com</h3>
+  <p><span class="live-dot" style="display:inline-block; margin-right:6px;"></span><span id="progressStatusText">Starting…</span></p>
+</div>
+
+<div class="check-list" id="checkList" style="display:none;">
+  <div class="check-item check-item--pending" id="checkCrawl">
+    <span class="check-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg></span>
+    <span class="check-item__label">Crawling website</span>
+    <span class="check-item__time" id="checkCrawlTime">pending</span>
+  </div>
+  <div class="check-item check-item--pending" id="checkSeo">
+    <span class="check-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg></span>
+    <span class="check-item__label">SEO</span>
+    <span class="check-item__time" id="checkSeoTime">pending</span>
+  </div>
+  <div class="check-item check-item--pending" id="checkAccessibility">
+    <span class="check-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg></span>
+    <span class="check-item__label">Accessibility</span>
+    <span class="check-item__time" id="checkAccessibilityTime">pending</span>
+  </div>
+  <div class="check-item check-item--pending" id="checkPerformance">
+    <span class="check-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg></span>
+    <span class="check-item__label">Performance</span>
+    <span class="check-item__time" id="checkPerformanceTime">pending</span>
+  </div>
+  <div class="check-item check-item--pending" id="checkReport">
+    <span class="check-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg></span>
+    <span class="check-item__label">Generating report</span>
+    <span class="check-item__time" id="checkReportTime">pending</span>
+  </div>
+</div>
+
+<div class="task-eta" id="taskEta" style="display:none;">
+  <span class="task-eta__label">Estimated time left</span>
+  <span class="task-eta__value" id="etaValue">2 min</span>
+</div>

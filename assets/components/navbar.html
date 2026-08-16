@@ -1,0 +1,25 @@
+<!-- ==========================================================================
+     components/navbar.html
+     Public marketing nav used on index.html (the logged-out landing page).
+     Not used inside the authenticated app shell — see sidebar.html + header.html
+     for that. Safe to copy verbatim into any new public page.
+
+     Optional loader: assets/js/include.js → Components.include('navbar')
+     Requires: assets/css/variables.css, assets/css/style.css
+     ========================================================================== -->
+<nav class="landing-nav">
+  <div class="landing-nav__brand">
+    <div class="landing-nav__brand-mark">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 12h6l2-4 2 8 2-4h6"/></svg>
+    </div>
+    <span class="landing-nav__brand-text">AuditPulse</span>
+  </div>
+  <div class="landing-nav__links">
+    <a href="index.html#features">Features</a>
+    <a href="#">Docs</a>
+  </div>
+  <div style="display:flex; gap:10px;">
+    <a href="login.html" class="btn btn--ghost">Log in</a>
+    <a href="login.html" class="btn btn--primary">Start free audit</a>
+  </div>
+</nav>

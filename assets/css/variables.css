@@ -1,0 +1,118 @@
+/* ==========================================================================
+   AI Website Audit Platform — Design Tokens
+   Signature system: "Vitals Ring" scoring + mono data type for diagnostics
+   ========================================================================== */
+
+:root {
+  /* ---- Brand & Semantic Colors ---- */
+  --color-primary: #2563EB;
+  --color-primary-hover: #1D4ED8;
+  --color-primary-soft: #DBEAFE;
+  --color-primary-soft-dark: rgba(37, 99, 235, 0.16);
+
+  --color-success: #10B981;
+  --color-success-soft: #D1FAE5;
+  --color-warning: #F59E0B;
+  --color-warning-soft: #FEF3C7;
+  --color-error: #EF4444;
+  --color-error-soft: #FEE2E2;
+
+  /* ---- Light Mode (default) ---- */
+  --bg: #F8FAFC;
+  --bg-canvas: #F1F5F9;
+  --surface: #FFFFFF;
+  --surface-raised: #FFFFFF;
+  --surface-sunken: #F8FAFC;
+  --border: #E2E8F0;
+  --border-strong: #CBD5E1;
+
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-tertiary: #94A3B8;
+  --text-on-primary: #FFFFFF;
+
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.12);
+  --shadow-primary: 0 8px 20px rgba(37, 99, 235, 0.25);
+
+  --sidebar-bg: #0F172A;
+  --sidebar-text: #94A3B8;
+  --sidebar-text-active: #FFFFFF;
+  --sidebar-hover: rgba(255, 255, 255, 0.06);
+
+  /* ---- Typography ---- */
+  --font-display: 'Sora', 'Segoe UI', sans-serif;
+  --font-body: 'Inter', 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.8125rem;
+  --fs-base: 0.9375rem;
+  --fs-md: 1.0625rem;
+  --fs-lg: 1.25rem;
+  --fs-xl: 1.5rem;
+  --fs-2xl: 2rem;
+  --fs-3xl: 2.75rem;
+
+  /* ---- Spacing (8pt-ish scale) ---- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+
+  /* ---- Radius ---- */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-card: 16px;
+  --radius-pill: 999px;
+
+  /* ---- Layout ---- */
+  --sidebar-width: 248px;
+  --header-height: 68px;
+  --content-max: 1280px;
+
+  /* ---- Motion ---- */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 150ms;
+  --dur-base: 240ms;
+  --dur-slow: 520ms;
+}
+
+/* ---- Dark Mode ---- */
+[data-theme="dark"] {
+  --bg: #111827;
+  --bg-canvas: #0B1220;
+  --surface: #1A2333;
+  --surface-raised: #1E293B;
+  --surface-sunken: #151E2E;
+  --border: #263143;
+  --border-strong: #374357;
+
+  --text-primary: #F1F5F9;
+  --text-secondary: #94A3B8;
+  --text-tertiary: #64748B;
+  --text-on-primary: #FFFFFF;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.32);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.44);
+  --shadow-primary: 0 8px 24px rgba(37, 99, 235, 0.35);
+
+  --primary-soft: rgba(37, 99, 235, 0.16);
+  --sidebar-bg: #0B1220;
+  --sidebar-hover: rgba(255, 255, 255, 0.05);
+}
+
+/* Score-threshold helper colors, referenced by JS/inline style via var overrides */
+:root {
+  --score-good: var(--color-success);
+  --score-mid: var(--color-warning);
+  --score-bad: var(--color-error);
+}

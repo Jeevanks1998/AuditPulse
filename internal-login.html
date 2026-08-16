@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Internal sign in — AuditPulse</title>
+<link rel="stylesheet" href="assets/css/variables.css">
+<link rel="stylesheet" href="assets/css/style.css">
+<link rel="stylesheet" href="assets/css/animations.css">
+<link rel="stylesheet" href="assets/css/login.css">
+<link rel="stylesheet" href="assets/css/responsive.css">
+<style>
+  .field__error { min-height: 16px; font-size: 12px; color: var(--color-error); margin-top: 6px; display: none; }
+  .field__error.is-visible { display: block; }
+  .field input.is-invalid { border-color: var(--color-error) !important; box-shadow: 0 0 0 3px var(--color-error-soft) !important; }
+</style>
+</head>
+<body>
+
+<div class="auth-shell">
+
+  <!-- Left: signature diagnostic hero -->
+  <aside class="auth-hero">
+    <div class="auth-hero__brand">
+      <div class="auth-hero__brand-mark">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 12h6l2-4 2 8 2-4h6"/></svg>
+      </div>
+      <span class="auth-hero__brand-text">AuditPulse</span>
+    </div>
+
+    <div class="auth-hero__main">
+      <div class="auth-hero__eyebrow">
+        <span class="live-dot"></span> AI Website Audit Platform
+      </div>
+      <h1>Know your website's <em>vitals</em>&nbsp;before your visitors do.</h1>
+      <p>Crawl, score, and fix SEO, performance, accessibility and consent issues — with AI recommendations for every finding.</p>
+
+      <div class="auth-hero__card animate-in">
+        <div class="auth-hero__card-head">
+          <span>example.com</span>
+          <span class="score-chip score-chip--good">92</span>
+        </div>
+        <div class="auth-hero__card-metrics">
+          <div class="auth-hero__metric">
+            <div class="auth-hero__metric-label">LCP</div>
+            <div class="auth-hero__metric-value up">2.1s</div>
+          </div>
+          <div class="auth-hero__metric">
+            <div class="auth-hero__metric-label">CLS</div>
+            <div class="auth-hero__metric-value up">0.02</div>
+          </div>
+          <div class="auth-hero__metric">
+            <div class="auth-hero__metric-label">Issues</div>
+            <div class="auth-hero__metric-value">5</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="auth-hero__stats">
+      <div><b>12,400+</b>audits run</div>
+      <div><b>98.2%</b>uptime detection</div>
+      <div><b>4.9/5</b>avg. rating</div>
+    </div>
+  </aside>
+
+  <!-- Right: form -->
+  <main class="auth-form-panel">
+    <form class="card login-card animate-in" id="internalLoginForm" novalidate>
+      <div class="login-card__head">
+        <h2>Internal login</h2>
+        <p>Enter your work email to continue — no password needed. This just records who signed in.</p>
+      </div>
+
+      <div class="field">
+        <label for="email">Email</label>
+        <div class="field__input-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>
+          <input type="email" id="email" name="email" placeholder="you@company.com" autocomplete="email" required autofocus>
+        </div>
+        <div class="field__error" id="emailError" role="alert"></div>
+      </div>
+
+      <button type="submit" class="btn btn--primary btn--block btn--lg" id="internalLoginSubmitBtn">Log in</button>
+
+      <div class="login-card__footer">
+        Not on the internal team? <a href="login.html" class="link-accent">Go to regular sign in</a>
+      </div>
+    </form>
+  </main>
+
+</div>
+
+<script src="assets/js/env.js"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/utils.js"></script>
+<script src="assets/js/validation.js"></script>
+<script src="assets/js/notifications.js"></script>
+<script src="assets/js/modal.js"></script>
+<script src="assets/js/loader.js"></script>
+<script src="assets/js/api.js"></script>
+<script src="assets/js/app.js"></script>
+<script src="assets/js/internal-auth.js"></script>
+</body>
+</html>

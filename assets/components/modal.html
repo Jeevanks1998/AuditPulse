@@ -1,0 +1,44 @@
+<!-- ==========================================================================
+     components/modal.html
+     Static reference markup for the dialog shape that assets/js/modal.js
+     builds dynamically (window.Modal.confirm(...)). Most of the app uses
+     the JS-built version so nothing needs to fetch this file — but it's
+     useful as a hand-editable template for a *content* modal (info/help,
+     rather than a yes/no confirm).
+
+     Shown here pre-filled as a "Keyboard Shortcuts" example. Duplicate the
+     .modal-overlay block and swap the body content for other content modals.
+     Toggle visibility by adding/removing the "is-open" class.
+
+     Optional loader: assets/js/include.js → Components.include('modal')
+     ========================================================================== -->
+<div class="modal-overlay" id="shortcutsModal" style="display:none;">
+  <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="shortcutsModalTitle">
+    <div class="modal-dialog__title" id="shortcutsModalTitle">Keyboard shortcuts</div>
+    <div class="modal-dialog__body">
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <div style="display:flex; justify-content:space-between;"><span>New audit</span><code class="mono">N</code></div>
+        <div style="display:flex; justify-content:space-between;"><span>Go to dashboard</span><code class="mono">G then D</code></div>
+        <div style="display:flex; justify-content:space-between;"><span>Toggle theme</span><code class="mono">T</code></div>
+        <div style="display:flex; justify-content:space-between;"><span>Close this dialog</span><code class="mono">Esc</code></div>
+      </div>
+    </div>
+    <div class="modal-dialog__actions">
+      <button type="button" class="btn btn--primary" data-modal-close="shortcutsModal">Got it</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Minimal open/close wiring for the static example above. The dynamic
+  // confirm() dialogs built by assets/js/modal.js manage their own markup
+  // and don't need this.
+  (function () {
+    document.querySelectorAll('[data-modal-close]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var modal = document.getElementById(btn.getAttribute('data-modal-close'));
+        if (modal) modal.style.display = 'none';
+      });
+    });
+  })();
+</script>

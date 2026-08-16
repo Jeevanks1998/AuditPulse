@@ -1,0 +1,38 @@
+<!-- ==========================================================================
+     components/loader.html
+     Full-page loading overlay (distinct from assets/js/loader.js, which
+     handles per-button spinners and skeleton placeholders). Use this when
+     an entire page/section needs to block on an async operation — e.g. a
+     future "restoring session…" splash.
+
+     Hidden by default. Toggle with:
+       document.getElementById('pageLoader').classList.add('is-visible')
+       document.getElementById('pageLoader').classList.remove('is-visible')
+     (see the PageLoader.show()/hide() helpers added to assets/js/loader.js)
+
+     Optional loader: assets/js/include.js → Components.include('loader')
+     ========================================================================== -->
+<div class="page-loader" id="pageLoader" aria-hidden="true">
+  <div class="page-loader__mark">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 12h6l2-4 2 8 2-4h6"/></svg>
+  </div>
+  <div class="spinner" style="width:22px; height:22px; border-width:3px;"></div>
+  <div class="page-loader__label">Loading AuditPulse…</div>
+</div>
+
+<style>
+  .page-loader {
+    position: fixed; inset: 0; z-index: 400;
+    background: var(--bg);
+    display: none;
+    flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-4);
+  }
+  .page-loader.is-visible { display: flex; }
+  .page-loader__mark {
+    width: 44px; height: 44px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--color-primary), #60A5FA);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: var(--shadow-primary);
+  }
+  .page-loader__label { font-size: var(--fs-sm); color: var(--text-secondary); }
+</style>

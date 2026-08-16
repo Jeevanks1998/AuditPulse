@@ -1,0 +1,65 @@
+/* ==========================================================================
+   Dashboard page
+   ========================================================================== */
+
+.greeting {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: var(--sp-6); flex-wrap: wrap; gap: var(--sp-4);
+}
+.greeting h1 { font-size: var(--fs-2xl); }
+.greeting p { margin-top: 4px; }
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: var(--sp-5);
+  align-items: start;
+}
+
+/* Health overview card with big ring + mini breakdown */
+.health-card__body {
+  display: flex; align-items: center; gap: var(--sp-8);
+}
+.health-breakdown { flex: 1; display: flex; flex-direction: column; gap: var(--sp-3); }
+.health-breakdown__row { display: flex; align-items: center; gap: var(--sp-3); }
+.health-breakdown__label {
+  width: 108px; font-size: var(--fs-sm); font-weight: 500; color: var(--text-secondary);
+  display: flex; align-items: center; gap: 6px;
+}
+.health-breakdown__dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.health-breakdown__bar { flex: 1; }
+.health-breakdown__val { width: 34px; text-align: right; font-family: var(--font-mono); font-weight: 700; font-size: var(--fs-sm); }
+
+/* Quick actions */
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-4);
+  margin-top: var(--sp-6);
+}
+.qa-card {
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-card);
+  padding: var(--sp-5);
+  display: flex; flex-direction: column; gap: var(--sp-3);
+  transition: border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+.qa-card:hover { border-color: var(--color-primary); border-style: solid; transform: translateY(-2px); background: var(--surface-sunken); }
+.qa-card__icon {
+  width: 40px; height: 40px; border-radius: var(--radius-sm);
+  background: var(--color-primary-soft); color: var(--color-primary);
+  display: flex; align-items: center; justify-content: center;
+}
+[data-theme="dark"] .qa-card__icon { background: var(--primary-soft); }
+.qa-card__icon svg { width: 20px; height: 20px; }
+.qa-card__title { font-weight: 600; font-size: var(--fs-sm); }
+.qa-card__desc { font-size: 12px; color: var(--text-tertiary); }
+
+/* Trend mini-chart placeholder (Chart.js canvas mounts here) */
+.chart-canvas-wrap { position: relative; height: 220px; }
+.chart-canvas-wrap canvas { width: 100% !important; height: 100% !important; }
+
+.legend-inline { display: flex; gap: var(--sp-4); flex-wrap: wrap; }
+.legend-inline__item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+.legend-inline__dot { width: 8px; height: 8px; border-radius: 50%; }

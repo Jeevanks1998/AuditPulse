@@ -39,6 +39,23 @@ input, select, textarea {
   background: var(--surface);
 }
 
+/* Shared styled input used by dynamically-built forms (e.g. the "Send to
+   POC" modal in report.js) that don't have a page-specific input style like
+   .field input (login.css) or .url-input-wrap input (audit.css). */
+.form-control {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  outline: none;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.form-control:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+
 :focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;

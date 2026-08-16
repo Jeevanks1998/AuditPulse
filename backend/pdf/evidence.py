@@ -1,22 +1,37 @@
 """
 pdf/evidence.py
 
-Renders the "Analytics Validation" and "Consent & Cookie Compliance" /
-"Consent Evidence" sections required by requirements §7: the per-vendor
-Page View / Scroll / Click / Custom-event runtime verdicts
-(analytics/runtime.py's AnalyticsRuntimeResult, surfaced on the payload
-as `payload.analytics["runtime_result"]`) and the consent banner's
-pass/fail checks plus its four captured screenshots
-(`payload.consent`, `payload.screenshots`).
+Renders the "Analytics Technology Detection", "Analytics Validation"
+and "Consent & Cookie Compliance" / "Consent Evidence" sections
+required by requirements §3.9/§3.10: the static per-vendor detection
+picture (analytics.analytics_score's `vendor_configs`/`trackers_detected`,
+surfaced on the payload as `payload.analytics["vendor_configs"]` /
+`["trackers_detected"]`), the per-vendor Page View / Scroll / Click /
+Custom-event *runtime* verdicts (analytics/runtime.py's
+AnalyticsRuntimeResult, surfaced as `payload.analytics["runtime_result"]`),
+and the consent banner's pass/fail checks plus its four captured
+screenshots (`payload.consent`, `payload.screenshots`).
+
+Phase 3 (Analytics and Consent Evidence): static detection and runtime
+validation are rendered as two distinct tables/sections rather than one
+— §3.9 explicitly calls this out ("Separate static detection from
+runtime validation"), and folding them together previously meant that
+whenever `runtime_tested` was false the section showed *nothing at
+all* about what was actually detected in markup, even though that
+static data (vendor_configs / trackers_detected) is always available
+independent of whether the runtime pass ran.
 
 Like pdf/screenshots.py, every section here degrades gracefully: no
 analytics/consent module run, or runtime not tested, just means that
-section (or sub-section) is omitted rather than raising — the PDF should
-never break because a particular audit didn't exercise every check.
+part of the section is omitted (or shown as "not tested"/"none
+detected") rather than raising — the PDF should never break because a
+particular audit didn't exercise every check.
 
-Nothing here re-derives pass/fail state; it only formats whatever
-reports/generator.py already computed onto the payload (§8: one
-canonical data model for dashboard/report/PDF/email).
+Nothing here re-derives pass/fail state or which vendors were detected;
+it only formats whatever reports/generator.py already computed onto
+the payload (§8: one canonical data model for dashboard/report/PDF/
+email), so no vendor can ever appear here that the real detectors
+didn't actually find (§9 "No Dummy Data Rule").
 """
 
 from __future__ import annotations
@@ -28,6 +43,7 @@ from reportlab.lib import colors
 from reportlab.lib.units import mm
 from reportlab.platypus import Flowable, Image, Paragraph, Spacer, Table, TableStyle
 
+from analytics.analytics_score import TRACKER_DISPLAY_NAMES
 from pdf.theme import BORDER, ERROR, STATUS_LABELS, STYLES, SUCCESS, SURFACE_SUNKEN, TEXT_TERTIARY, esc
 from reports.generator import ReportPayload
 from utils.screenshots import screenshot_url_to_path
@@ -37,15 +53,78 @@ _SCREENSHOT_MAX_HEIGHT_MM = 90
 
 
 def build_evidence_flowables(payload: ReportPayload) -> List[Flowable]:
-    """Returns the Analytics Validation + Consent & Cookie Compliance / Evidence sections, or [] if neither ran."""
+    """Returns the Analytics Technology Detection + Analytics Validation +
+    Consent & Cookie Compliance / Evidence sections, or [] if neither
+    analytics nor consent ran for this audit."""
     story: List[Flowable] = []
+    story.extend(_build_analytics_technology_section(payload.analytics))
     story.extend(_build_analytics_section(payload.analytics))
     story.extend(_build_consent_section(payload.consent, payload.screenshots))
     return story
 
 
 # --------------------------------------------------------------------------
-# Analytics Validation (§7 / §3.3)
+# Analytics Technology Detection — static (§3.9)
+# --------------------------------------------------------------------------
+
+def _build_analytics_technology_section(analytics: Optional[dict]) -> List[Flowable]:
+    """
+    Renders only the vendors `analytics.analytics_score.build_analytics_summary`
+    actually found in the page's markup (`vendor_configs` / `trackers_detected`)
+    — never a fixed vendor list (§3.9: "Never show GA4, GTM, Adobe, Piano, Tag
+    Commander, etc. unless the backend actually detected them"). Deliberately
+    independent of `runtime_tested`/`runtime_result`: this is the *static*
+    detection picture, so it renders (or explicitly says nothing was found)
+    even when the runtime pass never ran — see _build_analytics_section below
+    for the separate, runtime-gated table.
+    """
+    if not analytics:
+        return []
+
+    vendor_configs: Dict[str, List[str]] = analytics.get("vendor_configs") or {}
+
+    story: List[Flowable] = [
+        Paragraph("Analytics Technology Detection", STYLES["H1"]),
+        Paragraph(
+            "Tracking technologies identified in the page's markup, independent of whether "
+            "runtime behaviour was validated.",
+            STYLES["BodyMuted"],
+        ),
+        Spacer(1, 4),
+    ]
+
+    if not vendor_configs:
+        story.append(Paragraph("No analytics or tag-management technology was detected on this page.", STYLES["BodyMuted"]))
+        story.append(Spacer(1, 10))
+        return story
+
+    rows: List[list] = [["Technology", "Detected ID(s)"]]
+    for vendor_key, ids in vendor_configs.items():
+        label = TRACKER_DISPLAY_NAMES.get(vendor_key, vendor_key)
+        id_text = ", ".join(str(i) for i in ids) if ids else "Detected — no configuration ID extracted"
+        rows.append([Paragraph(esc(label), STYLES["TableCell"]), Paragraph(esc(id_text), STYLES["TableCell"])])
+
+    table = Table(rows, colWidths=[70 * mm, 90 * mm], repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0F172A")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 8.5),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, SURFACE_SUNKEN]),
+        ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+
+    story.extend([table, Spacer(1, 10)])
+    return story
+
+
+# --------------------------------------------------------------------------
+# Analytics Validation — runtime (§7 / §3.3 / §3.9)
 # --------------------------------------------------------------------------
 
 def _build_analytics_section(analytics: Optional[dict]) -> List[Flowable]:
@@ -57,9 +136,10 @@ def _build_analytics_section(analytics: Optional[dict]) -> List[Flowable]:
 
     if not analytics.get("runtime_tested") or not vendors:
         return [
-            Paragraph("Analytics Validation", STYLES["H1"]),
+            Paragraph("Analytics Runtime Validation", STYLES["H1"]),
             Paragraph(
-                "Runtime validation (Page View / Scroll / Click) was not run for this audit.",
+                "Runtime validation (Page View / Scroll / Click) was not run for this audit — "
+                "shown as NOT TESTED rather than pass/fail.",
                 STYLES["BodyMuted"],
             ),
             Spacer(1, 10),
@@ -110,7 +190,7 @@ def _build_analytics_section(analytics: Optional[dict]) -> List[Flowable]:
     table.setStyle(TableStyle(style))
 
     return [
-        Paragraph("Analytics Validation", STYLES["H1"]),
+        Paragraph("Analytics Runtime Validation", STYLES["H1"]),
         Paragraph(
             "Live runtime check of Page View, Scroll, Click, and Custom Event tracking per vendor.",
             STYLES["BodyMuted"],

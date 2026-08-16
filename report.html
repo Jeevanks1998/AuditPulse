@@ -143,40 +143,103 @@
         <div id="emailHistoryList"></div>
       </div>
 
-      <!-- Score grid -->
-      <div class="score-grid stagger" id="scoreGrid">
-        <div class="score-cell" role="button" tabindex="0">
-          <div class="vring vring--sm" data-band="loading"><svg width="64" height="64" viewBox="0 0 64 64"><circle class="vring__track" cx="32" cy="32" r="26" stroke-width="6"/><circle class="vring__value" cx="32" cy="32" r="26" stroke-width="6" stroke-dasharray="163" stroke-dashoffset="163"/></svg><div class="vring__label">–</div></div>
-          <div class="score-cell__label">Loading…</div>
+      <!-- ===== Executive Summary (mirrors the PDF's §3.3 "Executive Summary") ===== -->
+      <section id="executive-summary" class="module-section">
+        <div class="module-section__head">
+          <h2>Executive Summary</h2>
+          <span class="badge badge--neutral" id="overallStatusBadge">Loading…</span>
         </div>
-      </div>
-      <!-- ^ Placeholder skeleton only — renderScoreGrid() in report.js replaces
-           this entire block's innerHTML with real score cards built from the
-           audit's actual scores as soon as GET /reports/{id} resolves. Never
-           put real-looking numbers here; if JS is slow or errors, this is
-           exactly what the user should see instead of a fake score. -->
-
-      <!-- Charts + Issues -->
-      <div class="report-columns">
-        <div class="card card__pad">
+        <div class="card card__pad" style="margin-bottom: var(--sp-5);">
+          <p class="text-sm" id="execSummaryText" style="margin:0 0 var(--sp-4); color: var(--text-secondary); line-height:1.6;"></p>
+          <div class="metric-card-grid" id="metricCardGrid"></div>
+        </div>
+        <!-- ^ execSummaryText/metricCardGrid populated by renderExecutiveSummary() —
+             Overall Score / Critical Findings / Total Findings / Weakest Module
+             read straight from the real report payload, same as the PDF's four
+             metric cards (§3.3). -->
+        <div class="card card__pad" id="keyAreasCard" style="margin-bottom: var(--sp-5); display:none;">
           <div class="card__head">
-            <h3>Category Breakdown</h3>
-            <span class="card__head-sub">Radar comparison</span>
+            <h3>Key Areas Requiring Attention</h3>
+            <span class="card__head-sub">Grouped from real critical &amp; warning findings</span>
+          </div>
+          <ul class="key-areas-list" id="keyAreasList"></ul>
+        </div>
+      </section>
+
+      <!-- ===== Score & Module Performance (§3.4) ===== -->
+      <section id="score-performance" class="module-section">
+        <div class="module-section__head">
+          <h2>Score &amp; Module Performance</h2>
+        </div>
+        <div class="score-grid stagger" id="scoreGrid">
+          <div class="score-cell" role="button" tabindex="0">
+            <div class="vring vring--sm" data-band="loading"><svg width="64" height="64" viewBox="0 0 64 64"><circle class="vring__track" cx="32" cy="32" r="26" stroke-width="6"/><circle class="vring__value" cx="32" cy="32" r="26" stroke-width="6" stroke-dasharray="163" stroke-dashoffset="163"/></svg><div class="vring__label">–</div></div>
+            <div class="score-cell__label">Loading…</div>
+          </div>
+        </div>
+        <!-- ^ Placeholder skeleton only — renderScoreGrid() in report.js replaces
+             this entire block's innerHTML with real score cards (the same
+             module-by-module numbers the PDF's Score & Module Performance
+             table shows) built from the audit's actual scores as soon as
+             GET /reports/{id}/export.json resolves. Never put real-looking
+             numbers here; if JS is slow or errors, this is exactly what the
+             user should see instead of a fake score. -->
+        <div class="card card__pad" style="margin-bottom: var(--sp-5);">
+          <div class="card__head">
+            <h3>Module Comparison</h3>
+            <span class="card__head-sub">Radar view — see the cards above for exact values</span>
           </div>
           <div class="chart-canvas-wrap"><canvas id="radarChart" aria-label="Radar chart of audit categories"></canvas></div>
         </div>
-        <div class="card card__pad">
-          <div class="card__head">
-            <h3>Critical Issues</h3>
-            <span class="badge badge--error" id="criticalIssuesBadge">5 open</span>
-          </div>
-          <div class="issue-list" id="issueList">
+      </section>
+
+      <!-- ===== Finding Severity Distribution (§3.5) ===== -->
+      <section id="severity-distribution" class="module-section">
+        <div class="module-section__head">
+          <h2>Finding Severity Distribution</h2>
+        </div>
+        <div class="card card__pad severity-dist" style="margin-bottom: var(--sp-5);">
+          <div class="severity-dist__chart"><canvas id="severityChart" aria-label="Finding severity distribution"></canvas></div>
+          <div class="severity-dist__table" id="severityTable"></div>
+        </div>
+      </section>
+
+      <!-- ===== Critical Findings (§3.6) — grouped, with a stable Finding ID per group ===== -->
+      <section id="critical-findings" class="module-section">
+        <div class="module-section__head">
+          <h2>Critical Findings</h2>
+          <span class="badge badge--error" id="criticalFindingsBadge">0 open</span>
+        </div>
+        <div class="card card__pad" style="margin-bottom: var(--sp-5);">
+          <div class="issue-list" id="criticalFindingsList">
             <div class="issue-row"><div class="issue-row__body"><div class="issue-row__title">Loading…</div></div></div>
           </div>
         </div>
-      </div>
+      </section>
 
-      <!-- AI Recommendations -->
+      <!-- ===== Business Impact (§3.7) ===== -->
+      <section id="business-impact" class="module-section">
+        <div class="module-section__head">
+          <h2>Business Impact</h2>
+        </div>
+        <div class="card card__pad" id="businessImpactCard" style="margin-bottom: var(--sp-5); display:none;">
+          <div id="businessImpactList"></div>
+        </div>
+      </section>
+
+      <!-- ===== Action Plan (§3.8) — same three horizons as the PDF's
+           "Phase 1 – Immediate / High Priority Actions" / "Phase 2 – Short-Term
+           Actions" / "Phase 3 – Optimization Actions" ===== -->
+      <section id="action-plan" class="module-section">
+        <div class="module-section__head">
+          <h2>Action Plan</h2>
+        </div>
+        <div id="actionPlanPhases"></div>
+      </section>
+
+      <!-- AI Recommendations — a supplementary, interactive ranking of the same
+           findings; the PDF's Business Impact + Action Plan above are the
+           canonical, print-ready versions of this. -->
       <div class="card card__pad" id="aiRecoCard" style="margin-bottom: var(--sp-6); display:none;">
         <div class="card__head">
           <h3>AI Recommendations</h3>
@@ -236,10 +299,11 @@
         </div>
       </section>
 
-      <!-- ===== Analytics detail ===== -->
+      <!-- ===== Analytics detail (§3.9 "Analytics Technology Detection &
+           Runtime Validation") ===== -->
       <section id="analytics" class="module-section">
         <div class="module-section__head">
-          <h2>Analytics Detection</h2>
+          <h2>Analytics Technology Detection &amp; Runtime Validation</h2>
           <span class="score-chip" id="analyticsScoreChip" style="display:none;"></span>
         </div>
         <div class="card card__pad">
@@ -285,10 +349,10 @@
         </div>
       </section>
 
-      <!-- ===== Consent detail ===== -->
+      <!-- ===== Consent detail (§3.10 "Consent & Cookie Compliance") ===== -->
       <section id="consent" class="module-section">
         <div class="module-section__head">
-          <h2>Consent Banner Audit</h2>
+          <h2>Consent &amp; Cookie Compliance</h2>
           <span class="score-chip" id="consentScoreChip">— / 100</span>
         </div>
         <div class="card card__pad">

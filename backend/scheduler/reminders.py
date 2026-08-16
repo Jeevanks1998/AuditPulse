@@ -25,7 +25,7 @@ import asyncio
 from typing import Optional
 
 from config.config import logger
-from config.database import AsyncSessionLocal
+from config.database import AsyncSessionLocal, run_async
 from workers.celery_worker import celery_app
 
 WEEKLY_SUMMARY_EVENT = "weekly_summary_sent"
@@ -54,7 +54,7 @@ async def _deliver(db, user, event_type: str, subject: str, body: str, audit_id:
 @celery_app.task(name="scheduler.reminders.send_weekly_summaries_task")
 def send_weekly_summaries_task() -> dict:
     logger.info("[reminders] sending weekly summaries")
-    result = asyncio.run(_send_weekly_summaries_async())
+    result = run_async(_send_weekly_summaries_async())
     logger.info(f"[reminders] sent {result['sent']} weekly summary/summaries")
     return result
 
@@ -99,7 +99,7 @@ async def _send_weekly_summaries_async() -> dict:
 # --------------------------------------------------------------------------
 @celery_app.task(name="scheduler.reminders.notify_critical_issues_task")
 def notify_critical_issues_task(audit_id: int) -> dict:
-    result = asyncio.run(_notify_critical_issues_async(audit_id))
+    result = run_async(_notify_critical_issues_async(audit_id))
     if result["notified"]:
         logger.info(f"[reminders] critical-issue alert sent for audit {audit_id}")
     return result

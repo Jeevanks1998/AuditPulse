@@ -7,6 +7,7 @@ depend on `get_db` to obtain a request-scoped AsyncSession.
 """
 
 import asyncio
+import uuid
 from typing import AsyncGenerator, Coroutine, TypeVar
 
 from sqlalchemy.ext.asyncio import (
@@ -15,6 +16,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 
 _T = TypeVar("_T")
 
@@ -28,20 +30,39 @@ class Base(DeclarativeBase):
 
 
 _engine_kwargs = {"echo": settings.DB_ECHO, "pool_pre_ping": True}
-if not settings.DATABASE_URL.startswith("sqlite"):
-    # SQLite's async driver uses NullPool and doesn't accept pool sizing args.
-    _engine_kwargs["pool_size"] = settings.DB_POOL_SIZE
-    _engine_kwargs["max_overflow"] = settings.DB_MAX_OVERFLOW
 if settings.DATABASE_URL.startswith("postgresql"):
     # Required when DATABASE_URL points at a PgBouncer-style pooler running
     # in transaction mode (e.g. Supabase's "Transaction pooler" on port
     # 6543) — that mode hands each transaction a different underlying
     # Postgres connection, so asyncpg's server-side prepared-statement
     # cache (keyed to a specific connection) breaks/leaks across
-    # transactions. Harmless to leave set even against a direct/session
-    # connection: it just disables a client-side perf optimization,
-    # never correctness.
-    _engine_kwargs["connect_args"] = {"statement_cache_size": 0}
+    # transactions ("prepared statement ... already exists").
+    #
+    # `statement_cache_size=0` alone is NOT enough: asyncpg has a *second*,
+    # separate LRU cache (`prepared_statement_cache_size`) that it falls
+    # back to even when the first is disabled, and it still assigns
+    # deterministic, reused names (__asyncpg_stmt_N__) to "unnamed"
+    # prepared statements. Under pgbouncer transaction pooling, two
+    # different app connections can land on the same backend connection
+    # and collide on that name. So: disable both caches AND force every
+    # prepared statement to get a random, collision-proof name.
+    #
+    # We also switch to NullPool here. SQLAlchemy's default QueuePool
+    # would keep its own long-lived connections checked out from
+    # pgbouncer, "double pooling" on top of pgbouncer's own pooling —
+    # NullPool lets pgbouncer own connection lifecycle instead, which is
+    # what SQLAlchemy's docs recommend when sitting behind an external
+    # pooler like this.
+    _engine_kwargs["poolclass"] = NullPool
+    _engine_kwargs["connect_args"] = {
+        "statement_cache_size": 0,
+        "prepared_statement_cache_size": 0,
+        "prepared_statement_name_func": lambda: f"__asyncpg_{uuid.uuid4()}__",
+    }
+elif not settings.DATABASE_URL.startswith("sqlite"):
+    # SQLite's async driver uses NullPool and doesn't accept pool sizing args.
+    _engine_kwargs["pool_size"] = settings.DB_POOL_SIZE
+    _engine_kwargs["max_overflow"] = settings.DB_MAX_OVERFLOW
 
 engine = create_async_engine(settings.DATABASE_URL, **_engine_kwargs)
 

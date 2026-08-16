@@ -23,6 +23,7 @@ fast, AI-free path (e.g. a live preview) regardless.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
@@ -34,6 +35,36 @@ from ai import (
     top_priorities,
 )
 from ai.priority import PrioritizedFinding
+from config.constants import SCORE_BANDS
+
+# Finding-ID prefix per module (§3.6's recommended pattern: SEC-001,
+# A11Y-001, SEO-001, PERF-001, CONS-001, ANALYTICS-001, ...). Falls back to
+# an upper-cased module name for anything not listed here so a finding
+# never goes without an ID just because a new module was added.
+FINDING_ID_PREFIXES = {
+    "seo": "SEO",
+    "performance": "PERF",
+    "accessibility": "A11Y",
+    "security": "SEC",
+    "ux": "UX",
+    "images": "IMG",
+    "links": "LINK",
+    "mobile": "MOB",
+    "forms": "FORM",
+    "consent": "CONS",
+    "analytics": "ANALYTICS",
+    "ai": "AI",
+}
+
+# Same tier boundaries as config.constants.SCORE_BANDS / assets/js/config.js
+# SCORE_BANDS, and the same tier -> wording the dashboard already uses
+# (assets/js/dashboard.js's healthBadgeLabel) so the PDF's "Overall Status"
+# never invents a label the rest of the app doesn't already show.
+OVERALL_STATUS_LABELS = {
+    "good": "Healthy",
+    "mid": "Needs Attention",
+    "bad": "Issues Found",
+}
 
 MODULE_LABELS = {
     "seo": "SEO",
@@ -84,6 +115,13 @@ class ReportPayload:
     # --------------------------------------------------------------------
     analytics: Optional[dict] = None
     consent: Optional[dict] = None
+    # Derived, real-data-only summary fields (§9 "No Dummy Data Rule") so
+    # the cover/executive-summary/severity-distribution sections never
+    # recompute these independently and drift apart (§11's consistency
+    # rules) — every renderer reads the same three values from here.
+    severity_counts: Dict[str, int] = field(default_factory=dict)
+    weakest_module: Optional[ScoreCell] = None
+    overall_status: str = ""
     # Every screenshot captured for this audit, evidence-package-ready:
     # [{"key": "consent-initial", "label": "Initial consent banner",
     #   "path": "<abs/relative path on disk>", "url": "/screenshots/.."}]
@@ -94,6 +132,51 @@ class ReportPayload:
     # Network requests captured at the same three checkpoints, plus the
     # analytics runtime pass's captured request log (§3.3/§4.4).
     network_evidence: dict = field(default_factory=dict)
+
+
+def score_band(score: int) -> str:
+    """Bands a 0-100 score into "good"/"mid"/"bad", matching
+    config.constants.SCORE_BANDS / assets/js/utils.js's `scoreBand` exactly
+    (§3.4: "same score-band logic as the application")."""
+    if score >= SCORE_BANDS["good"]:
+        return "good"
+    if score >= SCORE_BANDS["mid"]:
+        return "mid"
+    return "bad"
+
+
+def count_by_severity(findings: List[dict]) -> Dict[str, int]:
+    """Critical/warning/info counts computed directly from `findings` — never a
+    fixed or estimated number (§3.5/§9)."""
+    counts = Counter(f.get("severity", "info") for f in findings)
+    return {"critical": counts.get("critical", 0), "warning": counts.get("warning", 0), "info": counts.get("info", 0)}
+
+
+def weakest_module(score_grid: List[ScoreCell]) -> Optional[ScoreCell]:
+    """The lowest-scoring module that was actually scanned, or None if score_grid is empty
+    (never a placeholder module — §3.4)."""
+    if not score_grid:
+        return None
+    return min(score_grid, key=lambda cell: cell.score)
+
+
+def assign_finding_ids(findings: List[dict]) -> List[dict]:
+    """Returns `findings` with a stable `finding_id` added to each entry
+    (§3.6: "Give each finding a stable Finding ID"), e.g. A11Y-001,
+    SEC-002 — assigned in a fixed per-module counter over the original
+    (already-deterministic) finding order, so re-generating the same audit's
+    report always produces the same IDs without persisting anything
+    (§4's `backend/models/issue.py` row: "no schema migration is necessary"
+    when IDs can be derived this way).
+    """
+    counters: Dict[str, int] = {}
+    ided: List[dict] = []
+    for finding in findings:
+        module = finding.get("module", "general")
+        prefix = FINDING_ID_PREFIXES.get(module, module.upper()[:8] or "GEN")
+        counters[prefix] = counters.get(prefix, 0) + 1
+        ided.append({**finding, "finding_id": f"{prefix}-{counters[prefix]:03d}"})
+    return ided
 
 
 def build_score_grid(breakdown: Dict[str, int]) -> List[ScoreCell]:
@@ -134,16 +217,20 @@ async def build_report_payload(
     this audit) — optional, since a given audit may not have run those
     modules (see config.constants.AUDIT_MODULES).
     """
+    score_grid = build_score_grid(breakdown)
     payload = ReportPayload(
         audit_id=audit_id,
         url=url,
         overall=overall,
         generated_at=generated_at,
-        score_grid=build_score_grid(breakdown),
-        findings=findings,
+        score_grid=score_grid,
+        findings=assign_finding_ids(findings),
         share_url=share_url,
         consent=consent,
         analytics=analytics,
+        severity_counts=count_by_severity(findings),
+        weakest_module=weakest_module(score_grid),
+        overall_status=OVERALL_STATUS_LABELS.get(score_band(overall), ""),
     )
     _attach_evidence(payload, consent=consent, analytics=analytics)
 

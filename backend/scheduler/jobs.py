@@ -16,18 +16,17 @@ whose it is — there's no "current user" here, so it fetches user_id
 straight off the Schedule row instead.
 """
 
-import asyncio
 from datetime import datetime, timezone
 
 from config.config import logger
-from config.database import AsyncSessionLocal
+from config.database import AsyncSessionLocal, run_async
 from workers.celery_worker import celery_app
 
 
 @celery_app.task(name="scheduler.jobs.check_due_schedules_task")
 def check_due_schedules_task() -> dict:
     logger.info("[scheduler.jobs] checking for due schedules")
-    result = asyncio.run(_check_due_schedules_async())
+    result = run_async(_check_due_schedules_async())
     logger.info(f"[scheduler.jobs] dispatched {result['dispatched']} audit(s) from due schedules")
     return result
 

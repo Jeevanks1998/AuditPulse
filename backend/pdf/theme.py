@@ -31,7 +31,12 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 # cached PDFs instead of quietly continuing to serve them (§11 "Cache" /
 # the PDF validation checklist's "not accidentally served from an
 # outdated cache").
-PDF_LAYOUT_VERSION = 2
+# v3 (Phase 2 - Professional Content Structure): new Severity Distribution
+# and Critical Findings sections were inserted into the section order, and
+# the Score Breakdown / Business Impact / Action Plan / Appendix tables all
+# changed shape (Finding ID columns, grouped rows, metric cards) — see
+# pdf/charts.py, pdf/summary.py, pdf/recommendations.py, pdf/appendix.py.
+PDF_LAYOUT_VERSION = 3
 
 # --------------------------------------------------------------------------
 # Brand palette (assets/css/variables.css)
@@ -201,6 +206,13 @@ STYLES = {
     "MetricLabel": _style(
         "MetricLabel", fontName=FONT_BODY_BOLD, fontSize=7.5, leading=10,
         textColor=TEXT_SECONDARY, alignment=TA_CENTER,
+    ),
+    # A smaller variant of MetricValue for cards whose value is a longer
+    # string than a bare number/score (e.g. the Weakest Module card's
+    # "<Module> (NN/100)" — §3.3) so it wraps instead of overflowing.
+    "MetricValueSmall": _style(
+        "MetricValueSmall", fontName=FONT_DISPLAY, fontSize=12, leading=15,
+        textColor=TEXT_PRIMARY, alignment=TA_CENTER, spaceAfter=1,
     ),
     # Small uppercase-ish label above a section's H1 (e.g. cover scope
     # line, a page's section eyebrow) — never actual uppercase transform

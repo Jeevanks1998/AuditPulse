@@ -22,6 +22,16 @@ WORKDIR /app
 # start-up-only sys.path dance.
 ENV PYTHONPATH=/app
 
+# Fixed, user-independent Playwright browser cache. Without this, `playwright
+# install` (run below as root, HOME=/root) puts Chromium under
+# /root/.cache/ms-playwright, but the app later runs as `appuser`
+# (HOME=/home/appuser) and can't find it there — every live check
+# (banner/accept/reject screenshots, GDPR/CCPA runtime verification,
+# pre-consent network capture) silently fails at runtime as a result.
+# Pinning this env var makes the install path independent of which user is
+# active, for both the build step below and the running container.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
 # System dependencies needed to build asyncpg / cryptography wheels
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -43,8 +53,11 @@ COPY . .
 
 # Screenshots are written to settings.SCREENSHOT_DIR ("screenshots" by
 # default, relative to WORKDIR) — create it and hand it to appuser before
-# dropping root, since the app process can't chown it itself.
-RUN mkdir -p /app/screenshots && useradd -m appuser && chown -R appuser:appuser /app
+# dropping root, since the app process can't chown it itself. Also hand
+# over the Playwright browser cache (installed as root above) so appuser
+# can actually launch Chromium at runtime.
+RUN mkdir -p /app/screenshots && useradd -m appuser \
+    && chown -R appuser:appuser /app /ms-playwright
 USER appuser
 
 EXPOSE 8000

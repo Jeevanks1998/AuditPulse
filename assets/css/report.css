@@ -110,3 +110,75 @@
 .chat-msg--user { align-self: flex-end; background: var(--color-primary); color: #fff; }
 .chat-msg--error { align-self: flex-start; background: var(--color-error-soft); color: var(--color-error); }
 .chat-msg--pending { align-self: flex-start; background: var(--surface-sunken); color: var(--text-tertiary); font-style: italic; }
+
+/* ==========================================================================
+   Executive Summary — metric cards + key areas
+   (mirrors pdf/summary.py's four metric cards + Key Areas list, §3.3)
+   ========================================================================== */
+.metric-card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-3);
+}
+.metric-card {
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  padding: var(--sp-4);
+  text-align: center;
+}
+.metric-card__value {
+  font-family: var(--font-mono); font-weight: 700; font-size: var(--fs-xl);
+  color: var(--text-primary);
+}
+.metric-card__label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-tertiary); margin-top: 4px;
+}
+
+.key-areas-list {
+  margin: 0; padding-left: 1.2em;
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+.key-areas-list li { line-height: 1.5; }
+
+/* A Finding ID chip (e.g. "A11Y-001") shown inline before a finding/issue
+   title — the same stable ID reports/generator.py's assign_finding_ids
+   assigns and pdf/summary.py + pdf/recommendations.py already print, so a
+   finding can be traced between the on-screen report, the PDF and the
+   appendix (§3.6/§3.12). */
+.finding-id-badge {
+  display: inline-block;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  border-radius: var(--radius-pill);
+  padding: 1px 7px;
+  margin-right: 6px;
+  vertical-align: middle;
+  letter-spacing: 0.02em;
+}
+[data-theme="dark"] .finding-id-badge { background: var(--primary-soft); }
+
+/* ==========================================================================
+   Finding Severity Distribution (§3.5) — small doughnut + counts table
+   ========================================================================== */
+.severity-dist {
+  display: flex; align-items: center; gap: var(--sp-6); flex-wrap: wrap;
+}
+.severity-dist__chart {
+  width: 140px; height: 140px; flex-shrink: 0;
+  position: relative;
+}
+.severity-dist__table {
+  flex: 1; min-width: 200px;
+  display: flex; flex-direction: column; gap: var(--sp-2);
+}
+.severity-dist__row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--sp-2) 0; border-bottom: 1px solid var(--border);
+}
+.severity-dist__row:last-child { border-bottom: none; }
+.severity-dist__count {
+  font-family: var(--font-mono); font-weight: 700; font-size: var(--fs-md);
+}

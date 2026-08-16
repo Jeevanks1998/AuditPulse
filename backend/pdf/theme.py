@@ -25,6 +25,14 @@ from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 
+# Bumped whenever the section order, page templates, or any structural
+# layout piece in this package changes — reports/report_storage.py folds
+# this into the on-disk PDF cache key so a layout change invalidates old
+# cached PDFs instead of quietly continuing to serve them (§11 "Cache" /
+# the PDF validation checklist's "not accidentally served from an
+# outdated cache").
+PDF_LAYOUT_VERSION = 2
+
 # --------------------------------------------------------------------------
 # Brand palette (assets/css/variables.css)
 # --------------------------------------------------------------------------
@@ -67,6 +75,34 @@ def severity_color(severity: str) -> colors.Color:
 
 def severity_soft_color(severity: str) -> colors.Color:
     return SEVERITY_SOFT_COLORS.get(severity, PRIMARY_SOFT)
+
+
+# Shared PASS/FAIL/NOT TESTED/N/A vocabulary (§3.10/§3.9's four explicit
+# states) — the one place every section that renders a runtime/consent
+# status label reads its wording from, so pdf/evidence.py and any other
+# module never drift into different phrasing for the same state.
+STATUS_LABELS = {
+    "passed": "PASS",
+    "failed": "FAIL",
+    "not_tested": "NOT TESTED",
+    "not_applicable": "N/A",
+}
+STATUS_COLORS = {"passed": SUCCESS, "failed": ERROR, "not_tested": TEXT_TERTIARY, "not_applicable": TEXT_TERTIARY}
+
+# good/mid/bad -> the same wording assets/js/dashboard.js's healthBadgeLabel
+# already shows on the dashboard, so the PDF's "Overall Status" never
+# invents a label the rest of the app doesn't use (§3.3).
+SCORE_BAND_LABELS = {"good": "Healthy", "mid": "Needs Attention", "bad": "Issues Found"}
+
+
+def score_band(score: int) -> str:
+    """Same tier boundaries as `score_color` above, returned as a key ("good"/"mid"/"bad")
+    instead of a color — for callers (e.g. cover.py's status line) that need the label, not the ring."""
+    if score >= SCORE_BAND_GOOD:
+        return "good"
+    if score >= SCORE_BAND_MID:
+        return "mid"
+    return "bad"
 
 
 def esc(text) -> str:
@@ -155,5 +191,32 @@ STYLES = {
     "FooterText": _style(
         "FooterText", fontName=FONT_BODY, fontSize=7.5, leading=10,
         textColor=TEXT_TERTIARY,
+    ),
+    # Executive Summary metric cards (§3.3: Overall Score / Critical
+    # Findings / Total Findings / Weakest Module).
+    "MetricValue": _style(
+        "MetricValue", fontName=FONT_DISPLAY, fontSize=20, leading=24,
+        textColor=TEXT_PRIMARY, alignment=TA_CENTER, spaceAfter=1,
+    ),
+    "MetricLabel": _style(
+        "MetricLabel", fontName=FONT_BODY_BOLD, fontSize=7.5, leading=10,
+        textColor=TEXT_SECONDARY, alignment=TA_CENTER,
+    ),
+    # Small uppercase-ish label above a section's H1 (e.g. cover scope
+    # line, a page's section eyebrow) — never actual uppercase transform
+    # since reportlab Paragraphs don't do CSS text-transform, so callers
+    # pass already-uppercased text.
+    "Eyebrow": _style(
+        "Eyebrow", fontName=FONT_BODY_BOLD, fontSize=8, leading=11,
+        textColor=TEXT_SECONDARY, alignment=TA_CENTER, spaceAfter=8,
+    ),
+    # Generated section index / Table of Contents entries.
+    "TOCEntry": _style(
+        "TOCEntry", fontName=FONT_BODY, fontSize=10, leading=18,
+        textColor=TEXT_PRIMARY, leftIndent=4,
+    ),
+    "TOCNumber": _style(
+        "TOCNumber", fontName=FONT_BODY_BOLD, fontSize=10, leading=18,
+        textColor=PRIMARY,
     ),
 }

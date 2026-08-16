@@ -32,6 +32,16 @@ if not settings.DATABASE_URL.startswith("sqlite"):
     # SQLite's async driver uses NullPool and doesn't accept pool sizing args.
     _engine_kwargs["pool_size"] = settings.DB_POOL_SIZE
     _engine_kwargs["max_overflow"] = settings.DB_MAX_OVERFLOW
+if settings.DATABASE_URL.startswith("postgresql"):
+    # Required when DATABASE_URL points at a PgBouncer-style pooler running
+    # in transaction mode (e.g. Supabase's "Transaction pooler" on port
+    # 6543) — that mode hands each transaction a different underlying
+    # Postgres connection, so asyncpg's server-side prepared-statement
+    # cache (keyed to a specific connection) breaks/leaks across
+    # transactions. Harmless to leave set even against a direct/session
+    # connection: it just disables a client-side perf optimization,
+    # never correctness.
+    _engine_kwargs["connect_args"] = {"statement_cache_size": 0}
 
 engine = create_async_engine(settings.DATABASE_URL, **_engine_kwargs)
 

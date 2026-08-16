@@ -21,12 +21,23 @@ individual section owns.
 from __future__ import annotations
 
 from io import BytesIO
-from typing import Optional
+from typing import List, Optional
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen.canvas import Canvas
-from reportlab.platypus import BaseDocTemplate, Frame, NextPageTemplate, PageTemplate
+from reportlab.platypus import (
+    BaseDocTemplate,
+    Flowable,
+    Frame,
+    NextPageTemplate,
+    PageBreak,
+    PageTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 from pdf.appendix import build_appendix_flowables
 from pdf.charts import build_charts_flowables
@@ -35,7 +46,7 @@ from pdf.evidence import build_evidence_flowables
 from pdf.recommendations import build_recommendations_flowables
 from pdf.screenshots import build_screenshot_flowables
 from pdf.summary import build_summary_flowables
-from pdf.theme import BORDER, PAGE_MARGIN_MM, STYLES
+from pdf.theme import BORDER, PAGE_MARGIN_MM, PDF_LAYOUT_VERSION, STYLES, esc
 from reports.generator import ReportPayload
 
 _COVER_TEMPLATE = "cover"
@@ -61,15 +72,55 @@ def generate_pdf_report(payload: ReportPayload, screenshot_path: Optional[str] =
     story.extend(cover_flowables[:-1])
     story.append(NextPageTemplate(_CONTENT_TEMPLATE))
     story.append(cover_flowables[-1])
-    story.extend(build_summary_flowables(payload))
-    story.extend(build_charts_flowables(payload))
-    story.extend(build_screenshot_flowables(screenshot_path, payload.url))
-    story.extend(build_recommendations_flowables(payload))
-    story.extend(build_evidence_flowables(payload))
-    story.extend(build_appendix_flowables(payload))
+
+    sections = [
+        ("Executive Summary", build_summary_flowables(payload)),
+        ("Score Breakdown", build_charts_flowables(payload)),
+        ("Page Preview", build_screenshot_flowables(screenshot_path, payload.url)),
+        ("Business Impact & Action Plan", build_recommendations_flowables(payload)),
+        ("Analytics & Consent Evidence", build_evidence_flowables(payload)),
+        ("Appendix: All Findings", build_appendix_flowables(payload)),
+    ]
+
+    # A generated section index (§3.2) built from whichever of the above
+    # sections actually rendered flowables for this payload — never a
+    # static list, and never page numbers, since ReportLab paginates the
+    # tables/screenshots below dynamically and a hard-coded number would
+    # drift out of sync immediately (§3.2 / §9).
+    present_titles = [title for title, flowables in sections if flowables]
+    story.extend(_build_toc_flowables(present_titles))
+
+    for _title, flowables in sections:
+        story.extend(flowables)
 
     doc.build(story)
     return buffer.getvalue()
+
+
+def _build_toc_flowables(section_titles: List[str]) -> List[Flowable]:
+    """A simple generated Table of Contents page: one numbered row per
+    section that actually appears later in `story`, no page numbers."""
+    if not section_titles:
+        return []
+
+    rows = [
+        [Paragraph(f"{index}.", STYLES["TOCNumber"]), Paragraph(esc(title), STYLES["TOCEntry"])]
+        for index, title in enumerate(section_titles, start=1)
+    ]
+    table = Table(rows, colWidths=[10 * mm, 150 * mm])
+    table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.4, BORDER),
+    ]))
+
+    return [
+        Paragraph("Table of Contents", STYLES["H1"]),
+        Spacer(1, 6),
+        table,
+        PageBreak(),
+    ]
 
 
 def _build_doc_template(buffer: BytesIO, payload: ReportPayload) -> BaseDocTemplate:
@@ -85,6 +136,7 @@ def _build_doc_template(buffer: BytesIO, payload: ReportPayload) -> BaseDocTempl
         bottomMargin=margin,
         title=f"Website Audit Report - {payload.url}",
         author="AuditPulse",
+        subject=f"AuditPulse PDF layout v{PDF_LAYOUT_VERSION}",
     )
 
     full_frame = Frame(margin, margin, width - 2 * margin, height - 2 * margin, id="full")

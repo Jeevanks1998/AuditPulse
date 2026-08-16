@@ -184,6 +184,40 @@ window.Api = (function () {
     };
   }
 
+  // Maps GET /reports/{id}/export.json — the same reports.generator.ReportPayload
+  // (via reports.json_report.to_json_report) the PDF is built from, so the
+  // on-screen report and the PDF read one canonical shape (docx §8) rather than
+  // report.js re-assembling a different picture from several smaller endpoints.
+  // `findings` here already carry a stable `finding_id` (e.g. "A11Y-001", see
+  // reports/generator.py's assign_finding_ids) that the plain GET /reports/{id}
+  // endpoint's findings do not.
+  function mapFullReport(r) {
+    if (!r) return r;
+    return {
+      auditId: r.audit_id,
+      url: r.url,
+      overall: r.overall,
+      generatedAt: r.generated_at,
+      shareUrl: r.share_url,
+      scoreGrid: (r.score_grid || []).map(mapScoreCell),
+      findings: r.findings || [],
+      executiveSummary: r.executive_summary,
+      priorities: (r.priorities || []).map(function (p) {
+        return {
+          rank: p.rank, module: p.module, severity: p.severity,
+          title: p.title, description: p.description,
+          recommendation: p.recommendation, effort: p.effort
+        };
+      }),
+      businessImpact: r.business_impact || [],
+      actionPlan: r.action_plan ? {
+        quickWins: r.action_plan.quick_wins || [],
+        shortTerm: r.action_plan.short_term || [],
+        longTerm: r.action_plan.long_term || []
+      } : null
+    };
+  }
+
   function mapEmailSendResult(r) {
     if (!r) return r;
     return {
@@ -386,19 +420,14 @@ window.Api = (function () {
       return request('/reports/' + encodeURIComponent(auditId)).then(mapReport);
     },
 
-    // AI-enriched report: base report + prioritized recommendations.
+    // AI-enriched, PDF-equivalent report: score grid, findings (with
+    // Finding IDs), executive summary, priorities, business impact and
+    // action plan — the exact same reports.generator.ReportPayload the PDF
+    // renders (docx §8/§12 Phase 4: "the on-screen report and PDF use the
+    // same section order and terminology"), from the one already-cached
+    // /export.json endpoint instead of stitching several requests together.
     getFull: function (auditId) {
-      return Promise.all([
-        request('/reports/' + encodeURIComponent(auditId)).then(mapReport),
-        request('/ai/' + encodeURIComponent(auditId) + '/priorities')
-      ]).then(function (results) {
-        var report = results[0];
-        var priorities = (results[1] && results[1].priorities) || [];
-        report.priorities = priorities.map(function (p) {
-          return { title: p.title, description: p.description, severity: p.severity };
-        });
-        return report;
-      });
+      return request('/reports/' + encodeURIComponent(auditId) + '/export.json').then(mapFullReport);
     },
 
     share: function (auditId) {

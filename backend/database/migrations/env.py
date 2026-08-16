@@ -18,6 +18,7 @@ template because this project is async end-to-end:
 """
 
 import asyncio
+import uuid
 from logging.config import fileConfig
 
 from alembic import context
@@ -73,7 +74,20 @@ def _do_run_migrations(connection: Connection) -> None:
 
 async def run_migrations_online() -> None:
     """Connects with the real async engine and runs migrations against it."""
-    connectable = create_async_engine(settings.DATABASE_URL, poolclass=pool.NullPool)
+    connect_args = {}
+    if settings.DATABASE_URL.startswith("postgresql"):
+        # Same PgBouncer-transaction-pooler workaround as config/database.py:
+        # disable both of asyncpg's prepared-statement caches and give every
+        # statement a unique name, so migrations don't hit
+        # "prepared statement ... already exists" against a pooled DATABASE_URL.
+        connect_args = {
+            "statement_cache_size": 0,
+            "prepared_statement_cache_size": 0,
+            "prepared_statement_name_func": lambda: f"__asyncpg_{uuid.uuid4()}__",
+        }
+    connectable = create_async_engine(
+        settings.DATABASE_URL, poolclass=pool.NullPool, connect_args=connect_args
+    )
 
     async with connectable.connect() as connection:
         await connection.run_sync(_do_run_migrations)

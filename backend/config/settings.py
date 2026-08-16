@@ -31,8 +31,18 @@ class Settings(BaseSettings):
     # --- Database ---
     DATABASE_URL: str = "postgresql+asyncpg://auditpulse:auditpulse@localhost:5432/auditpulse"
     DB_ECHO: bool = False
-    DB_POOL_SIZE: int = 10
-    DB_MAX_OVERFLOW: int = 20
+    # Kept small deliberately: at least two processes (the combined
+    # web+worker+beat service in railway.json and the standalone worker
+    # in railway-worker.json) each create their own engine/pool, and in
+    # production DATABASE_URL points at Supabase's pooler, which caps
+    # total concurrent clients (session-mode pooler: 15 by default on
+    # smaller Supabase tiers). pool_size=10/max_overflow=20 (the old
+    # defaults) let a *single* process alone request up to 30 connections
+    # — well past that cap before a second process even starts. See
+    # config/database.py's engine construction for the accompanying
+    # PgBouncer/transaction-pooler settings.
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 5
 
     # --- Redis / Celery ---
     REDIS_URL: str = "redis://localhost:6379/0"

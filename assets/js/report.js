@@ -851,7 +851,8 @@
             tested: tested
           };
         });
-        gdprGrid.innerHTML = gdprCheckRows.map(renderCheckItemRow).join('');
+        gdprGrid.innerHTML = renderComplianceSummary('GDPR', consent.gdprCompliant, GDPR_CHECK_ITEMS, gdprChecks) +
+          gdprCheckRows.map(renderCheckItemRow).join('');
         gdprSection.style.display = '';
         // Set GDPR section status
         var gdprBand = consent.gdprCompliant ? 'good' : 'bad';
@@ -870,7 +871,8 @@
             tested: tested
           };
         });
-        ccpaGrid.innerHTML = ccpaCheckRows.map(renderCheckItemRow).join('');
+        ccpaGrid.innerHTML = renderComplianceSummary('CCPA', consent.ccpaCompliant, CCPA_CHECK_ITEMS, ccpaChecks) +
+          ccpaCheckRows.map(renderCheckItemRow).join('');
         ccpaSection.style.display = '';
         // Set CCPA section status
         var ccpaBand = consent.ccpaCompliant ? 'good' : 'bad';
@@ -895,7 +897,7 @@
               shots.map(function (s) {
                 var fullUrl = window.APP_CONFIG.API_ORIGIN + s.url;
                 return '<div class="screenshot-strip__item" style="background:none; align-items:stretch; padding:0; flex-direction:column;">' +
-                  '<img src="' + U.escapeHtml(s.url) + '" alt="' + U.escapeHtml(s.label) + ' screenshot" style="width:100%; height:160px; object-fit:contain; border-radius: var(--radius-md);">' +
+                  '<img src="' + U.escapeHtml(fullUrl) + '" alt="' + U.escapeHtml(s.label) + ' screenshot" style="width:100%; height:160px; object-fit:contain; border-radius: var(--radius-md);">' +
                   '<div style="display:flex; align-items:center; justify-content:space-between; margin-top:4px; gap:8px;">' +
                     '<span class="text-sm" style="color: var(--text-tertiary);">' + U.escapeHtml(s.label) + '</span>' +
                     '<a href="' + U.escapeHtml(fullUrl) + '" download class="text-sm" style="color: var(--primary, #2563EB); white-space:nowrap;">Download</a>' +
@@ -992,13 +994,19 @@
           { label: 'Any tracker detected', ok: (analytics.trackersDetected || []).length > 0 },
           { label: 'Tag Manager detected', ok: analytics.tagManagerDetected },
           { label: 'Data layer present', ok: analytics.dataLayerPresent },
-          { label: 'Runtime-validated', ok: !!analytics.runtimeAvailable, tested: !!analytics.runtimeTested }
+          // tested = was the environment even capable of running runtime
+          // validation (runtimeAvailable); ok = did it actually complete
+          // (runtimeTested). A capable environment that still didn't
+          // validate is a real failure, not just "not tested".
+          { label: 'Runtime-validated', ok: !!analytics.runtimeTested, tested: !!analytics.runtimeAvailable,
+            notTestedReason: 'runtime validation is unavailable in this environment' }
         ];
         checkGrid.innerHTML = items.map(function (item) {
           var tested = item.tested !== false;
           var cls = !tested ? 'check-item--pending' : (item.ok ? 'check-item--pass' : 'check-item--fail');
           var icon = !tested ? '' : (item.ok ? PASS_ICON : FAIL_ICON);
-          return '<div class="check-item ' + cls + '"><span class="check-item__icon">' + icon + '</span><span class="check-item__label">' + U.escapeHtml(item.label) + (tested ? '' : ' (not tested)') + '</span></div>';
+          var suffix = tested ? '' : ' (' + (item.notTestedReason || 'not tested') + ')';
+          return '<div class="check-item ' + cls + '"><span class="check-item__icon">' + icon + '</span><span class="check-item__label">' + U.escapeHtml(item.label) + U.escapeHtml(suffix) + '</span></div>';
         }).join('');
       }
 

@@ -3,10 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>History — AuditPulse</title>
+<title>Report — AuditPulse</title>
 <link rel="stylesheet" href="assets/css/variables.css">
 <link rel="stylesheet" href="assets/css/style.css">
 <link rel="stylesheet" href="assets/css/animations.css">
+<link rel="stylesheet" href="assets/css/report.css">
 <link rel="stylesheet" href="assets/css/responsive.css">
 </head>
 <body>
@@ -33,10 +34,10 @@
         <li><a class="sidebar__link" href="scheduler.html">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
           Scheduler</a></li>
-        <li><a class="sidebar__link" href="report.html">
+        <li><a class="sidebar__link is-active" href="report.html">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg>
           Reports</a></li>
-        <li><a class="sidebar__link is-active" href="history.html">
+        <li><a class="sidebar__link" href="history.html">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6M12 7v5l4 2"/></svg>
           History</a></li>
       </ul>
@@ -84,7 +85,7 @@
         </button>
         <div class="topbar__search">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-          <input type="text" id="historySearchInput" placeholder="Search website or report…">
+          <input type="text" placeholder="Search website or report…">
         </div>
       </div>
 
@@ -102,47 +103,359 @@
           <span class="profile-chip__name">…</span>
         </div>
       </div>
-    </header>
+    </header>    <main class="content">
 
-    <main class="content">
+      <!-- ============ BANNER ============ -->
+      <div class="report-banner card animate-in">
+        <div class="report-banner__eyebrow">Report</div>
+        <div class="report-banner__row">
+          <div class="report-banner__site">
+            <div class="report-banner__favicon" id="bannerFavicon">?</div>
+            <div>
+              <div class="report-banner__url" id="bannerUrl">—</div>
+              <div class="report-banner__meta" id="bannerMeta">Loading…</div>
+            </div>
+          </div>
 
-      <div class="page-head page-head--row animate-in">
-        <div>
-          <div class="page-head__eyebrow">Library</div>
-          <h1>Audit History</h1>
-          <p>Every audit you've run, with its score and completion time.</p>
+          <div class="report-banner__score">
+            <div class="vring vring--md" data-band="mid" id="bannerScoreRing">
+              <svg width="72" height="72" viewBox="0 0 72 72">
+                <circle class="vring__track" cx="36" cy="36" r="30" stroke-width="7"/>
+                <circle class="vring__value" id="bannerScoreCircle" cx="36" cy="36" r="30" stroke-width="7" stroke-dasharray="188" stroke-dashoffset="188"/>
+              </svg>
+              <div class="vring__label"><span id="bannerScoreLabel">–</span></div>
+            </div>
+            <div class="report-banner__score-label">
+              Overall<br>
+              <span class="report-banner__score-band" id="bannerScoreBand" data-band="mid">—</span>
+            </div>
+          </div>
+
+          <div class="report-banner__actions">
+            <button class="btn btn--secondary" type="button" id="shareReportBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 3.9M15.4 6.6l-6.8 3.9"/></svg>
+              Share
+            </button>
+            <button class="btn btn--primary" type="button" id="downloadPdfBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+              Download PDF
+            </button>
+            <div class="dropdown" id="reportMoreDropdown">
+              <button class="btn btn--secondary dropdown__toggle" type="button" id="reportMoreBtn" aria-expanded="false" aria-haspopup="true">
+                More
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="dropdown__menu">
+                <button class="dropdown__item" type="button" id="printReportBtn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
+                  Print
+                </button>
+                <button class="dropdown__item" type="button" id="downloadEvidenceBtn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
+                  Download Evidence ZIP
+                </button>
+                <button class="dropdown__item" type="button" id="sendToPocBtn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>
+                  Send to POC
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-        <a href="audit.html" class="btn btn--primary">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-          New Audit
-        </a>
       </div>
 
-      <!-- ============ AUDIT TABLE (components/audit-table.html) ============ -->
-      <div class="card card__pad animate-in">
+      <!-- ============ EXECUTIVE SUMMARY ============ -->
+      <div class="card card__pad animate-in u-mb-5">
         <div class="card__head">
-          <h3>Audit History</h3>
-          <span class="card__head-sub" data-audit-table-count>— audits</span>
+          <h3>Executive Summary</h3>
+          <span class="badge badge--neutral" id="overallStatusBadge">Overall Status</span>
         </div>
-        <div class="table-wrap">
-          <table class="dtable" id="auditTable">
-            <thead>
-              <tr>
-                <th>Website</th>
-                <th>Scope</th>
-                <th>Score</th>
-                <th>Completed</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="auditTableBody">
-              <!-- rows injected by assets/js/history.js via Components.renderAuditRow() -->
-            </tbody>
-          </table>
+        <p class="text-sm" id="execSummaryText" style="display:none;"></p>
+        <div class="metric-card-grid" id="metricCardGrid"></div>
+
+        <div class="card card__pad u-mt-4" id="keyAreasCard" style="display:none; box-shadow:none; border:1px solid var(--border);">
+          <div class="card__head"><h3>Key Areas Requiring Attention</h3></div>
+          <ul class="key-areas-list text-sm" id="keyAreasList"></ul>
         </div>
-        <div id="auditTableEmpty" style="display:none; text-align:center; padding: var(--sp-8) 0; color: var(--text-tertiary);">
-          <p>No audits match your search yet.</p>
+      </div>
+
+      <!-- ============ MODULE SCORES ============ -->
+      <div class="card card__pad animate-in u-mb-5">
+        <div class="card__head"><h3>Module Scores</h3></div>
+        <div class="score-grid" id="scoreGrid"></div>
+      </div>
+
+      <!-- ============ CRITICAL FINDINGS + KEY AREAS COLUMNS ============ -->
+      <div class="report-columns animate-in">
+        <div class="card card__pad">
+          <div class="card__head">
+            <h3>Critical Findings</h3>
+            <span class="badge badge--error" id="criticalFindingsBadge">–</span>
+          </div>
+          <div class="issue-list" id="criticalFindingsList"></div>
         </div>
+
+        <div class="card card__pad">
+          <div class="card__head"><h3>Severity Distribution</h3></div>
+          <div class="severity-dist">
+            <div class="severity-dist__chart">
+              <canvas id="severityChart" width="160" height="160"></canvas>
+            </div>
+            <div class="severity-dist__table" id="severityTable"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ AI RECOMMENDATIONS ============ -->
+      <div class="card card__pad animate-in u-mb-5" id="aiRecoCard" style="display:none;">
+        <div class="card__head"><h3>AI-Prioritized Recommendations</h3></div>
+        <div class="reco-list" id="recoList"></div>
+      </div>
+
+      <!-- ============ MODULE SCORE RADAR ============ -->
+      <div class="card card__pad animate-in u-mb-5">
+        <div class="card__head"><h3>Module Score Comparison</h3></div>
+        <div style="max-width:520px; margin:0 auto;">
+          <canvas id="radarChart"></canvas>
+        </div>
+      </div>
+
+      <!-- ============ BUSINESS IMPACT ============ -->
+      <div class="card card__pad animate-in u-mb-5" id="businessImpactCard" style="display:none;">
+        <div class="card__head"><h3>Business Impact</h3></div>
+        <div id="businessImpactList"></div>
+      </div>
+
+      <!-- ============ ACTION PLAN ============ -->
+      <div class="u-mb-5 animate-in">
+        <div class="card__head u-mb-3"><h3>Action Plan</h3></div>
+        <div id="actionPlanPhases"></div>
+      </div>
+
+      <!-- ============ MODULE DETAILS ============ -->
+      <div class="module-section animate-in">
+        <div class="module-section__head"><h2>Module Details</h2></div>
+
+        <div class="module-accordion-group card">
+
+          <!-- Performance -->
+          <details class="module-accordion" id="performance">
+            <summary class="module-accordion__summary">
+              <span class="module-accordion__name">Performance</span>
+              <span class="module-accordion__meta">
+                <span class="module-accordion__status" id="performanceStatusIcon"></span>
+                <span class="score-chip" id="performanceScoreChip">– / 100</span>
+                <svg class="module-accordion__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </span>
+            </summary>
+            <div class="module-accordion__body">
+              <div class="card card__pad">
+                <div class="check-grid" id="performanceCheckGrid"></div>
+              </div>
+            </div>
+          </details>
+
+          <!-- Accessibility -->
+          <details class="module-accordion" id="accessibility">
+            <summary class="module-accordion__summary">
+              <span class="module-accordion__name">Accessibility</span>
+              <span class="module-accordion__meta">
+                <span class="module-accordion__status" id="accessibilityStatusIcon"></span>
+                <span class="score-chip" id="accessibilityScoreChip">– / 100</span>
+                <svg class="module-accordion__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </span>
+            </summary>
+            <div class="module-accordion__body">
+              <div class="card card__pad">
+                <div class="check-grid" id="accessibilityCheckGrid"></div>
+              </div>
+            </div>
+          </details>
+
+          <!-- Security -->
+          <details class="module-accordion" id="security">
+            <summary class="module-accordion__summary">
+              <span class="module-accordion__name">Security</span>
+              <span class="module-accordion__meta">
+                <span class="module-accordion__status" id="securityStatusIcon"></span>
+                <span class="score-chip" id="securityScoreChip">– / 100</span>
+                <svg class="module-accordion__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </span>
+            </summary>
+            <div class="module-accordion__body">
+              <div class="card card__pad">
+                <div class="check-grid" id="securityCheckGrid"></div>
+              </div>
+            </div>
+          </details>
+
+          <!-- Consent Banner -->
+          <details class="module-accordion" id="consent">
+            <summary class="module-accordion__summary">
+              <span class="module-accordion__name">Consent Banner</span>
+              <span class="module-accordion__meta">
+                <span class="module-accordion__status" id="consentStatusIcon"></span>
+                <span class="score-chip" id="consentScoreChip">– / 100</span>
+                <svg class="module-accordion__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </span>
+            </summary>
+            <div class="module-accordion__body">
+              <div class="card card__pad">
+
+                <div class="check-grid u-mb-4" id="consentFoundationCheckGrid"></div>
+
+                <div id="consentRuntimeCheckWrap" style="display:none;">
+                  <div class="analytics-subsection__meta u-mb-3" style="display:flex; align-items:center; gap:8px;">
+                    <span class="module-accordion__status" id="consentRuntimeStatusIcon"></span>
+                    <strong class="text-sm">Runtime Behavior</strong>
+                  </div>
+                  <div class="check-grid u-mb-4" id="consentRuntimeCheckGrid"></div>
+                </div>
+
+                <div id="consentGdprSection" style="display:none;">
+                  <div class="analytics-subsection__meta u-mb-3" style="display:flex; align-items:center; gap:8px;">
+                    <span class="module-accordion__status" id="consentGdprStatusIcon"></span>
+                    <strong class="text-sm">GDPR Compliance</strong>
+                  </div>
+                  <div class="check-grid u-mb-4" id="consentGdprCheckGrid"></div>
+                </div>
+
+                <div id="consentCcpaSection" style="display:none;">
+                  <div class="analytics-subsection__meta u-mb-3" style="display:flex; align-items:center; gap:8px;">
+                    <span class="module-accordion__status" id="consentCcpaStatusIcon"></span>
+                    <strong class="text-sm">CCPA Compliance</strong>
+                  </div>
+                  <div class="check-grid u-mb-4" id="consentCcpaCheckGrid"></div>
+                </div>
+
+                <div id="consentScreenshotWrap"></div>
+
+              </div>
+            </div>
+          </details>
+
+          <!-- Analytics -->
+          <details class="module-accordion" id="analytics">
+            <summary class="module-accordion__summary">
+              <span class="module-accordion__name">Analytics</span>
+              <span class="module-accordion__meta">
+                <span class="score-chip" id="analyticsScoreChip">– / 100</span>
+                <svg class="module-accordion__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </span>
+            </summary>
+            <div class="module-accordion__body">
+              <div class="card card__pad">
+
+                <p class="text-sm" id="analyticsEmptyMessage" style="color: var(--text-tertiary); display:none;"></p>
+
+                <div id="analyticsSections">
+
+                  <div class="analytics-overall-status" id="analyticsOverallStatus">
+                    <span class="analytics-overall-status__label">Overall Analytics Status:</span>
+                    <span class="analytics-overall-status__badge" id="analyticsOverallBadge"></span>
+                  </div>
+
+                  <p class="text-sm u-mb-4" id="analyticsDetail" style="color: var(--text-tertiary);"></p>
+
+                  <div class="check-grid u-mb-4" id="analyticsCheckGrid"></div>
+
+                  <details class="analytics-subsection" open>
+                    <summary class="analytics-subsection__summary">
+                      <span>Configuration</span>
+                      <span class="analytics-subsection__meta">
+                        <span class="module-accordion__status" id="analyticsConfigStatusIcon"></span>
+                        <svg class="analytics-subsection__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                      </span>
+                    </summary>
+                    <div class="analytics-subsection__body" id="analyticsConfigTable"></div>
+                  </details>
+
+                  <details class="analytics-subsection">
+                    <summary class="analytics-subsection__summary">
+                      <span>Detection &amp; Runtime</span>
+                      <span class="analytics-subsection__meta">
+                        <span class="module-accordion__status" id="analyticsDetectionStatusIcon"></span>
+                        <svg class="analytics-subsection__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                      </span>
+                    </summary>
+                    <div class="analytics-subsection__body" id="analyticsVendorTable"></div>
+                  </details>
+
+                  <details class="analytics-subsection">
+                    <summary class="analytics-subsection__summary">
+                      <span>Event Validation</span>
+                      <span class="analytics-subsection__meta">
+                        <span class="module-accordion__status" id="analyticsEventStatusIcon"></span>
+                        <svg class="analytics-subsection__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                      </span>
+                    </summary>
+                    <div class="analytics-subsection__body" id="analyticsEventValidation"></div>
+                  </details>
+
+                  <div id="analyticsFullSite" style="display:none; margin-top: var(--sp-4);">
+                    <details class="analytics-subsection" open>
+                      <summary class="analytics-subsection__summary">
+                        <span>Site-Wide Coverage</span>
+                        <span class="analytics-subsection__meta">
+                          <span class="module-accordion__status" id="analyticsCoverageStatusIcon"></span>
+                          <svg class="analytics-subsection__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                        </span>
+                      </summary>
+                      <div class="analytics-subsection__body">
+                        <div class="check-grid u-mb-4" id="analyticsCoverageGrid"></div>
+                      </div>
+                    </details>
+
+                    <details class="analytics-subsection">
+                      <summary class="analytics-subsection__summary"><span>Page-Level Results</span></summary>
+                      <div class="analytics-subsection__body" id="analyticsPageResultsTable"></div>
+                    </details>
+
+                    <details class="analytics-subsection">
+                      <summary class="analytics-subsection__summary"><span>Cross-Page Consistency</span></summary>
+                      <div class="analytics-subsection__body" id="analyticsCrossPageTable"></div>
+                    </details>
+
+                    <details class="analytics-subsection">
+                      <summary class="analytics-subsection__summary"><span>Pages With Issues</span></summary>
+                      <div class="analytics-subsection__body" id="analyticsPagesWithIssues"></div>
+                    </details>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+          </details>
+
+        </div>
+      </div>
+
+      <!-- ============ EMAIL HISTORY ============ -->
+      <div class="card card__pad animate-in u-mb-5" id="emailHistoryCard" style="display:none;">
+        <div class="card__head"><h3>Email History</h3></div>
+        <div class="issue-list" id="emailHistoryList"></div>
+      </div>
+
+      <!-- ============ ASK AI ============ -->
+      <div class="ai-panel animate-in">
+        <div class="ai-panel__head">
+          <div class="ai-panel__icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/><circle cx="12" cy="12" r="3"/></svg>
+          </div>
+          <div class="ai-panel__heading">
+            <h3>Ask AI about this report<span class="ai-panel__pill">Beta</span></h3>
+            <span class="ai-panel__sub">Ask a question grounded in this audit's actual findings.</span>
+          </div>
+        </div>
+        <div class="ai-panel__messages" id="chatMessages"></div>
+        <form class="ai-panel__form" id="chatForm">
+          <input type="text" class="ai-panel__input" id="chatInput" placeholder="e.g. What should I fix first?" autocomplete="off">
+          <button class="btn btn--primary ai-panel__send" type="submit" id="chatSendBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>
+            Ask
+          </button>
+        </form>
+        <p class="ai-panel__disclaimer">AI-generated answers may be imprecise — always confirm anything critical against the report itself.</p>
       </div>
 
     </main>
@@ -160,8 +473,10 @@
 <script src="assets/js/authguard.js"></script>
 <script src="assets/js/permissions.js"></script>
 <script src="assets/js/components.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="assets/js/charts.js"></script>
 <script src="assets/js/app.js"></script>
-<script src="assets/js/history.js"></script>
+<script src="assets/js/report.js"></script>
 
 <div style="text-align:center; padding: 18px 16px; font-size: 13px; color: var(--text-tertiary, #94A3B8); border-top: 1px solid var(--border, #E2E8F0);"><strong>Designed by Jeevan K S</strong></div>
 </body>

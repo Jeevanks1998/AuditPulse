@@ -1216,7 +1216,7 @@
                   ? U.escapeHtml(pTrackers.join(', '))
                   : '<span style="color: var(--text-tertiary);">None detected</span>') + '</td>' +
                 '<td style="padding:6px 10px;">' + (p.score != null ? p.score : '—') + '</td>' +
-                '<td style="padding:6px 10px;">' + pFindings.length + '</td>' +
+                '<td style="padding:6px 10px;" title="' + U.escapeHtml(pFindings.map(function (f) { return f.title || ''; }).join('; ')) + '">' + pFindings.length + '</td>' +
               '</tr>';
             }).join('') +
             '</tbody></table></div>';
@@ -1259,11 +1259,28 @@
         if (!flagged.length) {
           pagesWithIssues.innerHTML = '<p class="text-sm" style="color: var(--text-tertiary);">No scanned pages have outstanding Analytics findings.</p>';
         } else {
+          // Each page now also lists what its finding(s) actually are —
+          // title + severity per finding — instead of only a count, so
+          // this list is actionable without cross-referencing another
+          // table. Severity dot mirrors the check-item icon colors used
+          // elsewhere in this file (critical=fail, warning/info=warn).
           pagesWithIssues.innerHTML = '<ul class="text-sm" style="margin:0; padding-left: 1.2em;">' +
             flagged.map(function (p) {
-              var n = (p.findings || []).length;
-              return '<li style="margin-bottom:4px; word-break:break-all;">' + U.escapeHtml(p.url || '') +
-                ' <span style="color: var(--text-tertiary);">— ' + n + ' finding' + (n === 1 ? '' : 's') + '</span></li>';
+              var pFindings = p.findings || [];
+              var n = pFindings.length;
+              var sub = '<ul style="margin:2px 0 0; padding-left: 1.2em; list-style: none;">' +
+                pFindings.map(function (f) {
+                  var isCritical = f.severity === 'critical';
+                  var dotColor = isCritical ? 'var(--color-fail, #dc2626)' : 'var(--color-warn, #d97706)';
+                  return '<li style="margin-bottom:2px; color: var(--text-secondary);">' +
+                    '<span style="display:inline-block; width:6px; height:6px; border-radius:50%; ' +
+                    'background:' + dotColor + '; margin-right:6px;"></span>' +
+                    U.escapeHtml(f.title || 'Untitled finding') + '</li>';
+                }).join('') +
+                '</ul>';
+              return '<li style="margin-bottom:10px; word-break:break-all;">' + U.escapeHtml(p.url || '') +
+                ' <span style="color: var(--text-tertiary);">— ' + n + ' finding' + (n === 1 ? '' : 's') + '</span>' +
+                sub + '</li>';
             }).join('') +
             '</ul>';
         }

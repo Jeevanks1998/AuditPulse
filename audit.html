@@ -156,9 +156,57 @@
           <div class="card card__pad">
             <div class="card__head">
               <h3>Audit Modules</h3>
-              <span class="badge badge--neutral" id="moduleCountBadge">7 enabled</span>
+              <span class="badge badge--neutral" id="moduleCountBadge">6 enabled</span>
             </div>
             <div class="module-list" id="moduleList">
+              <label class="module-row">
+                <span class="module-row__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/></svg></span>
+                <span class="module-row__body">
+                  <span class="module-row__title">Performance</span>
+                  <span class="module-row__desc">Load time, Core Web Vitals, and page weight</span>
+                </span>
+                <span class="toggle"><input type="checkbox" data-module="performance" checked><span class="toggle__track"></span></span>
+              </label>
+              <label class="module-row">
+                <span class="module-row__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="4" r="2"/><path d="M19 7 12 9 5 7M12 9v5M8 21l4-7 4 7M8 14l-3 2M16 14l3 2"/></svg></span>
+                <span class="module-row__body">
+                  <span class="module-row__title">Accessibility</span>
+                  <span class="module-row__desc">WCAG issues — contrast, alt text, ARIA, keyboard nav</span>
+                </span>
+                <span class="toggle"><input type="checkbox" data-module="accessibility" checked><span class="toggle__track"></span></span>
+              </label>
+              <label class="module-row">
+                <span class="module-row__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-6 4 3 5-8"/></svg></span>
+                <span class="module-row__body">
+                  <span class="module-row__title">Analytics</span>
+                  <span class="module-row__desc">Checks that tracking scripts are firing correctly</span>
+                </span>
+                <span class="toggle"><input type="checkbox" data-module="analytics" checked><span class="toggle__track"></span></span>
+              </label>
+              <label class="module-row">
+                <span class="module-row__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v4M16 4v4M3 10h18"/></svg></span>
+                <span class="module-row__body">
+                  <span class="module-row__title">Consent Banner</span>
+                  <span class="module-row__desc">GDPR / CCPA cookie-consent compliance</span>
+                </span>
+                <span class="toggle"><input type="checkbox" data-module="consent" checked><span class="toggle__track"></span></span>
+              </label>
+              <label class="module-row">
+                <span class="module-row__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/><circle cx="12" cy="12" r="3"/></svg></span>
+                <span class="module-row__body">
+                  <span class="module-row__title">AI Review</span>
+                  <span class="module-row__desc">AI-prioritized recommendations and executive summary</span>
+                </span>
+                <span class="toggle"><input type="checkbox" data-module="ai" checked><span class="toggle__track"></span></span>
+              </label>
+              <label class="module-row">
+                <span class="module-row__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg></span>
+                <span class="module-row__body">
+                  <span class="module-row__title">PDF Report</span>
+                  <span class="module-row__desc">Generate a downloadable PDF of the finished audit</span>
+                </span>
+                <span class="toggle"><input type="checkbox" data-module="pdf" checked><span class="toggle__track"></span></span>
+              </label>
             </div>
           </div>
         </div>

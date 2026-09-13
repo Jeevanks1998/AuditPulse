@@ -247,6 +247,15 @@ class AnalyticsRuntimeResult:
     vendors: Dict[str, VendorRuntimeResult] = field(default_factory=dict)
     clicked_element: Optional[str] = None
     tested_at: Optional[str] = None
+    # Whether the Scroll / Click phase actually ran to completion —
+    # independent of whether it produced a matching request. A phase that
+    # never ran (context/browser died mid-pass, or — for click — no safe
+    # clickable element existed on the page at all) must report as
+    # "not tested" downstream, never as a "failed" that looks identical to
+    # a phase that ran cleanly and genuinely found nothing. See
+    # _build_vendor_results and merge_static_detected_vendors.
+    scroll_tested: bool = False
+    click_tested: bool = False
 
 
 async def run_analytics_runtime(url: str) -> AnalyticsRuntimeResult:
@@ -271,7 +280,12 @@ async def run_analytics_runtime(url: str) -> AnalyticsRuntimeResult:
             match.phase = phase["current"]
             captured.append(match)
 
-    result = AnalyticsRuntimeResult(available=True, tested_at=datetime.now(timezone.utc).isoformat())
+    # available only flips True once the page has actually loaded — Page
+    # View, Scroll, and Click are all meaningless without a loaded page, so
+    # a navigation failure must report every vendor as "not tested" rather
+    # than a false "failed" (see merge_static_detected_vendors, which reads
+    # this flag to decide between the two).
+    result = AnalyticsRuntimeResult(available=False, tested_at=datetime.now(timezone.utc).isoformat())
 
     try:
         async with async_playwright() as pw:
@@ -284,30 +298,49 @@ async def run_analytics_runtime(url: str) -> AnalyticsRuntimeResult:
                 # --- load / Page View ------------------------------------------------
                 await page.goto(url, wait_until="load", timeout=NAVIGATION_TIMEOUT_MS)
                 await page.wait_for_timeout(SETTLE_MS)
+                result.available = True
 
                 # --- scroll ------------------------------------------------------------
+                # Isolated in its own try/except: a scroll-phase failure (e.g. the
+                # context/browser is torn down mid-action) must not also discard the
+                # Page View evidence already captured above, and must report the
+                # scroll column as "not tested" rather than a false "failed".
                 phase["current"] = "scroll"
                 try:
-                    await page.mouse.wheel(0, 2500)
-                    await page.wait_for_timeout(400)
-                    await page.mouse.wheel(0, 2500)
-                except Exception:  # noqa: BLE001 — a page with no scrollable content shouldn't abort the pass
-                    pass
-                await page.wait_for_timeout(SCROLL_SETTLE_MS)
+                    try:
+                        await page.mouse.wheel(0, 2500)
+                        await page.wait_for_timeout(400)
+                        await page.mouse.wheel(0, 2500)
+                    except Exception:  # noqa: BLE001 — a page with no scrollable content shouldn't abort the pass
+                        pass
+                    await page.wait_for_timeout(SCROLL_SETTLE_MS)
+                    result.scroll_tested = True
+                except Exception as exc:  # noqa: BLE001
+                    logger.info(f"analytics/runtime.py: scroll phase failed for {url}: {exc}")
 
                 # --- click -------------------------------------------------------------
+                # Same isolation as scroll. Also: a safe clickable element genuinely
+                # not existing on the page (clicked is None, no exception) means click
+                # behaviour truly can't be tested here — that's "not tested" evidence,
+                # not proof the vendor's click tracking is broken.
                 phase["current"] = "click"
-                clicked = await _click_safe_element(page)
-                result.clicked_element = clicked
-                await page.wait_for_timeout(CLICK_SETTLE_MS)
+                try:
+                    clicked = await _click_safe_element(page)
+                    result.clicked_element = clicked
+                    result.click_tested = clicked is not None
+                    if result.click_tested:
+                        await page.wait_for_timeout(CLICK_SETTLE_MS)
+                except Exception as exc:  # noqa: BLE001
+                    logger.info(f"analytics/runtime.py: click phase failed for {url}: {exc}")
             finally:
                 await browser.close()
     except Exception as exc:  # noqa: BLE001 — a failed runtime pass should never break the audit
         logger.warning(f"analytics/runtime.py: runtime validation failed for {url}: {exc}")
         result.error = str(exc)
-        result.available = bool(captured)  # keep whatever was captured before the failure, if anything
 
-    result.vendors = _build_vendor_results(captured)
+    result.vendors = _build_vendor_results(
+        captured, scroll_tested=result.scroll_tested, click_tested=result.click_tested,
+    )
     return result
 
 
@@ -340,7 +373,16 @@ async def _click_safe_element(page) -> Optional[str]:
     return None
 
 
-def _build_vendor_results(captured: List[CapturedRequest]) -> Dict[str, VendorRuntimeResult]:
+def _build_vendor_results(
+    captured: List[CapturedRequest], scroll_tested: bool = True, click_tested: bool = True,
+) -> Dict[str, VendorRuntimeResult]:
+    """
+    `scroll_tested`/`click_tested` reflect whether those phases actually ran
+    to completion (see run_analytics_runtime) — independent of whether a
+    vendor's request showed up in them. A vendor observed at Page View but
+    with its phase marked untested reports that column as NOT_TESTED, never
+    a false FAILED indistinguishable from "we looked and saw nothing".
+    """
     by_vendor: Dict[str, List[CapturedRequest]] = {}
     for req in captured:
         by_vendor.setdefault(req.vendor_key, []).append(req)
@@ -363,8 +405,8 @@ def _build_vendor_results(captured: List[CapturedRequest]) -> Dict[str, VendorRu
             scroll_status = NOT_APPLICABLE
             click_status = NOT_APPLICABLE
         else:
-            scroll_status = PASSED if scroll_reqs else FAILED
-            click_status = PASSED if click_reqs else FAILED
+            scroll_status = NOT_TESTED if not scroll_tested else (PASSED if scroll_reqs else FAILED)
+            click_status = NOT_TESTED if not click_tested else (PASSED if click_reqs else FAILED)
 
         vendor = VendorRuntimeResult(
             vendor_key=vendor_key,
@@ -471,10 +513,15 @@ def merge_static_detected_vendors(
         every status stays NOT_TESTED/NOT_APPLICABLE (the dataclass
         defaults) — never reported as a failure when nothing was
         actually tested.
-      - runtime pass ran but this vendor was never observed: page
-        view/scroll/click are real evidence of absence, so they're
-        marked FAILED (matching what `check_runtime_analytics` already
-        assumes when `result.vendors.get(vendor_key)` is None);
+      - runtime pass ran but this vendor was never observed: Page View
+        is real evidence of absence, so it's marked FAILED (matching
+        what `check_runtime_analytics` already assumes when
+        `result.vendors.get(vendor_key)` is None). Scroll/Click only get
+        that same FAILED treatment if their own phase actually ran to
+        completion (`result.scroll_tested`/`click_tested`) — a phase
+        that never ran (context died mid-pass, or click had nothing
+        safe to click) reports NOT_TESTED instead, same distinction
+        `_build_vendor_results` makes for vendors that *were* observed.
         custom_event_status stays NOT_APPLICABLE — its absence isn't
         itself evidence of anything.
 
@@ -487,8 +534,8 @@ def merge_static_detected_vendors(
         label = VENDOR_LABELS.get(vendor_key, vendor_key)
         if result.available:
             page_view_status = FAILED
-            scroll_status = FAILED
-            click_status = FAILED
+            scroll_status = FAILED if result.scroll_tested else NOT_TESTED
+            click_status = FAILED if result.click_tested else NOT_TESTED
         else:
             page_view_status = NOT_TESTED
             scroll_status = NOT_APPLICABLE

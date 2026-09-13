@@ -44,7 +44,7 @@ from reportlab.lib.units import mm
 from reportlab.platypus import Flowable, Image, Paragraph, Spacer, Table, TableStyle
 
 from analytics.analytics_score import TRACKER_DISPLAY_NAMES
-from pdf.theme import BORDER, ERROR, STATUS_LABELS, STYLES, SUCCESS, SURFACE_SUNKEN, TEXT_TERTIARY, esc
+from pdf.theme import BORDER, ERROR, STATUS_COLORS, STATUS_LABELS, STYLES, SUCCESS, SURFACE_SUNKEN, TEXT_TERTIARY, esc
 from reports.generator import ReportPayload
 from utils.screenshots import screenshot_url_to_path
 
@@ -135,11 +135,16 @@ def _build_analytics_section(analytics: Optional[dict]) -> List[Flowable]:
     vendors: Dict[str, dict] = runtime_result.get("vendors") or {}
 
     if not analytics.get("runtime_tested") or not vendors:
+        if not analytics.get("runtime_available"):
+            explanation = "Runtime validation was not available in the environment this audit ran in."
+        elif not (analytics.get("vendor_configs") or {}):
+            explanation = "No analytics vendors were detected, so there was nothing to validate at runtime."
+        else:
+            explanation = "Runtime validation (Page View / Scroll / Click) was not run for this audit."
         return [
             Paragraph("Analytics Runtime Validation", STYLES["H1"]),
             Paragraph(
-                "Runtime validation (Page View / Scroll / Click) was not run for this audit — "
-                "shown as NOT TESTED rather than pass/fail.",
+                explanation + " Shown as NOT TESTED rather than pass/fail.",
                 STYLES["BodyMuted"],
             ),
             Spacer(1, 10),
@@ -181,12 +186,9 @@ def _build_analytics_section(analytics: Optional[dict]) -> List[Flowable]:
         ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
     ]
     for row_index, col_index, status in status_cells:
-        if status == "passed":
-            style.append(("TEXTCOLOR", (col_index, row_index), (col_index, row_index), SUCCESS))
-        elif status == "failed":
-            style.append(("TEXTCOLOR", (col_index, row_index), (col_index, row_index), ERROR))
-        elif status == "not_applicable":
-            style.append(("TEXTCOLOR", (col_index, row_index), (col_index, row_index), TEXT_TERTIARY))
+        color = STATUS_COLORS.get(status)
+        if color is not None:
+            style.append(("TEXTCOLOR", (col_index, row_index), (col_index, row_index), color))
     table.setStyle(TableStyle(style))
 
     return [
@@ -315,7 +317,7 @@ def _build_consent_section(consent: Optional[dict], screenshots: List[dict]) -> 
     story.append(Spacer(1, 10))
 
     if consent.get("runtime_tested"):
-        story.append(_build_bool_table(_RUNTIME_CHECKS, consent))
+        story.append(_build_bool_table(_RUNTIME_CHECKS, consent.get("runtime_result") or {}))
     else:
         story.append(Paragraph(
             "Reject / Accept / Personalize runtime checks: NOT TESTED", STYLES["BodyMuted"],

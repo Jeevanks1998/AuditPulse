@@ -234,21 +234,49 @@ def build_gdpr_assessment(
         else "No consent banner or CMP was detected.",
     ))
 
+    # buttons.accept_found/reject_found/manage_found come from static HTML
+    # only (consent.buttons.detect_buttons reads the raw fetched markup —
+    # see that module's own docstring). Many CMPs (OneTrust, Didomi,
+    # TrustArc, custom banners) inject the actual banner — and its
+    # Accept/Reject/Personalize buttons — via client-side JavaScript after
+    # the page loads, so those button labels simply never exist in the
+    # HTML the plain HTTP fetch sees, even though a real visitor (and the
+    # live Playwright runtime pass) sees them fine. Falling back to
+    # runtime_result's rendered-DOM detection here — when the static
+    # parse missed a control the live browser actually found — avoids
+    # reporting "no accept/reject control" on a banner that plainly has
+    # both, just because they're JS-rendered rather than static.
+    runtime_available = bool(runtime_result and runtime_result.available)
+    accept_found = buttons.accept_found or (runtime_available and runtime_result.accept_button_found)
+    reject_found = buttons.reject_found or (runtime_available and runtime_result.reject_button_found)
+    manage_found = buttons.manage_found or (runtime_available and runtime_result.manage_button_found)
+
+    accept_via_runtime_only = accept_found and not buttons.accept_found
+    reject_via_runtime_only = reject_found and not buttons.reject_found
+    manage_via_runtime_only = manage_found and not buttons.manage_found
+
     checks.append(GdprCheck(
-        "accept_control", GDPR_CHECK_LABELS["accept_control"], buttons.accept_found,
-        f"Accept control found: {', '.join(buttons.accept_labels[:3])}." if buttons.accept_found
-        else "No recognizable accept control was found.",
+        "accept_control", GDPR_CHECK_LABELS["accept_control"], accept_found,
+        (f"Accept control found: {', '.join(buttons.accept_labels[:3])}." if buttons.accept_found
+         else "Accept control found via live browser render — its label isn't present in the raw "
+              "HTML, so it's rendered by client-side JavaScript (e.g. a CMP script) rather than "
+              "server-rendered markup." if accept_via_runtime_only
+         else "No recognizable accept control was found."),
     ))
 
     checks.append(GdprCheck(
-        "reject_control", GDPR_CHECK_LABELS["reject_control"], buttons.reject_found,
-        f"Reject control found: {', '.join(buttons.reject_labels[:3])}." if buttons.reject_found
-        else "No recognizable reject control was found.",
+        "reject_control", GDPR_CHECK_LABELS["reject_control"], reject_found,
+        (f"Reject control found: {', '.join(buttons.reject_labels[:3])}." if buttons.reject_found
+         else "Reject control found via live browser render — its label isn't present in the raw "
+              "HTML, so it's rendered by client-side JavaScript (e.g. a CMP script) rather than "
+              "server-rendered markup." if reject_via_runtime_only
+         else "No recognizable reject control was found."),
     ))
 
+    has_reject_parity = accept_found and reject_found
     checks.append(GdprCheck(
-        "reject_parity", GDPR_CHECK_LABELS["reject_parity"], buttons.has_reject_parity,
-        "Reject is offered with the same one-click access as Accept." if buttons.has_reject_parity
+        "reject_parity", GDPR_CHECK_LABELS["reject_parity"], has_reject_parity,
+        "Reject is offered with the same one-click access as Accept." if has_reject_parity
         else "Accept and reject aren't offered on equal footing (accept-only, or reject buried/absent) — "
              "a pattern CNIL/ICO have flagged as a dark pattern.",
     ))
@@ -279,10 +307,13 @@ def build_gdpr_assessment(
     checks.append(cookies_check)
 
     checks.append(GdprCheck(
-        "consent_is_granular", GDPR_CHECK_LABELS["consent_is_granular"], buttons.manage_found,
-        "A 'Manage Preferences'-style control is offered alongside Accept/Reject, letting "
-        "visitors opt into categories individually." if buttons.manage_found
-        else "No manage/customize option was found in the banner — only an all-or-nothing choice.",
+        "consent_is_granular", GDPR_CHECK_LABELS["consent_is_granular"], manage_found,
+        (f"A 'Manage Preferences'-style control is offered alongside Accept/Reject, letting "
+         f"visitors opt into categories individually: {', '.join(buttons.manage_labels[:3])}."
+         if buttons.manage_found
+         else "A 'Manage Preferences'-style control was found via live browser render, not in "
+              "the raw HTML — it's rendered by client-side JavaScript." if manage_via_runtime_only
+         else "No manage/customize option was found in the banner — only an all-or-nothing choice."),
     ))
 
     privacy_ok = privacy_policy_url is not None

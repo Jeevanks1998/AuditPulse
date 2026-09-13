@@ -129,9 +129,20 @@
 
   function highlightActiveNav() {
     var current = (location.pathname.split('/').pop() || 'index.html');
+    var currentHash = location.hash || '';
     U.qsa('.sidebar__link').forEach(function (link) {
-      var href = (link.getAttribute('href') || '').split('#')[0];
-      if (href && href === current) link.classList.add('is-active');
+      link.classList.remove('is-active');
+      var raw = link.getAttribute('href') || '';
+      var hashIndex = raw.indexOf('#');
+      var href = hashIndex === -1 ? raw : raw.slice(0, hashIndex);
+      var hash = hashIndex === -1 ? '' : raw.slice(hashIndex);
+      if (!href || href !== current) return;
+      // A link with its own #hash (the Audit Modules sub-links, which all
+      // point at report.html#module) should only light up when that exact
+      // hash is the current one — otherwise every module link matches
+      // simply because they share report.html's base filename.
+      if (hash && hash !== currentHash) return;
+      link.classList.add('is-active');
     });
   }
 

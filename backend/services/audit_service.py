@@ -227,16 +227,29 @@ async def run_audit_pipeline(audit_id: int) -> None:
                 hostname = urlparse(audit.url).hostname or ""
                 links = extract_links(page, hostname)
 
-                await _advance_step(db, audit, "checkAccessibility")
-                accessibility_result = await accessibility_module.run_accessibility_checks(client, page)
+                # performance/accessibility are optional modules too (see
+                # config.constants.AUDIT_MODULES / audit.html's checkboxes) —
+                # skip the real check package entirely when deselected, same
+                # gating pattern as consent/analytics/ai below. mobile's speed
+                # sub-check degrades gracefully (metrics=None) when performance
+                # didn't run, since it's not itself a selectable module.
+                accessibility_result = None
+                if "accessibility" in (audit.modules or []):
+                    await _advance_step(db, audit, "checkAccessibility")
+                    accessibility_result = await accessibility_module.run_accessibility_checks(client, page)
 
-                await _advance_step(db, audit, "checkPerformance")
-                performance_result = await performance_module.run_performance_checks(client, audit.url)
+                performance_result = None
+                if "performance" in (audit.modules or []):
+                    await _advance_step(db, audit, "checkPerformance")
+                    performance_result = await performance_module.run_performance_checks(client, audit.url)
+
                 security_result = await security_module.run_security_checks(client, page)
 
                 ux_result = ux_module.score_ux(ux_module.run_page_checks(page))
                 forms_result = forms_module.score_forms(forms_module.run_page_checks(page))
-                mobile_result = mobile_module.run_mobile_checks(page, performance_result.metrics)
+                mobile_result = mobile_module.run_mobile_checks(
+                    page, performance_result.metrics if performance_result else None
+                )
 
                 images_findings = images_module.run_page_checks(page)
                 images_findings += await images_module.run_site_checks(client, page)
@@ -247,8 +260,6 @@ async def run_audit_pipeline(audit_id: int) -> None:
                 links_result = links_module.score_links(links_findings)
 
                 breakdown = {
-                    "performance": performance_result.score.overall,
-                    "accessibility": accessibility_result.score.overall,
                     "security": security_result.score.overall,
                     "ux": ux_result.overall,
                     "images": images_result.overall,
@@ -256,16 +267,22 @@ async def run_audit_pipeline(audit_id: int) -> None:
                     "mobile": mobile_result.overall,
                     "forms": forms_result.overall,
                 }
+                if performance_result is not None:
+                    breakdown["performance"] = performance_result.score.overall
+                if accessibility_result is not None:
+                    breakdown["accessibility"] = accessibility_result.score.overall
 
                 findings: list = []
-                findings += performance_result.findings
-                findings += accessibility_result.findings
                 findings += security_result.findings
                 findings += ux_result.findings
                 findings += images_result.findings
                 findings += links_result.findings
                 findings += mobile_result.findings
                 findings += forms_result.findings
+                if performance_result is not None:
+                    findings += performance_result.findings
+                if accessibility_result is not None:
+                    findings += accessibility_result.findings
 
                 # consent/analytics reuse the page + response already fetched
                 # above for checkCrawl rather than crawling the site again

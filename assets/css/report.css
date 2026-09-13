@@ -1,0 +1,506 @@
+/* ==========================================================================
+   Report / Audit Results page
+   ========================================================================== */
+
+/* ---- Spacing utilities ----
+   The elements these are applied to in report.html also toggle visibility
+   dynamically via JS (element.style.display), so only the static layout
+   spacing moves here — the display:none stays inline as the JS-owned bit. */
+.u-mt-4 { margin-top: var(--sp-4); }
+.u-mb-3 { margin-bottom: var(--sp-3); }
+.u-mb-4 { margin-bottom: var(--sp-4); }
+.u-mb-5 { margin-bottom: var(--sp-5); }
+.u-mb-6 { margin-bottom: var(--sp-6); }
+
+.report-banner {
+  padding: var(--sp-6);
+  margin-bottom: var(--sp-5);
+}
+.report-banner__eyebrow {
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--color-primary); margin-bottom: var(--sp-4);
+}
+.report-banner__row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-6); flex-wrap: wrap;
+}
+.report-banner__site { display: flex; align-items: center; gap: var(--sp-4); }
+.report-banner__favicon {
+  width: 52px; height: 52px; border-radius: var(--radius-lg);
+  background: var(--surface-sunken); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-weight: 700; font-size: var(--fs-lg);
+}
+.report-banner__url { font-family: var(--font-mono); font-size: var(--fs-lg); font-weight: 700; }
+.report-banner__meta { font-size: var(--fs-sm); color: var(--text-tertiary); margin-top: 2px; }
+
+.report-banner__score {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  margin: 0 auto;
+}
+.report-banner__score-label {
+  font-size: var(--fs-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+}
+.report-banner__score-band {
+  font-size: var(--fs-sm); font-weight: 700;
+}
+.report-banner__score-band[data-band="good"] { color: var(--color-success); }
+.report-banner__score-band[data-band="mid"] { color: var(--color-warning); }
+.report-banner__score-band[data-band="bad"] { color: var(--color-error); }
+
+.report-banner__actions { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+
+/* ---- "More" dropdown (Print / Evidence ZIP / Send to POC) ---- */
+.dropdown { position: relative; }
+.dropdown__toggle svg { width: 14px; height: 14px; transition: transform var(--dur-fast) var(--ease-out); }
+.dropdown.is-open .dropdown__toggle svg { transform: rotate(180deg); }
+.dropdown__menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 20;
+  min-width: 190px;
+  background: var(--surface-raised); border: 1px solid var(--border);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+  padding: var(--sp-2);
+  display: none;
+  flex-direction: column; gap: 2px;
+}
+.dropdown.is-open .dropdown__menu { display: flex; }
+.dropdown__item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; text-align: left;
+  background: transparent; border: none; border-radius: var(--radius-sm);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-sm); font-weight: 500; color: var(--text-primary);
+  cursor: pointer;
+}
+.dropdown__item svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--text-secondary); }
+.dropdown__item:hover { background: var(--surface-sunken); }
+
+/* Category score grid — each cell uses the vitals ring.
+   auto-fit + minmax lets the grid size itself to however many modules an
+   audit actually produced instead of forcing a fixed column count that
+   gets cramped (too many columns) or leaves gaps (too few modules). */
+.score-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--sp-3);
+}
+.score-cell {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card);
+  padding: var(--sp-4) var(--sp-3);
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-2);
+  text-align: center;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.score-cell:hover { border-color: var(--border-strong); }
+.score-cell__label { font-size: var(--fs-xs); font-weight: 600; color: var(--text-secondary); }
+
+/* Score & Module Performance (§3.4) — module scores next to the radar
+   comparison, in one card. Flex + wrap so the chart drops below the
+   scores on narrow viewports instead of squeezing both columns thin. */
+.module-perf {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-6);
+  flex-wrap: wrap;
+}
+.module-perf__scores { flex: 3 1 380px; min-width: 260px; }
+.module-perf__chart { flex: 2 1 260px; min-width: 240px; max-width: 380px; }
+.module-perf__head {
+  font-size: var(--fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-tertiary); margin-bottom: var(--sp-3);
+}
+
+/* Two-column: charts + issues */
+.report-columns { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-5); margin-bottom: var(--sp-5); }
+
+.issue-list { display: flex; flex-direction: column; }
+.issue-row {
+  display: flex; align-items: flex-start; gap: var(--sp-3);
+  padding: var(--sp-3) 0; border-bottom: 1px solid var(--border);
+}
+.issue-row:last-child { border-bottom: none; }
+.issue-row__icon {
+  width: 30px; height: 30px; border-radius: var(--radius-icon); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--color-error-soft); color: var(--color-error);
+}
+.issue-row__icon svg { width: 15px; height: 15px; }
+.issue-row__body { flex: 1; }
+.issue-row__title { font-weight: 600; font-size: var(--fs-sm); }
+.issue-row__desc { font-size: var(--fs-xs); color: var(--text-tertiary); margin-top: 2px; }
+.issue-row__sev { flex-shrink: 0; }
+
+.reco-list { display: flex; flex-direction: column; gap: var(--sp-3); }
+.reco-item {
+  display: flex; gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+.reco-item__num {
+  width: 26px; height: 26px; border-radius: var(--radius-sm); flex-shrink: 0;
+  background: var(--color-primary-soft); color: var(--color-primary);
+  font-family: var(--font-mono); font-weight: 700; font-size: var(--fs-xs);
+  display: flex; align-items: center; justify-content: center;
+}
+.reco-item__title { font-weight: 600; font-size: var(--fs-sm); }
+.reco-item__desc { font-size: var(--fs-xs); color: var(--text-tertiary); margin-top: 2px; }
+.reco-item__impact { margin-left: auto; flex-shrink: 0; }
+
+/* Module detail sections (SEO, Performance, Accessibility, Analytics, Consent, Security) */
+.module-section {
+  scroll-margin-top: calc(var(--header-height) + var(--sp-4));
+  margin-bottom: var(--sp-5);
+}
+.module-section__head {
+  display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-4);
+}
+.module-section__head h2 { font-size: var(--fs-lg); }
+
+/* ==========================================================================
+   Module Details accordion (Phase 9) — collapses Performance / Accessibility /
+   Analytics / Consent / Security into <details>/<summary> rows so the report
+   doesn't dump all five sections' findings on screen at once. Native <details>
+   drives open/close (and already auto-opens on #hash navigation in modern
+   browsers); report.js only adds cross-links (score-grid clicks) and forces
+   everything open before printing/PDF export.
+   ========================================================================== */
+.module-accordion-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.module-accordion {
+  scroll-margin-top: calc(var(--header-height) + var(--sp-4));
+  border-bottom: 1px solid var(--border);
+}
+.module-accordion:last-child { border-bottom: none; }
+
+.module-accordion__summary {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-6);
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600; font-size: var(--fs-base);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.module-accordion__summary::-webkit-details-marker { display: none; }
+.module-accordion__summary::marker { content: ''; }
+.module-accordion__summary:hover { background: var(--surface-sunken); }
+.module-accordion__summary:focus-visible {
+  outline: 2px solid var(--color-primary); outline-offset: -2px;
+}
+
+.module-accordion__name { flex: 1; }
+.module-accordion__meta { display: flex; align-items: center; gap: var(--sp-3); flex-shrink: 0; }
+
+.module-accordion__status {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+}
+.module-accordion__status svg { width: 12px; height: 12px; }
+.module-accordion__status--good { background: var(--color-success-soft); color: var(--color-success); }
+.module-accordion__status--mid { background: var(--color-warning-soft); color: var(--color-warning); }
+.module-accordion__status--bad { background: var(--color-error-soft); color: var(--color-error); }
+
+.module-accordion__chevron {
+  width: 18px; height: 18px; color: var(--text-tertiary);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.module-accordion[open] > .module-accordion__summary .module-accordion__chevron,
+details.module-accordion[open] .module-accordion__chevron {
+  transform: rotate(180deg);
+}
+
+.module-accordion__body {
+  padding: 0 var(--sp-6) var(--sp-6);
+}
+.module-accordion__body .card {
+  border: none; box-shadow: none; background: transparent;
+}
+.module-accordion__body .card__pad { padding: 0; }
+
+/* Printing / PDF export must always show every module's findings
+   regardless of what's expanded on screen — report.js's beforeprint
+   handler force-opens every accordion, and this rule makes sure the
+   content is actually visible (not just `open` with 0 height) in
+   engines that are slow to apply the attribute before layout. */
+@media print {
+  .module-accordion__summary { cursor: default; }
+  .module-accordion:not([open]) > .module-accordion__body { display: block !important; }
+}
+
+.detail-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-3); margin-bottom: var(--sp-4); }
+.detail-metric {
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  padding: var(--sp-4); background: var(--surface-sunken);
+}
+.detail-metric__label { font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); margin-bottom: 6px; }
+.detail-metric__value { font-family: var(--font-mono); font-weight: 700; font-size: var(--fs-lg); }
+.detail-metric__value.good { color: var(--color-success); }
+
+.check-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--sp-2) var(--sp-6); }
+
+/* Analytics overall status — a single always-visible verdict row that sits
+   above the collapsed sub-sections so the reader gets the headline without
+   opening anything. */
+.analytics-overall-status {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--sp-4);
+}
+.analytics-overall-status__label { font-weight: 600; }
+.analytics-overall-status__badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 999px;
+  font-size: var(--fs-sm); font-weight: 600;
+}
+.analytics-overall-status__badge-icon { display: inline-flex; width: 14px; height: 14px; }
+.analytics-overall-status__badge-icon svg { width: 100%; height: 100%; }
+.analytics-overall-status__badge--good { background: var(--color-success-soft); color: var(--color-success); }
+.analytics-overall-status__badge--mid { background: var(--color-warning-soft); color: var(--color-warning); }
+.analytics-overall-status__badge--bad { background: var(--color-error-soft); color: var(--color-error); }
+
+/* Analytics sub-sections — collapsed by default so the seven Analytics
+   data groups (Configuration, Detection & Runtime, Event Validation,
+   Coverage, Page-Level Results, Cross-Page Consistency, Pages With Issues)
+   aren't all visually open at once inside the already-expanded module
+   accordion. Nests the same collapse pattern as .module-accordion but
+   smaller and without its own card chrome. */
+.analytics-subsection {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--sp-3);
+  overflow: hidden;
+}
+.analytics-subsection:last-child { margin-bottom: 0; }
+.analytics-subsection__summary {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600; font-size: var(--fs-sm);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.analytics-subsection__summary::-webkit-details-marker { display: none; }
+.analytics-subsection__summary::marker { content: ''; }
+.analytics-subsection__summary:hover { background: var(--surface-sunken); }
+.analytics-subsection__summary:focus-visible {
+  outline: 2px solid var(--color-primary); outline-offset: -2px;
+}
+.analytics-subsection__meta { display: flex; align-items: center; gap: var(--sp-3); flex-shrink: 0; }
+.analytics-subsection__chevron {
+  width: 16px; height: 16px; color: var(--text-tertiary); flex-shrink: 0;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.analytics-subsection[open] > .analytics-subsection__summary .analytics-subsection__chevron {
+  transform: rotate(180deg);
+}
+.analytics-subsection__body {
+  padding: 0 var(--sp-4) var(--sp-4);
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-4);
+}
+
+@media print {
+  .analytics-subsection__summary { cursor: default; }
+  .analytics-subsection:not([open]) > .analytics-subsection__body { display: block !important; }
+}
+
+.screenshot-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-3); }
+.screenshot-strip__item {
+  aspect-ratio: 16/10; border-radius: var(--radius-md); border: 1px solid var(--border);
+  background: repeating-linear-gradient(135deg, var(--surface-sunken), var(--surface-sunken) 10px, var(--surface) 10px, var(--surface) 20px);
+  display: flex; align-items: flex-end; padding: var(--sp-2);
+}
+.screenshot-strip__item span { font-size: var(--fs-2xs); font-weight: 600; background: var(--surface); padding: 3px 8px; border-radius: var(--radius-pill); border: 1px solid var(--border); }
+
+/* ==========================================================================
+   Ask AI panel — deliberately not a .card. Sunken surface (no color tint)
+   so it reads as a distinct tool sitting on top of the audit result,
+   without breaking the report's restrained, evidence-document palette.
+   ========================================================================== */
+.ai-panel {
+  position: relative;
+  margin-bottom: var(--sp-6);
+  padding: var(--sp-6);
+  border-radius: var(--radius-card);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+[data-theme="dark"] .ai-panel {
+  background: var(--surface-sunken);
+}
+
+.ai-panel__head { display: flex; align-items: flex-start; gap: var(--sp-3); margin-bottom: var(--sp-4); }
+.ai-panel__icon {
+  flex: none; width: 38px; height: 38px; border-radius: var(--radius-icon);
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--color-primary);
+}
+.ai-panel__icon svg { width: 19px; height: 19px; }
+.ai-panel__heading h3 { font-size: var(--fs-md); font-weight: 700; display: flex; align-items: center; gap: var(--sp-2); }
+.ai-panel__pill {
+  font-family: var(--font-mono); font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.04em;
+  color: var(--color-primary); background: var(--color-primary-soft);
+  padding: 2px 7px; border-radius: var(--radius-pill); line-height: 1.4;
+}
+.ai-panel__sub { display: block; font-size: var(--fs-xs); color: var(--text-tertiary); margin-top: 3px; }
+
+.ai-panel__messages {
+  display: flex; flex-direction: column; gap: var(--sp-3);
+  max-height: 340px; overflow-y: auto;
+  margin-bottom: var(--sp-4); padding-right: var(--sp-1);
+}
+
+.chat-msg { max-width: 80%; padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-md); font-size: var(--fs-sm); line-height: 1.5; }
+.chat-msg--assistant { align-self: flex-start; background: var(--surface); border: 1px solid var(--border); color: var(--text-primary); box-shadow: var(--shadow-sm); }
+.chat-msg--user { align-self: flex-end; background: var(--color-primary); color: var(--text-on-primary); }
+.chat-msg--error { align-self: flex-start; background: var(--color-error-soft); color: var(--color-error); }
+.chat-msg--pending { align-self: flex-start; background: var(--surface); border: 1px solid var(--border); color: var(--text-tertiary); display: flex; align-items: center; gap: 6px; }
+.chat-msg--pending .ai-panel__dot { width: 5px; height: 5px; border-radius: 50%; background: var(--text-tertiary); animation: pulseDot 1.2s ease-in-out infinite; }
+.chat-msg--pending .ai-panel__dot:nth-child(2) { animation-delay: 0.15s; }
+.chat-msg--pending .ai-panel__dot:nth-child(3) { animation-delay: 0.3s; }
+
+.ai-panel__form { display: flex; gap: var(--sp-2); }
+.ai-panel__input {
+  flex: 1;
+  padding: 11px 16px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+}
+.ai-panel__input:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-soft); }
+.ai-panel__send { border-radius: var(--radius-pill); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.ai-panel__send svg { width: 14px; height: 14px; }
+.ai-panel__send:disabled { opacity: 0.6; cursor: not-allowed; }
+.ai-panel__disclaimer { font-size: var(--fs-2xs); color: var(--text-tertiary); margin: var(--sp-3) 0 0; }
+
+/* ==========================================================================
+   Executive Summary — metric cards + key areas
+   (mirrors pdf/summary.py's four metric cards + Key Areas list, §3.3)
+   ========================================================================== */
+.metric-card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-3);
+}
+.metric-card {
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  padding: var(--sp-4);
+  text-align: center;
+}
+.metric-card__value {
+  font-family: var(--font-mono); font-weight: 700; font-size: var(--fs-xl);
+  color: var(--text-primary);
+}
+.metric-card__label {
+  font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-tertiary); margin-top: 4px;
+}
+
+.key-areas-list {
+  margin: 0; padding-left: 1.2em;
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+.key-areas-list li { line-height: 1.5; }
+
+/* A Finding ID chip (e.g. "A11Y-001") shown inline before a finding/issue
+   title — the same stable ID reports/generator.py's assign_finding_ids
+   assigns and pdf/summary.py + pdf/recommendations.py already print, so a
+   finding can be traced between the on-screen report, the PDF and the
+   appendix (§3.6/§3.12). */
+.finding-id-badge {
+  display: inline-block;
+  font-family: var(--font-mono); font-size: var(--fs-2xs); font-weight: 700;
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  border-radius: var(--radius-pill);
+  padding: 1px 7px;
+  margin-right: 6px;
+  vertical-align: middle;
+  letter-spacing: 0.02em;
+}
+
+/* ==========================================================================
+   Finding Severity Distribution (§3.5) — small doughnut + counts table
+   ========================================================================== */
+.severity-dist {
+  display: flex; align-items: center; gap: var(--sp-6); flex-wrap: wrap;
+}
+.severity-dist__chart {
+  width: 140px; height: 140px; flex-shrink: 0;
+  position: relative;
+}
+.severity-dist__table {
+  flex: 1; min-width: 200px;
+  display: flex; flex-direction: column; gap: var(--sp-2);
+}
+.severity-dist__row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--sp-2) 0; border-bottom: 1px solid var(--border);
+}
+.severity-dist__row:last-child { border-bottom: none; }
+.severity-dist__count {
+  font-family: var(--font-mono); font-weight: 700; font-size: var(--fs-md);
+}
+
+/* ==========================================================================
+   Critical Findings (§3.6) — stacked, scannable cards. Severity color is
+   used only on the badge; everything else stays neutral so the eye lands
+   on severity + title first.
+   ========================================================================== */
+.issue-row--finding {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: var(--sp-4) 0;
+}
+.issue-row__top { display: flex; align-items: center; gap: var(--sp-2); }
+.issue-row__sevbadge { font-size: var(--fs-2xs); letter-spacing: 0.03em; text-transform: uppercase; }
+.issue-row__module { font-size: var(--fs-xs); color: var(--text-tertiary); font-weight: 500; }
+.issue-row__footer { display: flex; justify-content: flex-end; margin-top: 4px; }
+.issue-row__link {
+  font-size: var(--fs-xs); font-weight: 600; color: var(--color-primary);
+  text-decoration: none;
+}
+.issue-row__link:hover { text-decoration: underline; }
+
+/* ==========================================================================
+   Business Impact (§3.7) — one labeled card per item: "Business Risk"
+   (what/where) above "Potential impact" (the plain-English consequence),
+   so a non-technical reader gets the point without the finding detail.
+   ========================================================================== */
+.impact-card {
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  padding: var(--sp-4);
+}
+.impact-card + .impact-card { margin-top: var(--sp-3); }
+.impact-card__section-label {
+  font-size: var(--fs-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+}
+.impact-card__section-label + .impact-card__section-label { margin-top: var(--sp-3); }
+.impact-card__risk {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  font-weight: 600; font-size: var(--fs-sm);
+  margin-top: 4px;
+}
+.impact-card__area { color: var(--text-tertiary); font-weight: 400; }
+.impact-card__impact-text {
+  font-size: var(--fs-sm); color: var(--text-secondary); line-height: 1.55;
+  margin-top: 4px;
+}

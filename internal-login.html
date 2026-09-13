@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuditPulse Internal User Login</title>
+<link rel="stylesheet" href="assets/css/variables.css">
+<link rel="stylesheet" href="assets/css/style.css">
+<link rel="stylesheet" href="assets/css/animations.css">
+<link rel="stylesheet" href="assets/css/login.css">
+<link rel="stylesheet" href="assets/css/responsive.css">
+<style>
+  .field__error { min-height: 16px; font-size: 12px; color: var(--color-error); margin-top: 6px; display: none; }
+  .field__error.is-visible { display: block; }
+  .field input.is-invalid { border-color: var(--color-error) !important; box-shadow: 0 0 0 3px var(--color-error-soft) !important; }
+
+  /* -----------------------------------------------------------------------
+     internal-login.html — the only sign-in page for AuditPulse.
+     
+     PHASE 1: INTERNAL-ONLY LOGIN
+     - No public landing, no self-service sign-up
+     - Accounts are provisioned by administrator only
+     - Users authenticate with email + password created by admin
+     - Inactive accounts are rejected at login
+     
+     See: backend/api/access_management.py for user provisioning
+     ----------------------------------------------------------------------- */
+  .il-shell {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    padding: var(--sp-6);
+  }
+
+  .il-card-logo { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: var(--sp-6); }
+  .il-card-logo-mark {
+    width: 34px; height: 34px; border-radius: var(--radius-sm); background: var(--color-primary);
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden;
+  }
+  .il-card-logo b {
+    font-family: var(--font-display); font-weight: 700; font-size: var(--fs-md);
+    color: var(--text-primary); letter-spacing: 0.04em;
+  }
+
+  .login-card__head { text-align: center; }
+  .login-card__head h2 { font-size: var(--fs-xl); font-weight: 700; margin-bottom: 6px; }
+
+  .il-admin-note {
+    text-align: center; margin-top: var(--sp-6);
+    font-size: var(--fs-sm); color: var(--text-tertiary); line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<div class="il-shell">
+  <form class="card login-card animate-in" id="internalLoginForm" novalidate>
+    <div class="il-card-logo">
+      <div class="il-card-logo-mark"><img src="assets/img/logo.png" alt="AuditPulse logo" style="width:100%;height:100%;object-fit:contain;"></div>
+      <b>AUDITPULSE</b>
+    </div>
+
+    <div class="login-card__head">
+      <h2>Internal User Login</h2>
+    </div>
+
+    <div class="field">
+      <label for="email">Email</label>
+      <div class="field__input-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>
+        <input type="email" id="email" name="email" placeholder="you@company.com" autocomplete="email" required autofocus>
+      </div>
+      <div class="field__error" id="emailError" role="alert"></div>
+    </div>
+
+    <div class="field">
+      <label for="password">Password</label>
+      <div class="field__input-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <input type="password" id="password" name="password" placeholder="••••••••" autocomplete="current-password" required>
+      </div>
+      <div class="field__error" id="passwordError" role="alert"></div>
+    </div>
+
+    <button type="submit" class="btn btn--primary btn--block btn--lg" id="internalLoginSubmitBtn">Sign In</button>
+
+    <p class="il-admin-note">Contact your administrator if you don't have access.</p>
+  </form>
+</div>
+
+<script src="assets/js/env.js"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/utils.js"></script>
+<script src="assets/js/validation.js"></script>
+<script src="assets/js/notifications.js"></script>
+<script src="assets/js/modal.js"></script>
+<script src="assets/js/loader.js"></script>
+<script src="assets/js/api.js"></script>
+<script src="assets/js/app.js"></script>
+<script src="assets/js/internal-auth.js"></script>
+
+</body>
+</html>

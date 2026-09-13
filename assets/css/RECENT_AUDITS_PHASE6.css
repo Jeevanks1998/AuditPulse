@@ -1,0 +1,141 @@
+/* ==========================================================================
+   Phase 6 — Recent Audits
+   
+   Every row rendered into #recentAuditsList (dashboard.js renderRecentAudits)
+   comes straight from GET /audits/recent (window.Api.audits.getRecent) —
+   real url, real overall_score, real status, real created_at/completed_at.
+   No placeholder domains, scores, statuses, or dates are ever rendered here;
+   when there are zero audits, an explicit empty state is shown instead of a
+   dummy row.
+   ========================================================================== */
+
+/* ---- Row layout: website (left) · score / status / date (right) ---- */
+.row-item__right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.row-item__right-top {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.row-item__date {
+  font-size: var(--fs-2xs);
+  color: var(--text-tertiary);
+  font-family: var(--font-body);
+}
+
+/* Score not available yet (audit isn't completed) — a distinct neutral
+   state, never a fabricated number or a misleading red/green chip. */
+.score-chip--neutral {
+  background: var(--surface-sunken);
+  color: var(--text-tertiary);
+  border: 1px solid var(--border);
+}
+.score-chip--neutral::before { background: var(--text-tertiary); }
+
+/* ---- Empty state ---- */
+.recent-audits-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--sp-3);
+  padding: var(--sp-8) var(--sp-4);
+}
+
+.recent-audits-empty__icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+}
+.recent-audits-empty__icon svg { width: 22px; height: 22px; }
+
+.recent-audits-empty__title {
+  font-weight: 700;
+  font-size: var(--fs-base);
+  color: var(--text-primary);
+}
+
+.recent-audits-empty__sub {
+  font-size: var(--fs-sm);
+  color: var(--text-tertiary);
+  max-width: 240px;
+}
+
+.recent-audits-empty .btn { margin-top: var(--sp-1); }
+
+/* ---- Error state (reuses the empty-state layout) ---- */
+.recent-audits-empty--error .recent-audits-empty__icon--error {
+  color: var(--color-error);
+  border-color: var(--color-error);
+  background: var(--color-error-soft);
+}
+
+/* ---- Loading state ---- */
+.recent-audits-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  padding: var(--sp-8) var(--sp-4);
+  color: var(--text-tertiary);
+  font-size: var(--fs-sm);
+}
+
+.recent-audits-loading__spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--color-primary);
+  animation: recentAuditsSpin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes recentAuditsSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- Health Overview error state (§6 partial-data handling) ----
+   Stats and Recent Audits load independently, so this only replaces the
+   ring/category grid when /audits/stats itself fails — a failed Recent
+   Audits fetch never triggers this, and vice versa. */
+.health-overview__error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--sp-3);
+  padding: var(--sp-8) var(--sp-4);
+}
+
+.health-overview__error-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  background: var(--color-error-soft);
+  border: 1px solid var(--color-error);
+  color: var(--color-error);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.health-overview__error-icon svg { width: 22px; height: 22px; }
+
+.health-overview__error-text {
+  font-weight: 700;
+  font-size: var(--fs-base);
+  color: var(--text-primary);
+}

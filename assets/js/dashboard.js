@@ -118,9 +118,14 @@
         U.animateCountUp(statPerf, stats.performanceScore || 0, 700, '%');
         U.animateCountUp(statCritical, stats.criticalIssues || 0, 700);
         
-        // Display Analytics and Consent status
-        if (statAnalytics) statAnalytics.textContent = (stats.breakdown && stats.breakdown.analytics ? stats.breakdown.analytics + '%' : 'Pending');
-        if (statConsent) statConsent.textContent = (stats.breakdown && stats.breakdown.consent ? stats.breakdown.consent + '%' : 'Pending');
+        // Display Analytics and Consent status — a real 0% score must still
+        // render as "0%", not "Pending". Only an actually-missing value
+        // (module wasn't run, so breakdown.analytics/consent is null/
+        // undefined) falls back to "Pending".
+        var hasAnalyticsScore = stats.breakdown && stats.breakdown.analytics !== null && stats.breakdown.analytics !== undefined;
+        var hasConsentScore = stats.breakdown && stats.breakdown.consent !== null && stats.breakdown.consent !== undefined;
+        if (statAnalytics) statAnalytics.textContent = hasAnalyticsScore ? stats.breakdown.analytics + '%' : 'Pending';
+        if (statConsent) statConsent.textContent = hasConsentScore ? stats.breakdown.consent + '%' : 'Pending';
 
         // Trend badges: rendered only when the API supplies a value for
         // that KPI (stats.trend.<key>). No trend is ever fabricated — if
@@ -376,14 +381,30 @@
       var linkEl = document.getElementById('analyticsHealthLink');
       if (!card || !analytics) return false;
 
-      var vendors = analytics.runtimeTested && analytics.runtimeResult ? Object.values(analytics.runtimeResult.vendors || {}) : [];
+      // Vendor list is built from every vendor actually detected in the
+      // page's markup (vendorConfigs) — not just the ones that show up in
+      // runtimeResult.vendors. The runtime pass only ever records a vendor
+      // that captured at least one request, so a vendor that was detected
+      // but never fired a single tracking request at runtime is *absent*
+      // from runtimeResult.vendors, not present-and-passing. Treating that
+      // absence as "failed" (same convention report.js uses for its
+      // Detection & Runtime table) keeps a totally broken vendor visible
+      // instead of silently vanishing from the count and chip list.
+      var detectedVendorKeys = Object.keys(analytics.vendorConfigs || {});
+      var runtimeVendors = (analytics.runtimeTested && analytics.runtimeResult && analytics.runtimeResult.vendors) || {};
+      var vendors = detectedVendorKeys.map(function (k) {
+        return runtimeVendors[k] || { vendor_key: k, vendor_name: k, page_view_status: 'failed' };
+      });
       var trackers = analytics.trackersDetected || [];
       var trackerCount = trackers.length;
       var anyDetected = trackerCount > 0;
       var pageViewTested = analytics.runtimeTested && vendors.length > 0;
       var pageViewPassing = pageViewTested && vendors.filter(function (v) { return v.page_view_status === 'passed'; }).length;
       var allPassed = pageViewTested && pageViewPassing === vendors.length;
-      var badge = badgeFor(allPassed, analytics.runtimeTested);
+      // Badge reflects whether page-view testing actually ran (pageViewTested),
+      // not just the coarser runtimeTested flag — a runtime pass that found
+      // zero vendors to test is "Not tested", not "Issues found".
+      var badge = badgeFor(allPassed, pageViewTested);
       var findingsCount = (findings || []).length;
 
       badgeEl.className = 'badge ' + badge.cls;
@@ -428,7 +449,10 @@
       ));
 
       // Per-vendor page-view breakdown — only rendered when the runtime
-      // pass actually ran, straight from analytics.runtimeResult.vendors.
+      // pass actually ran. Covers every statically-detected vendor
+      // (vendorConfigs), cross-referenced against analytics.runtimeResult.vendors —
+      // a detected vendor missing from the runtime result renders as
+      // "Failing", not as an omitted vendor.
       if (pageViewTested) {
         var chips = vendors.map(function (v) {
           var passed = v.page_view_status === 'passed';
@@ -440,7 +464,19 @@
         tiles.push('<div class="health-vendor-chips">' + chips + '</div>');
       }
 
-      body.innerHTML = tiles.join('');
+      // Cross-page consistency (multi-page audits only) — real discrepancies
+      // computed by the backend across every crawled page, straight from
+      // analytics.crossPageFindings. Left out entirely on a homepage-only
+      // audit, where the backend always returns [] for this field.
+      var crossPageFindings = analytics.crossPageFindings || [];
+      var crossPageHtml = '';
+      if (crossPageFindings.length) {
+        crossPageHtml = '<div class="health-runtime-note">' +
+          U.escapeHtml(crossPageFindings.length + ' cross-page consistency issue' + (crossPageFindings.length === 1 ? '' : 's') + ' found across the site') +
+        '</div>';
+      }
+
+      body.innerHTML = tiles.join('') + crossPageHtml;
       linkEl.href = link + '#analytics';
 
       card.style.display = '';
@@ -495,7 +531,7 @@
       var linkEl = document.getElementById('consentHealthLink');
       if (!card || !consent) return false;
 
-      var coreOk = !!consent.hasCookieBanner && !!consent.gdprCompliant;
+      var coreOk = !!consent.hasCookieBanner && !!consent.gdprCompliant && !!consent.ccpaCompliant;
       var badge = badgeFor(coreOk, true);
       badgeEl.className = 'badge ' + badge.cls;
       badgeEl.textContent = badge.label;

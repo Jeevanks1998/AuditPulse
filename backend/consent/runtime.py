@@ -143,20 +143,46 @@ async def run_consent_runtime(url: str) -> ConsentRuntimeResult:
         logger.info("consent/runtime.py: playwright not installed — skipping consent runtime validation")
         return ConsentRuntimeResult(available=False, error="playwright not installed")
 
-    result = ConsentRuntimeResult(available=True, tested_at=datetime.now(timezone.utc).isoformat())
+    # available starts False and is only flipped once the browser has
+    # actually launched — a launch failure (Chromium missing/crashed/OOM)
+    # must report as "not tested", not as a pass that happened to find
+    # nothing. See models.consent's runtime_available docstring.
+    result = ConsentRuntimeResult(available=False, tested_at=datetime.now(timezone.utc).isoformat())
     hostname = urlparse(url).hostname or ""
 
     try:
         async with async_playwright() as pw:
             browser = await pw.chromium.launch()
+            result.available = True
             try:
-                # ---- Leg 1: before consent + Reject -----------------------------------
-                await _run_reject_leg(browser, url, hostname, result)
-                # ---- Leg 2: fresh context, before consent again + Accept --------------
-                await _run_accept_leg(browser, url, hostname, result)
+                # ---- Leg 1: before consent + Reject ------------------------------
+                # Each leg is isolated in its own try/except so a failure in one
+                # (e.g. a navigation timeout on the Reject leg) reports that leg
+                # as "not tested" without also discarding the other, unrelated
+                # leg — a single bad leg must never take the whole pass down.
+                try:
+                    await _run_reject_leg(browser, url, hostname, result)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(f"consent/runtime.py: reject leg failed for {url}: {exc}")
+                    if not result.before_consent.available:
+                        result.before_consent = ConsentStateCapture(available=False, error=str(exc))
+                    if not result.after_reject.available:
+                        result.after_reject = ConsentStateCapture(available=False, error=str(exc))
+
+                # ---- Leg 2: fresh context, before consent again + Accept ----------
+                try:
+                    await _run_accept_leg(browser, url, hostname, result)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(f"consent/runtime.py: accept leg failed for {url}: {exc}")
+                    if not result.after_accept.available:
+                        result.after_accept = ConsentStateCapture(available=False, error=str(exc))
             finally:
                 await browser.close()
     except Exception as exc:  # noqa: BLE001 — a failed runtime pass should never break the audit
+        # Only reachable for failures outside either leg (import already
+        # succeeded above, so this is launch/context-manager level) — both
+        # legs above already convert their own failures into per-leg
+        # "not tested" state instead of raising this far.
         logger.warning(f"consent/runtime.py: runtime consent validation failed for {url}: {exc}")
         result.error = str(exc)
 
@@ -272,25 +298,35 @@ async def _find_clickable(page, pattern: re.Pattern):
     logic against *rendered* elements rather than static markup, since
     a client-side-rendered CMP's banner won't exist in the raw HTML
     consent/buttons.py reads.
-    """
-    locator = page.locator(_CLICKABLE_SELECTOR)
-    try:
-        count = await locator.count()
-    except Exception:  # noqa: BLE001
-        return None
 
-    for i in range(min(count, 200)):  # cap: a pathological page shouldn't hang this check
-        el = locator.nth(i)
+    Searches every frame attached to the page, not just the main
+    document (`page.frames` includes the main frame first, so
+    top-level matches still win when both exist). A number of common
+    CMPs — Sourcepoint, Quantcast/IAB TCF, Google Funding Choices —
+    render their consent modal inside a child <iframe> rather than the
+    top-level DOM; a main-frame-only search would report Accept/
+    Reject/Manage as simply absent on those sites even though a real
+    visitor sees the banner and clicks it fine.
+    """
+    for frame in list(page.frames):
         try:
-            if not await el.is_visible():
-                continue
-            text = (await el.inner_text()).strip()
-            if not text:
-                text = (await el.get_attribute("aria-label") or await el.get_attribute("value") or "").strip()
-            if text and pattern.match(text):
-                return el
-        except Exception:  # noqa: BLE001 — one bad element shouldn't abort the scan
+            locator = frame.locator(_CLICKABLE_SELECTOR)
+            count = await locator.count()
+        except Exception:  # noqa: BLE001 — a detached/cross-origin frame shouldn't abort the scan
             continue
+
+        for i in range(min(count, 200)):  # cap: a pathological page shouldn't hang this check
+            el = locator.nth(i)
+            try:
+                if not await el.is_visible():
+                    continue
+                text = (await el.inner_text()).strip()
+                if not text:
+                    text = (await el.get_attribute("aria-label") or await el.get_attribute("value") or "").strip()
+                if text and pattern.match(text):
+                    return el
+            except Exception:  # noqa: BLE001 — one bad element shouldn't abort the scan
+                continue
     return None
 
 

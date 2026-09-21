@@ -1,0 +1,579 @@
+{
+  "schema_version": 1,
+  "audit_id": 4,
+  "url": "https://github.com",
+  "overall": 95,
+  "generated_at": "2026-09-09T10:54:25.630921+00:00",
+  "share_url": null,
+  "score_grid": [
+    {
+      "module": "performance",
+      "label": "Performance",
+      "score": 94,
+      "target_section": "section-performance"
+    },
+    {
+      "module": "accessibility",
+      "label": "Accessibility",
+      "score": 99,
+      "target_section": "section-accessibility"
+    },
+    {
+      "module": "security",
+      "label": "Security",
+      "score": 95,
+      "target_section": "section-security"
+    },
+    {
+      "module": "ux",
+      "label": "UX",
+      "score": 95,
+      "target_section": "section-ux"
+    },
+    {
+      "module": "images",
+      "label": "Images",
+      "score": 90,
+      "target_section": "section-images"
+    },
+    {
+      "module": "links",
+      "label": "Links",
+      "score": 100,
+      "target_section": "section-links"
+    },
+    {
+      "module": "mobile",
+      "label": "Mobile",
+      "score": 95,
+      "target_section": "section-mobile"
+    },
+    {
+      "module": "forms",
+      "label": "Forms",
+      "score": 99,
+      "target_section": "section-forms"
+    },
+    {
+      "module": "consent",
+      "label": "Consent",
+      "score": 89,
+      "target_section": "section-consent"
+    },
+    {
+      "module": "analytics",
+      "label": "Analytics",
+      "score": 100,
+      "target_section": "section-analytics"
+    }
+  ],
+  "findings": [
+    {
+      "module": "performance",
+      "category": "optimization",
+      "severity": "warning",
+      "title": "Many render-blocking resources in <head>",
+      "description": "29 synchronous scripts/stylesheets (0 script(s), 29 stylesheet(s)) load in <head> before the browser can start painting the page.",
+      "recommendation": "Add async/defer to non-critical scripts, inline small critical CSS, and load the rest of the stylesheet asynchronously.",
+      "finding_id": "PERF-001"
+    },
+    {
+      "module": "performance",
+      "category": "optimization",
+      "severity": "info",
+      "title": "Large HTML document",
+      "description": "The initial HTML document is 563KB. This is the document alone, before any linked CSS/JS/images even start downloading.",
+      "recommendation": "Reduce inline scripts/styles and repeated markup; consider server-side pagination for very long pages.",
+      "finding_id": "PERF-002"
+    },
+    {
+      "module": "performance",
+      "category": "optimization",
+      "severity": "info",
+      "title": "Images missing explicit dimensions",
+      "description": "24 of 24 images have no width/height attributes, so the browser can't reserve space for them before they load \u2014 a common cause of layout shift.",
+      "recommendation": "Add width and height attributes (or aspect-ratio in CSS) to every <img> so the browser reserves the right amount of space.",
+      "finding_id": "PERF-003"
+    },
+    {
+      "module": "accessibility",
+      "category": "aria",
+      "severity": "info",
+      "title": "Redundant ARIA role",
+      "description": "https://github.com has 2 element(s) with a role attribute that just restates the element's own native role (e.g. role=\"button\" on a <button>), which adds nothing and is one more place for markup to drift out of sync.",
+      "recommendation": "Remove the redundant role attribute and rely on the element's native semantics.",
+      "finding_id": "A11Y-001"
+    },
+    {
+      "module": "security",
+      "category": "ssl",
+      "severity": "warning",
+      "title": "TLS certificate expiring soon",
+      "description": "The certificate for github.com expires in 23 day(s) (not_after: Oct  2 20:44:39 2026 GMT).",
+      "recommendation": "Schedule renewal now, ideally via an automated process, so expiry never becomes an incident.",
+      "finding_id": "SEC-001"
+    },
+    {
+      "module": "security",
+      "category": "headers",
+      "severity": "info",
+      "title": "Missing Permissions-Policy header",
+      "description": "https://github.com does not send a `Permissions-Policy` header, so every powerful browser API (camera, microphone, geolocation, USB, etc.) stays available to any script running on the page \u2014 including third-party scripts \u2014 with no opt-out declared.",
+      "recommendation": "Add a `Permissions-Policy` header that explicitly disables APIs the site doesn't use, e.g. `Permissions-Policy: camera=(), microphone=(), geolocation=()`.",
+      "finding_id": "SEC-002"
+    },
+    {
+      "module": "security",
+      "category": "headers",
+      "severity": "info",
+      "title": "Missing Cross-Origin-Opener-Policy header",
+      "description": "https://github.com does not send `Cross-Origin-Opener-Policy`, leaving the page's window reachable from cross-origin popups it opens (or that open it), which can enable cross-window attacks like tabnabbing-style reference leaks.",
+      "recommendation": "Add `Cross-Origin-Opener-Policy: same-origin` unless the site specifically relies on cross-origin window references.",
+      "finding_id": "SEC-003"
+    },
+    {
+      "module": "security",
+      "category": "headers",
+      "severity": "info",
+      "title": "Server software/version disclosed in response headers",
+      "description": "https://github.com exposes implementation details via response headers (server: github.com). This makes it easier for an attacker to look up known vulnerabilities for the exact software version in use.",
+      "recommendation": "Suppress or generalize these headers at the server/proxy level (e.g. `server_tokens off;` in nginx, removing X-Powered-By in most frameworks).",
+      "finding_id": "SEC-004"
+    },
+    {
+      "module": "ux",
+      "category": "navigation",
+      "severity": "info",
+      "title": "Primary navigation has a large number of links",
+      "description": "https://github.com's main navigation contains 61 links (more than 10). A long flat list of top-level choices makes it harder for visitors to scan and pick the right one, and is a common sign navigation would benefit from grouping into a dropdown/mega-menu structure.",
+      "recommendation": "Group related links under a smaller number of top-level categories, using dropdowns/submenus for the rest.",
+      "finding_id": "UX-001"
+    },
+    {
+      "module": "ux",
+      "category": "buttons",
+      "severity": "warning",
+      "title": "Button(s) with no visible or accessible label",
+      "description": "https://github.com has 1 button-like element(s) with no text content, value, or aria-label. Visitors \u2014 and especially screen reader users, who hear nothing at all announced \u2014 have no way to know what the control does.",
+      "recommendation": "Give every button real visible text describing its action, or an aria-label if it's icon-only.",
+      "finding_id": "UX-002"
+    },
+    {
+      "module": "ux",
+      "category": "spacing",
+      "severity": "info",
+      "title": "Interactive elements packed together with no spacing markup",
+      "description": "https://github.com has a run of 5 links/buttons in a row (e.g. Code, Plan, Collaborate, ...) with no whitespace or separating element between them in the markup. Without CSS spacing explicitly compensating, tightly packed tap targets are a common source of accidental mis-taps, especially on touch devices.",
+      "recommendation": "Add visible spacing (margin/gap) between adjacent interactive elements \u2014 a `gap` on a flex/grid container is the simplest fix \u2014 and confirm on an actual mobile viewport that targets don't touch.",
+      "finding_id": "UX-003"
+    },
+    {
+      "module": "ux",
+      "category": "readability",
+      "severity": "warning",
+      "title": "Body copy scores as hard to read",
+      "description": "https://github.com's visible text scores 29/100 on the Flesch Reading Ease scale (very difficult to read) \u2014 driven by long sentences and/or long, multi-syllable words. General audiences typically read most comfortably in the 60-70 range (roughly an 8th-grade reading level).",
+      "recommendation": "Shorten sentences, prefer plain words over jargon where the audience doesn't require it, and break up dense paragraphs \u2014 aim for a Flesch score in the 60s for general-audience content.",
+      "finding_id": "UX-004"
+    },
+    {
+      "module": "images",
+      "category": "optimization",
+      "severity": "warning",
+      "title": "Images missing width/height attributes",
+      "description": "24 of 24 image(s) on https://github.com have no width/height attributes (or aspect-ratio style): https://github.githubassets.com/assets/particles-170bd1fd231f4669.png, //images.ctfassets.net/8aevphvgewt8/g1XhuDG7foMyNWIEIpGJj/b40a790b854d0803704deb7905b1bd82/logo-duolingo-14477f9e54a6.svg, //images.ctfassets.net/8aevphvgewt8/6Qr8Snm4JceoMFRJhapgFa/802ded1d2c486a9d0a4c073d9f8f38f4/logo-gartner-aa8c2e452b64.svg, //images.ctfassets.net/8aevphvgewt8/1Dt1ncaR6ZM4dQvknFzfBI/e5c2092be5bd53881622eced4fd37564/accordion-1-ce487d44c0bf.webp, //images.ctfassets.net/8aevphvgewt8/1uXZYDy7dMcH9QwxuAU06F/1cb167cc60d725b8cf7089faf9a4ed06/accordion-2-730955545f07.webp. Without a reserved size, the browser doesn't know how much space to leave for the image before it loads, so surrounding content jumps once it arrives \u2014 a direct Cumulative Layout Shift contributor.",
+      "recommendation": "Add width and height attributes (or a CSS aspect-ratio) matching the image's intrinsic size so the browser can reserve layout space up front.",
+      "finding_id": "IMG-001"
+    },
+    {
+      "module": "images",
+      "category": "lazyload",
+      "severity": "warning",
+      "title": "First image on the page is lazy-loaded",
+      "description": "https://github.com's first <img> in document order has loading=\"lazy\". This image is the one most likely to be above the fold and the Largest Contentful Paint element \u2014 lazy-loading it defers its fetch instead of prioritizing it, which typically hurts LCP rather than page performance overall.",
+      "recommendation": "Remove loading=\"lazy\" from the first/hero image (and consider fetchpriority=\"high\" on it instead); reserve lazy loading for images further down the page.",
+      "finding_id": "IMG-002"
+    },
+    {
+      "module": "images",
+      "category": "broken",
+      "severity": "warning",
+      "title": "Broken image sources found",
+      "description": "22 image(s) on https://github.com returned an error status: https://github.githubassets.com/assets/particles-170bd1fd231f4669.png (403), https://images.ctfassets.net/8aevphvgewt8/g1XhuDG7foMyNWIEIpGJj/b40a790b854d0803704deb7905b1bd82/logo-duolingo-14477f9e54a6.svg (403), https://images.ctfassets.net/8aevphvgewt8/6Qr8Snm4JceoMFRJhapgFa/802ded1d2c486a9d0a4c073d9f8f38f4/logo-gartner-aa8c2e452b64.svg (403), https://images.ctfassets.net/8aevphvgewt8/1Dt1ncaR6ZM4dQvknFzfBI/e5c2092be5bd53881622eced4fd37564/accordion-1-ce487d44c0bf.webp (403), https://images.ctfassets.net/8aevphvgewt8/1uXZYDy7dMcH9QwxuAU06F/1cb167cc60d725b8cf7089faf9a4ed06/accordion-2-730955545f07.webp (403) and 17 more.",
+      "recommendation": "Fix the src URL or replace/remove the image so visitors don't see a broken-image icon.",
+      "finding_id": "IMG-003"
+    },
+    {
+      "module": "mobile",
+      "category": "responsive",
+      "severity": "info",
+      "title": "No responsive breakpoints found in inline CSS",
+      "description": "https://github.com has <style> block CSS but no @media query anywhere in it, suggesting the visible styling doesn't change across screen sizes. (An external stylesheet could still carry breakpoints \u2014 this only inspects inline and <style>-block CSS.)",
+      "recommendation": "Add @media breakpoints (or confirm they exist in an external stylesheet) so layout, font sizes, and spacing adapt for narrow screens.",
+      "finding_id": "MOB-001"
+    },
+    {
+      "module": "mobile",
+      "category": "speed",
+      "severity": "warning",
+      "title": "Many render-blocking resources for a mobile connection",
+      "description": "The page references 48 script/stylesheet tags that can block first render. On a fast desktop connection this is often invisible; on a throttled mobile connection each blocking request adds a full round-trip before the page can paint.",
+      "recommendation": "Defer or async non-critical scripts, inline small critical CSS, and combine or lazy-load the rest so the mobile round-trip cost is paid by fewer requests.",
+      "finding_id": "MOB-002"
+    },
+    {
+      "module": "mobile",
+      "category": "speed",
+      "severity": "info",
+      "title": "High image count on a single page",
+      "description": "The page loads 24 <img> tags. On mobile, each additional image competes for limited bandwidth on a connection that's often both slower and metered compared to desktop broadband.",
+      "recommendation": "Lazy-load below-the-fold images (see images/lazyload.py) and consider pagination or a \"load more\" pattern for long image-heavy pages.",
+      "finding_id": "MOB-003"
+    },
+    {
+      "module": "forms",
+      "category": "captcha",
+      "severity": "info",
+      "title": "No CAPTCHA or bot-mitigation widget detected on a sensitive form",
+      "description": "https://github.com has 2 form(s) that look like login, signup, contact, or similar (by field type or form identity), but no recognizable CAPTCHA/bot-mitigation script (reCAPTCHA, hCaptcha, Turnstile, FunCaptcha) was found on the page. Forms like these are common targets for automated spam and credential-stuffing traffic.",
+      "recommendation": "Add a CAPTCHA or equivalent bot-mitigation step to forms that collect credentials or contact info, or confirm equivalent protection is applied at the server/WAF level instead.",
+      "finding_id": "FORM-001"
+    },
+    {
+      "module": "consent",
+      "category": "banner",
+      "severity": "critical",
+      "title": "No cookie-consent banner detected",
+      "description": "https://github.com shows no recognizable consent banner or CMP markup. If this page sets non-essential cookies, this is likely a GDPR/ePrivacy compliance gap.",
+      "recommendation": "Add a consent banner (a CMP like OneTrust/Cookiebot, or a compliant custom implementation) before any non-essential cookies are set.",
+      "finding_id": "CONS-001"
+    },
+    {
+      "module": "consent",
+      "category": "behavior",
+      "severity": "warning",
+      "title": "Scripts are not held back until consent is given",
+      "description": "https://github.com does not appear to block non-essential scripts before consent (based on the page's own declared Consent Mode default only \u2014 not independently verified).",
+      "recommendation": "Gate non-essential scripts (analytics, ads, embeds) behind an explicit consent check rather than loading them unconditionally.",
+      "finding_id": "CONS-002"
+    },
+    {
+      "module": "consent",
+      "category": "runtime",
+      "severity": "warning",
+      "title": "Reject button could not be located to test",
+      "description": "https://github.com: no clickable Reject/Decline control was found in the rendered page, so this behaviour could not be runtime-verified.",
+      "recommendation": "Confirm a reject control is rendered and reachable without JavaScript errors.",
+      "finding_id": "CONS-003"
+    },
+    {
+      "module": "consent",
+      "category": "runtime",
+      "severity": "warning",
+      "title": "Accept button could not be located to test",
+      "description": "https://github.com: no clickable Accept/Allow control was found in the rendered page, so this behaviour could not be runtime-verified.",
+      "recommendation": "Confirm an accept control is rendered and reachable without JavaScript errors.",
+      "finding_id": "CONS-004"
+    },
+    {
+      "module": "ai",
+      "severity": "info",
+      "title": "AI review: Consent is the biggest opportunity",
+      "description": "Based on the other module scores, consent (89/100) is where https://github.com would benefit most from attention first.",
+      "recommendation": "Prioritize the consent findings from this audit before the next run.",
+      "finding_id": "AI-001"
+    }
+  ],
+  "executive_summary": "https://github.com scored 95/100 overall, a strong result across the modules audited. Consent (89/100) is the area most in need of attention. This audit flagged 1 critical issue that should be addressed first.",
+  "priorities": [
+    {
+      "rank": 1,
+      "module": "consent",
+      "severity": "critical",
+      "title": "No cookie-consent banner detected",
+      "description": "https://github.com shows no recognizable consent banner or CMP markup. If this page sets non-essential cookies, this is likely a GDPR/ePrivacy compliance gap.",
+      "recommendation": "Add a consent banner (a CMP like OneTrust/Cookiebot, or a compliant custom implementation) before any non-essential cookies are set.",
+      "effort": "high"
+    },
+    {
+      "rank": 2,
+      "module": "consent",
+      "severity": "warning",
+      "title": "Scripts are not held back until consent is given",
+      "description": "https://github.com does not appear to block non-essential scripts before consent (based on the page's own declared Consent Mode default only \u2014 not independently verified).",
+      "recommendation": "Gate non-essential scripts (analytics, ads, embeds) behind an explicit consent check rather than loading them unconditionally.",
+      "effort": "medium"
+    },
+    {
+      "rank": 3,
+      "module": "consent",
+      "severity": "warning",
+      "title": "Reject button could not be located to test",
+      "description": "https://github.com: no clickable Reject/Decline control was found in the rendered page, so this behaviour could not be runtime-verified.",
+      "recommendation": "Confirm a reject control is rendered and reachable without JavaScript errors.",
+      "effort": "medium"
+    },
+    {
+      "rank": 4,
+      "module": "consent",
+      "severity": "warning",
+      "title": "Accept button could not be located to test",
+      "description": "https://github.com: no clickable Accept/Allow control was found in the rendered page, so this behaviour could not be runtime-verified.",
+      "recommendation": "Confirm an accept control is rendered and reachable without JavaScript errors.",
+      "effort": "medium"
+    },
+    {
+      "rank": 5,
+      "module": "images",
+      "severity": "warning",
+      "title": "Images missing width/height attributes",
+      "description": "24 of 24 image(s) on https://github.com have no width/height attributes (or aspect-ratio style): https://github.githubassets.com/assets/particles-170bd1fd231f4669.png, //images.ctfassets.net/8aevphvgewt8/g1XhuDG7foMyNWIEIpGJj/b40a790b854d0803704deb7905b1bd82/logo-duolingo-14477f9e54a6.svg, //images.ctfassets.net/8aevphvgewt8/6Qr8Snm4JceoMFRJhapgFa/802ded1d2c486a9d0a4c073d9f8f38f4/logo-gartner-aa8c2e452b64.svg, //images.ctfassets.net/8aevphvgewt8/1Dt1ncaR6ZM4dQvknFzfBI/e5c2092be5bd53881622eced4fd37564/accordion-1-ce487d44c0bf.webp, //images.ctfassets.net/8aevphvgewt8/1uXZYDy7dMcH9QwxuAU06F/1cb167cc60d725b8cf7089faf9a4ed06/accordion-2-730955545f07.webp. Without a reserved size, the browser doesn't know how much space to leave for the image before it loads, so surrounding content jumps once it arrives \u2014 a direct Cumulative Layout Shift contributor.",
+      "recommendation": "Add width and height attributes (or a CSS aspect-ratio) matching the image's intrinsic size so the browser can reserve layout space up front.",
+      "effort": "medium"
+    }
+  ],
+  "business_impact": [
+    {
+      "title": "Many render-blocking resources in <head>",
+      "affected_area": "Performance",
+      "impact": "Slower pages increase bounce rate and lower conversion, especially on mobile.",
+      "severity": "warning"
+    },
+    {
+      "title": "TLS certificate expiring soon",
+      "affected_area": "Security",
+      "impact": "Leaves visitor data and site trust exposed to compromise or defacement.",
+      "severity": "warning"
+    },
+    {
+      "title": "Button(s) with no visible or accessible label",
+      "affected_area": "Ux",
+      "impact": "Left unresolved, this continues to work against the site's core goals.",
+      "severity": "warning"
+    },
+    {
+      "title": "Body copy scores as hard to read",
+      "affected_area": "Ux",
+      "impact": "Left unresolved, this continues to work against the site's core goals.",
+      "severity": "warning"
+    },
+    {
+      "title": "Images missing width/height attributes",
+      "affected_area": "Images",
+      "impact": "Left unresolved, this continues to work against the site's core goals.",
+      "severity": "warning"
+    }
+  ],
+  "action_plan": {
+    "quick_wins": [
+      {
+        "title": "No cookie-consent banner detected",
+        "module": "consent",
+        "severity": "critical",
+        "effort": "high",
+        "step": "Add a consent banner (a CMP like OneTrust/Cookiebot, or a compliant custom implementation) before any non-essential cookies are set."
+      }
+    ],
+    "short_term": [
+      {
+        "title": "Scripts are not held back until consent is given",
+        "module": "consent",
+        "severity": "warning",
+        "effort": "medium",
+        "step": "Gate non-essential scripts (analytics, ads, embeds) behind an explicit consent check rather than loading them unconditionally."
+      },
+      {
+        "title": "Reject button could not be located to test",
+        "module": "consent",
+        "severity": "warning",
+        "effort": "medium",
+        "step": "Confirm a reject control is rendered and reachable without JavaScript errors."
+      },
+      {
+        "title": "Accept button could not be located to test",
+        "module": "consent",
+        "severity": "warning",
+        "effort": "medium",
+        "step": "Confirm an accept control is rendered and reachable without JavaScript errors."
+      },
+      {
+        "title": "Images missing width/height attributes",
+        "module": "images",
+        "severity": "warning",
+        "effort": "medium",
+        "step": "Add width and height attributes (or a CSS aspect-ratio) matching the image's intrinsic size so the browser can reserve layout space up front."
+      },
+      {
+        "title": "First image on the page is lazy-loaded",
+        "module": "images",
+        "severity": "warning",
+        "effort": "medium",
+        "step": "Remove loading=\"lazy\" from the first/hero image (and consider fetchpriority=\"high\" on it instead); reserve lazy loading for images further down the page."
+      }
+    ],
+    "long_term": [
+      {
+        "title": "AI review: Consent is the biggest opportunity",
+        "module": "ai",
+        "severity": "info",
+        "effort": "low",
+        "step": "Prioritize the consent findings from this audit before the next run."
+      },
+      {
+        "title": "Large HTML document",
+        "module": "performance",
+        "severity": "info",
+        "effort": "low",
+        "step": "Reduce inline scripts/styles and repeated markup; consider server-side pagination for very long pages."
+      },
+      {
+        "title": "Images missing explicit dimensions",
+        "module": "performance",
+        "severity": "info",
+        "effort": "low",
+        "step": "Add width and height attributes (or aspect-ratio in CSS) to every <img> so the browser reserves the right amount of space."
+      },
+      {
+        "title": "Missing Permissions-Policy header",
+        "module": "security",
+        "severity": "info",
+        "effort": "low",
+        "step": "Add a `Permissions-Policy` header that explicitly disables APIs the site doesn't use, e.g. `Permissions-Policy: camera=(), microphone=(), geolocation=()`."
+      },
+      {
+        "title": "Missing Cross-Origin-Opener-Policy header",
+        "module": "security",
+        "severity": "info",
+        "effort": "low",
+        "step": "Add `Cross-Origin-Opener-Policy: same-origin` unless the site specifically relies on cross-origin window references."
+      }
+    ]
+  },
+  "analytics": {
+    "trackers_detected": [],
+    "tag_manager_detected": false,
+    "gtm_container_id": null,
+    "ga_measurement_id": null,
+    "vendor_configs": {},
+    "page_results": [],
+    "site_coverage": {},
+    "cross_page_findings": [],
+    "data_layer_present": false,
+    "pageview_events_found": 0,
+    "custom_events_found": 0,
+    "analytics_score": 100,
+    "runtime_available": false,
+    "runtime_tested": false,
+    "runtime_result": {
+      "available": false,
+      "error": "BrowserType.launch: Executable doesn't exist at /opt/pw-browsers/chromium-1134/chrome-linux/chrome\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n\u2551 Looks like Playwright was just installed or updated.       \u2551\n\u2551 Please run the following command to download new browsers: \u2551\n\u2551                                                            \u2551\n\u2551     playwright install                                     \u2551\n\u2551                                                            \u2551\n\u2551 <3 Playwright Team                                         \u2551\n\u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d",
+      "vendors": {},
+      "clicked_element": null,
+      "tested_at": "2026-09-09T10:54:25.254503+00:00"
+    }
+  },
+  "consent": {
+    "has_cookie_banner": false,
+    "banner_blocks_scripts_pre_consent": false,
+    "gdpr_compliant": false,
+    "gdpr_checks": {
+      "consent_banner": false,
+      "accept_control": false,
+      "reject_control": false,
+      "reject_parity": false,
+      "trackers_blocked_pre_consent": false,
+      "cookies_blocked_pre_consent": false,
+      "consent_is_granular": true,
+      "privacy_policy_available": false,
+      "consent_withdrawal_available": false,
+      "reject_blocks_tracking": null
+    },
+    "ccpa_compliant": false,
+    "ccpa_checks": {
+      "privacy_policy_available": false,
+      "privacy_choices_link": false,
+      "do_not_sell_link": false,
+      "opt_out_mechanism": false,
+      "gpc_honored": false,
+      "opt_out_behavior_verified": null
+    },
+    "privacy_policy_found": false,
+    "privacy_policy_url": null,
+    "cookies_detected": [
+      {
+        "name": "_gh_sess",
+        "category": "unknown",
+        "domain": "github.com",
+        "expires": "session"
+      },
+      {
+        "name": "_octo",
+        "category": "unknown",
+        "domain": "github.com",
+        "expires": 365.0
+      },
+      {
+        "name": "logged_in",
+        "category": "unknown",
+        "domain": "github.com",
+        "expires": 365.0
+      }
+    ],
+    "third_party_trackers": [],
+    "consent_score": 89,
+    "runtime_available": true,
+    "runtime_tested": false,
+    "runtime_result": {
+      "available": true,
+      "error": "BrowserType.launch: Executable doesn't exist at /opt/pw-browsers/chromium-1134/chrome-linux/chrome\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n\u2551 Looks like Playwright was just installed or updated.       \u2551\n\u2551 Please run the following command to download new browsers: \u2551\n\u2551                                                            \u2551\n\u2551     playwright install                                     \u2551\n\u2551                                                            \u2551\n\u2551 <3 Playwright Team                                         \u2551\n\u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d",
+      "accept_button_found": false,
+      "reject_button_found": false,
+      "manage_button_found": false,
+      "accept_clicked": false,
+      "reject_clicked": false,
+      "manage_clicked": false,
+      "before_consent": {
+        "available": false,
+        "cookies": [],
+        "requests": [],
+        "error": null
+      },
+      "after_reject": {
+        "available": false,
+        "cookies": [],
+        "requests": [],
+        "error": null
+      },
+      "after_accept": {
+        "available": false,
+        "cookies": [],
+        "requests": [],
+        "error": null
+      },
+      "initial_banner_screenshot": null,
+      "preferences_screenshot": null,
+      "reject_screenshot": null,
+      "accept_screenshot": null,
+      "reject_blocks_tracking": null,
+      "accept_allows_tracking": null,
+      "personalize_exposes_controls": null,
+      "tested_at": "2026-09-09T10:54:24.368138+00:00"
+    },
+    "banner_screenshot_url": null,
+    "preferences_screenshot_url": null,
+    "reject_screenshot_url": null,
+    "accept_screenshot_url": null
+  },
+  "screenshots": [],
+  "cookie_evidence": {
+    "before_consent": [],
+    "after_reject": [],
+    "after_accept": []
+  },
+  "network_evidence": {
+    "before_consent": [],
+    "after_reject": [],
+    "after_accept": [],
+    "analytics_runtime": []
+  }
+}

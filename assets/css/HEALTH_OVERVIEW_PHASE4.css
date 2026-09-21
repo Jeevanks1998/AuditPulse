@@ -1,0 +1,402 @@
+/* ==========================================================================
+   Phase 4 — Health Overview Redesign (CSS Only)
+   
+   This stylesheet replaces the existing health overview styling from
+   dashboard.css. Simply add this after dashboard.css or replace the
+   relevant sections.
+   
+   All HTML IDs and classes remain compatible with dashboard.js.
+   No JavaScript modifications needed.
+   ========================================================================== */
+
+/* Main card container */
+.health-overview-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-8);
+}
+
+.health-overview__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+/* ============================================================================
+   OVERALL SCORE RING VISUALIZATION
+   ============================================================================ */
+
+.health-overview__main {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: var(--sp-8);
+  align-items: center;
+}
+
+.health-overview__ring-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-4);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.04) 0%, rgba(16, 185, 129, 0.04) 100%);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border);
+  transition: all var(--dur-base) var(--ease-out);
+}
+
+.health-overview__ring-container:hover {
+  border-color: var(--border-strong);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.06) 0%, rgba(16, 185, 129, 0.06) 100%);
+}
+
+#healthRing {
+  position: relative;
+  width: 180px;
+  height: 180px;
+}
+
+.health-overview__ring-svg {
+  transform: rotate(-90deg);
+  filter: drop-shadow(0 4px 12px rgba(37, 99, 235, 0.1));
+  transition: filter var(--dur-base) var(--ease-out);
+}
+
+.health-overview__ring-bg {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 10;
+  stroke-linecap: round;
+}
+
+#healthRingCircle {
+  fill: none;
+  stroke-width: 10;
+  stroke-dasharray: 452;
+  stroke-linecap: round;
+  transition: stroke-dashoffset var(--dur-slow) var(--ease-out), 
+              stroke var(--dur-slow) var(--ease-out);
+  animation: ringAppear 0.8s var(--ease-out) backwards;
+}
+
+/* Ring color variants - using SVG gradients */
+#healthRing[data-band="good"] #healthRingCircle {
+  stroke: url(#gradient-good);
+}
+
+#healthRing[data-band="mid"] #healthRingCircle {
+  stroke: url(#gradient-mid);
+}
+
+#healthRing[data-band="bad"] #healthRingCircle {
+  stroke: url(#gradient-bad);
+}
+
+.health-overview__ring-label {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.health-overview__ring-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-3xl);
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+  transition: font-size var(--dur-fast) var(--ease-out);
+}
+
+.health-overview__ring-label small {
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* ============================================================================
+   COMPACT SCORE ROWS
+   Replaces the old 5-card grid: one flat list of rows inside the same
+   single health-overview-card container, ring on the left (unchanged
+   above) and rows on the right — icon, category name, a thin progress
+   bar, and the score, all on one line.
+   ============================================================================ */
+
+.health-overview__rows {
+  display: flex;
+  flex-direction: column;
+  animation: categoriesAppear 0.6s var(--ease-out) backwards;
+}
+
+@keyframes categoriesAppear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.health-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border);
+  animation: rowAppear 0.4s var(--ease-out) backwards;
+}
+
+.health-row:last-child {
+  border-bottom: none;
+}
+
+.health-row:nth-child(1) { animation-delay: 0.05s; }
+.health-row:nth-child(2) { animation-delay: 0.1s; }
+.health-row:nth-child(3) { animation-delay: 0.15s; }
+.health-row:nth-child(4) { animation-delay: 0.2s; }
+.health-row:nth-child(5) { animation-delay: 0.25s; }
+
+@keyframes rowAppear {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.health-row__icon {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.health-row__icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* Icon color per category — same palette the previous card design used,
+   just applied to a small row icon instead of a card header. */
+.health-row__icon--performance {
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--color-primary);
+}
+
+.health-row__icon--analytics {
+  background: rgba(14, 165, 233, 0.1);
+  color: var(--color-accent-sky);
+}
+
+.health-row__icon--consent {
+  background: rgba(249, 115, 22, 0.1);
+  color: var(--color-accent-orange);
+}
+
+.health-row__label {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 0 0 106px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.health-row__bar {
+  flex: 1;
+  height: 4px;
+  background: var(--border);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  position: relative;
+}
+
+.health-row__fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  transition: width var(--dur-base) var(--ease-out);
+  width: 0%;
+}
+
+/* Fill color per category */
+.health-row[data-category="performance"] .health-row__fill {
+  background: linear-gradient(90deg, var(--color-primary), #3B82F6);
+}
+
+.health-row[data-category="analytics"] .health-row__fill {
+  background: linear-gradient(90deg, var(--color-accent-sky), #22D3EE);
+}
+
+.health-row[data-category="consent"] .health-row__fill {
+  background: linear-gradient(90deg, var(--color-accent-orange), #FB923C);
+}
+
+.health-row__value {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+  width: 34px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ============================================================================
+   RING ANIMATIONS
+   ============================================================================ */
+
+@keyframes ringAppear {
+  from {
+    stroke-dashoffset: 452;
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Pulse animation for high scores */
+#healthRing[data-band="good"] .health-overview__ring-svg {
+  animation: ringSpin 20s linear infinite;
+}
+
+@keyframes ringSpin {
+  from {
+    filter: drop-shadow(0 4px 12px rgba(37, 99, 235, 0.1));
+  }
+  50% {
+    filter: drop-shadow(0 4px 16px rgba(37, 99, 235, 0.15));
+  }
+  to {
+    filter: drop-shadow(0 4px 12px rgba(37, 99, 235, 0.1));
+  }
+}
+
+/* ============================================================================
+   RESPONSIVE DESIGN
+   ============================================================================ */
+
+@media (max-width: 1024px) {
+  .health-overview__main {
+    grid-template-columns: 1fr;
+    gap: var(--sp-6);
+  }
+}
+
+@media (max-width: 768px) {
+  .health-overview__ring-container {
+    padding: var(--sp-3);
+  }
+  
+  #healthRing {
+    width: 160px;
+    height: 160px;
+  }
+  
+  .health-overview__ring-value {
+    font-size: var(--fs-2xl);
+  }
+
+  .health-row__label {
+    flex-basis: 84px;
+    font-size: var(--fs-xs);
+  }
+
+  .health-row__icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  .health-row__icon svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .health-row__value {
+    font-size: var(--fs-xs);
+    width: 30px;
+  }
+}
+
+@media (max-width: 640px) {
+  .health-overview__main {
+    gap: var(--sp-5);
+  }
+  
+  .health-overview__ring-container {
+    padding: var(--sp-2);
+  }
+  
+  #healthRing {
+    width: 140px;
+    height: 140px;
+  }
+  
+  .health-overview__ring-value {
+    font-size: var(--fs-xl);
+  }
+
+  .health-row__label {
+    flex-basis: 72px;
+  }
+}
+
+/* ============================================================================
+   DARK MODE SUPPORT
+   Theme is controlled by the app's manual toggle (data-theme attribute on
+   <html>, set in app.js), not the OS preference — so this must match the
+   same [data-theme="dark"] selector every other stylesheet uses, not
+   `@media (prefers-color-scheme: dark)`. Using the media query here meant
+   these cards silently ignored a user's in-app Light/Dark choice whenever
+   it didn't match their OS setting.
+   ============================================================================ */
+
+[data-theme="dark"] .health-overview__ring-container {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.08) 0%, rgba(16, 185, 129, 0.08) 100%);
+}
+
+[data-theme="dark"] .health-row {
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .health-row__bar {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .health-overview__ring-svg {
+  filter: drop-shadow(0 4px 12px rgba(37, 99, 235, 0.2));
+}
+
+/* ============================================================================
+   LEGACY SUPPORT (maintain compatibility with old class names)
+   ============================================================================ */
+
+/* Old .health-card__body is replaced by .health-overview__main */
+.health-card__body {
+  display: contents;
+}
+
+/* Old .health-breakdown is replaced by .health-overview__rows */
+.health-breakdown {
+  display: none;
+}
+
+/* Hide old progress bars - they're now in rows */
+.pbar {
+  display: none;
+}

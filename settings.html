@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Settings — AuditPulse</title>
+<link rel="stylesheet" href="assets/css/variables.css">
+<link rel="stylesheet" href="assets/css/style.css">
+<link rel="stylesheet" href="assets/css/animations.css">
+<link rel="stylesheet" href="assets/css/settings.css">
+<link rel="stylesheet" href="assets/css/responsive.css">
+</head>
+<body>
+
+<div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+<div class="app-shell">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar__logo">
+      <div class="sidebar__logo-mark" style="background:#fff;overflow:hidden;"><img src="assets/img/logo.png" alt="AuditPulse logo" style="width:100%;height:100%;object-fit:contain;"></div>
+      <div class="sidebar__logo-text">AuditPulse<span>Website Health AI</span></div>
+    </div>
+
+    <nav>
+      <div class="sidebar__group-label">Workspace</div>
+      <ul class="sidebar__nav">
+        <li><a class="sidebar__link" href="dashboard.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+          Dashboard</a></li>
+        <li><a class="sidebar__link" href="audit.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M11 8v6M8 11h6"/></svg>
+          New Audit</a></li>
+        <li><a class="sidebar__link" href="scheduler.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+          Scheduler</a></li>
+        <li><a class="sidebar__link" href="report.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg>
+          Reports</a></li>
+        <li><a class="sidebar__link" href="email-reports.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
+          Email Reports</a></li>
+        <li><a class="sidebar__link" href="history.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6M12 7v5l4 2"/></svg>
+          History</a></li>
+      </ul>
+
+      <div class="sidebar__group-label" style="margin-top:20px;">Audit Modules</div>
+      <ul class="sidebar__nav">
+        <li><a class="sidebar__link" href="report.html#performance">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/></svg>
+          Performance</a></li>
+        <li><a class="sidebar__link" href="report.html#analytics">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-6 4 3 5-8"/></svg>
+          Analytics</a></li>
+        <li><a class="sidebar__link" href="report.html#consent">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v4M16 4v4M3 10h18"/></svg>
+          Consent Banner</a></li>
+      </ul>
+
+      <div class="sidebar__group-label" style="margin-top:20px;">System</div>
+      <ul class="sidebar__nav">
+        <li><a class="sidebar__link is-active" href="settings.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+          Settings</a></li>
+      </ul>
+    </nav>
+
+    <div class="sidebar__footer">
+      <a class="sidebar__link" href="internal-login.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>
+        Logout</a>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <div>
+    <header class="topbar">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <button class="icon-btn menu-toggle" id="menuToggle" aria-label="Toggle menu">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <div class="topbar__search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input type="text" placeholder="Search website or report…">
+        </div>
+      </div>
+      <div class="topbar__actions">
+        <button class="icon-btn" aria-label="Notifications">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+          <span class="dot"></span>
+        </button>
+        <div class="theme-toggle">
+          <button aria-label="Light mode" class="is-active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
+          <button aria-label="Dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/></svg></button>
+        </div>
+        <div class="profile-chip">
+          <div class="profile-chip__avatar">?</div>
+          <span class="profile-chip__name">…</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <div class="page-head animate-in">
+        <div class="page-head__eyebrow">System</div>
+        <h1>Settings</h1>
+        <p>Manage your profile, notifications, appearance, defaults and API access.</p>
+      </div>
+
+      <div class="settings-layout animate-in">
+
+        <nav class="settings-nav" aria-label="Settings sections">
+          <a href="#profile" class="is-active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Profile</a>
+          <a href="#ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z"/></svg>AI Provider</a>
+          <a href="#notifications"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>Notifications</a>
+          <a href="#appearance"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>Appearance</a>
+          <a href="#schedule"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>Default Schedule</a>
+          <a href="#api"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 9.2-9.2M17 6l3 3M14 9l2 2"/></svg>API Access</a>
+          <a href="#data"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg>Your Data</a>
+        </nav>
+
+        <div id="settingsForm">
+
+          <section class="settings-section card card__pad" id="profile">
+            <div class="settings-section__head">
+              <h3>Profile</h3>
+              <p class="text-tertiary">How you appear in AuditPulse and on emailed reports.</p>
+            </div>
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="settingsName">Full name</label>
+                <input type="text" id="settingsName" autocomplete="name">
+              </div>
+              <div class="form-field">
+                <label for="settingsEmail">Email</label>
+                <input type="email" id="settingsEmail" autocomplete="email">
+              </div>
+              <div class="form-field form-field--full">
+                <label for="settingsCompany">Company</label>
+                <input type="text" id="settingsCompany" autocomplete="organization">
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-section card card__pad" id="ai">
+            <div class="settings-section__head">
+              <h3>AI Provider</h3>
+              <p class="text-tertiary">Powers executive summaries, priorities, business impact and action plans.</p>
+            </div>
+            <div class="form-field">
+              <label for="settingsAiProvider">Provider</label>
+              <select id="settingsAiProvider">
+                <option value="Claude (Anthropic)">Claude (Anthropic)</option>
+              </select>
+              <span class="form-field__hint">The provider and API key used server-side are configured in the backend environment.</span>
+            </div>
+          </section>
+
+          <section class="settings-section card card__pad" id="notifications">
+            <div class="settings-section__head">
+              <h3>Notifications</h3>
+              <p class="text-tertiary">Choose which emails AuditPulse sends you.</p>
+            </div>
+            <div class="settings-toggle-row">
+              <div>
+                <div class="settings-toggle-row__title">Audit completed</div>
+                <div class="settings-toggle-row__desc">Get notified when an audit finishes running.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="settingsNotifyAuditCompleted"><span class="toggle__track"></span></label>
+            </div>
+            <div class="settings-toggle-row">
+              <div>
+                <div class="settings-toggle-row__title">Critical issues found</div>
+                <div class="settings-toggle-row__desc">Alert me straight away when an audit finds a critical issue.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="settingsNotifyCriticalIssue"><span class="toggle__track"></span></label>
+            </div>
+            <div class="settings-toggle-row">
+              <div>
+                <div class="settings-toggle-row__title">Weekly summary</div>
+                <div class="settings-toggle-row__desc">A digest of your sites' health, every week.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="settingsNotifyWeeklySummary"><span class="toggle__track"></span></label>
+            </div>
+          </section>
+
+          <section class="settings-section card card__pad" id="appearance">
+            <div class="settings-section__head">
+              <h3>Appearance</h3>
+              <p class="text-tertiary">Theme and language.</p>
+            </div>
+            <div class="form-field" style="margin-bottom: var(--sp-5);">
+              <label id="settingsThemeLabel">Theme</label>
+              <div class="theme-swatches" role="radiogroup" aria-labelledby="settingsThemeLabel" id="settingsThemeSwatches">
+                <div class="theme-swatch" role="radio" tabindex="0" aria-checked="false" data-theme-choice="light">
+                  <div class="theme-swatch__preview theme-swatch__preview--light"></div><span>Light</span>
+                </div>
+                <div class="theme-swatch" role="radio" tabindex="0" aria-checked="false" data-theme-choice="dark">
+                  <div class="theme-swatch__preview theme-swatch__preview--dark"></div><span>Dark</span>
+                </div>
+                <div class="theme-swatch" role="radio" tabindex="0" aria-checked="false" data-theme-choice="system">
+                  <div class="theme-swatch__preview theme-swatch__preview--system"></div><span>System</span>
+                </div>
+              </div>
+            </div>
+            <div class="form-field">
+              <label for="settingsLanguage">Language</label>
+              <select id="settingsLanguage">
+                <option value="English">English</option>
+              </select>
+              <span class="form-field__hint">English is currently the only supported language.</span>
+            </div>
+          </section>
+
+          <section class="settings-section card card__pad" id="schedule">
+            <div class="settings-section__head">
+              <h3>Default Schedule</h3>
+              <p class="text-tertiary">Pre-filled whenever you set up a recurring audit.</p>
+            </div>
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="settingsScheduleFrequency">Frequency</label>
+                <select id="settingsScheduleFrequency">
+                  <option value="Daily">Daily</option>
+                  <option value="Weekly">Weekly</option>
+                  <option value="Monthly">Monthly</option>
+                  <option value="Yearly">Yearly</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label for="settingsScheduleTime">Time</label>
+                <input type="text" id="settingsScheduleTime" placeholder="Mondays, 6:00 AM">
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-section card card__pad" id="api">
+            <div class="settings-section__head">
+              <h3>API Access</h3>
+              <p class="text-tertiary">Use this key to call the AuditPulse API. Treat it like a password.</p>
+            </div>
+            <div class="api-key-row">
+              <div class="api-key-row__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 9.2-9.2M17 6l3 3M14 9l2 2"/></svg></div>
+              <div class="api-key-row__body">
+                <div class="api-key-row__name">Personal API key</div>
+                <div class="api-key-row__key" id="settingsApiKey">—</div>
+              </div>
+              <button type="button" class="btn btn--ghost btn--sm" id="settingsApiKeyToggle">Show</button>
+              <button type="button" class="btn btn--secondary btn--sm" id="settingsApiKeyCopy">Copy</button>
+            </div>
+            <button type="button" class="btn btn--danger btn--sm" id="settingsApiKeyRegen">Regenerate key</button>
+            <div class="form-field__hint" style="margin-top: var(--sp-2);">Regenerating immediately invalidates the current key.</div>
+          </section>
+
+          <section class="settings-section card card__pad" id="data">
+            <div class="settings-section__head">
+              <h3>Your Data</h3>
+              <p class="text-tertiary">Download your settings and every audit as a JSON file.</p>
+            </div>
+            <button type="button" class="btn btn--secondary" id="settingsExportBtn">Export data (JSON)</button>
+          </section>
+
+          <div class="settings-footer-bar">
+            <button type="button" class="btn btn--secondary" id="settingsResetBtn">Discard changes</button>
+            <button type="button" class="btn btn--primary" id="settingsSaveBtn" disabled>Save changes</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="assets/js/env.js"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/utils.js"></script>
+<script src="assets/js/validation.js"></script>
+<script src="assets/js/notifications.js"></script>
+<script src="assets/js/modal.js"></script>
+<script src="assets/js/loader.js"></script>
+<script src="assets/js/api.js"></script>
+<script src="assets/js/authguard.js"></script>
+<script src="assets/js/permissions.js"></script>
+<script src="assets/js/app.js"></script>
+<script src="assets/js/settings.js"></script>
+
+<div style="text-align:center; padding: 18px 16px; font-size: 13px; color: var(--text-tertiary, #94A3B8); border-top: 1px solid var(--border, #E2E8F0);"><strong>Designed by Jeevan K S</strong></div>
+</body>
+</html>

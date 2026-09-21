@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuditPulse — Internal Digital Audit Platform</title>
+<link rel="stylesheet" href="assets/css/variables.css">
+<link rel="stylesheet" href="assets/css/style.css">
+<link rel="stylesheet" href="assets/css/animations.css">
+<link rel="stylesheet" href="assets/css/login.css">
+<link rel="stylesheet" href="assets/css/dashboard.css">
+<link rel="stylesheet" href="assets/css/responsive.css">
+<style>
+  /* ---------------------------------------------------------------------
+     Home page only. Enterprise-internal styling: navy + blue, restrained
+     shadows, 10–14px radii, no marketing gradients or fabricated stats.
+     --------------------------------------------------------------------- */
+
+  .home { position: relative; }
+
+  .home-nav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: var(--sp-5) var(--sp-10);
+    max-width: 1280px; margin: 0 auto;
+  }
+  .home-nav__brand { display: flex; align-items: center; gap: 10px; color: var(--text-primary); }
+  .home-nav__mark {
+    width: 34px; height: 34px; border-radius: var(--radius-sm);
+    background: var(--color-primary);
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .home-nav__brand-text { display: flex; align-items: center; gap: 10px; }
+  .home-nav__name { font-family: var(--font-display); font-weight: 700; font-size: var(--fs-md); }
+  .home-nav__badge {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.03em;
+    color: var(--text-secondary); background: var(--surface-sunken);
+    border: 1px solid var(--border); padding: 3px 10px; border-radius: var(--radius-sm);
+  }
+  .home-nav__right { display: flex; align-items: center; gap: var(--sp-6); }
+  .home-nav__access {
+    display: flex; align-items: center; gap: 8px;
+    font-size: var(--fs-sm); color: var(--text-secondary);
+  }
+  .home-nav__access svg { width: 16px; height: 16px; color: var(--text-tertiary); }
+
+  /* Hero -------------------------------------------------------------- */
+  .home-hero { position: relative; padding: var(--sp-10) var(--sp-10) var(--sp-12); overflow: hidden; }
+  .home-hero__grid {
+    position: absolute; inset: 0; z-index: -1;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 56px 56px;
+    -webkit-mask-image: radial-gradient(ellipse 70% 60% at 60% 0%, #000 30%, transparent 75%);
+            mask-image: radial-gradient(ellipse 70% 60% at 60% 0%, #000 30%, transparent 75%);
+    opacity: 0.5;
+  }
+  [data-theme="dark"] .home-hero__grid { opacity: 0.25; }
+
+  .home-hero__inner {
+    max-width: 1280px; margin: 0 auto;
+    display: grid; grid-template-columns: 1fr 460px; gap: var(--sp-12); align-items: center;
+  }
+  .home-hero__eyebrow {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-tertiary); margin-bottom: var(--sp-5);
+  }
+  .home-hero__eyebrow::before { content: ''; width: 20px; height: 2px; background: var(--color-primary); display: inline-block; }
+  .home-hero h1 { font-size: clamp(2.1rem, 3.6vw, 2.9rem); line-height: 1.15; letter-spacing: -0.01em; margin-bottom: var(--sp-5); }
+  .home-hero h1 span { color: var(--color-primary); }
+  .home-hero p.lede { font-size: var(--fs-base); line-height: 1.65; color: var(--text-secondary); max-width: 520px; margin-bottom: var(--sp-8); }
+  .home-hero__ctas { display: flex; gap: var(--sp-3); margin-bottom: var(--sp-6); }
+  .home-hero__restricted {
+    display: flex; align-items: center; gap: 8px;
+    font-size: var(--fs-sm); color: var(--text-tertiary);
+  }
+  .home-hero__restricted svg { width: 14px; height: 14px; }
+
+  .home-tagline {
+    position: absolute; left: var(--sp-10); bottom: var(--sp-6);
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-tertiary); line-height: 1.7;
+  }
+  .home-tagline span { display: block; width: 22px; height: 2px; background: var(--border-strong); margin-bottom: 8px; }
+
+  /* Mini dashboard preview --------------------------------------------- */
+  .home-preview {
+    display: flex; border-radius: var(--radius-md); overflow: hidden;
+    border: 1px solid var(--border); box-shadow: var(--shadow-lg);
+    background: var(--surface);
+  }
+  .home-preview__side {
+    width: 108px; flex-shrink: 0; background: var(--sidebar-bg); padding: var(--sp-4) var(--sp-2);
+  }
+  .home-preview__brand {
+    display: flex; align-items: center; gap: 8px; padding: 0 6px var(--sp-4);
+    color: #fff; font-family: var(--font-display); font-weight: 700; font-size: 12px;
+  }
+  .home-preview__brand-mark {
+    width: 22px; height: 22px; border-radius: 6px; background: var(--color-primary);
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .home-preview__nav { display: flex; flex-direction: column; gap: 2px; }
+  .home-preview__nav-item {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11px; font-weight: 500; color: var(--sidebar-text);
+    padding: 7px 8px; border-radius: 7px;
+  }
+  .home-preview__nav-item svg { width: 13px; height: 13px; flex-shrink: 0; }
+  .home-preview__nav-item.is-active { background: var(--color-primary); color: #fff; }
+
+  .home-preview__main { flex: 1; padding: var(--sp-4) var(--sp-5); min-width: 0; }
+  .home-preview__head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: var(--sp-4); }
+  .home-preview__head h4 { font-size: var(--fs-base); font-weight: 700; margin-bottom: 2px; }
+  .home-preview__url { font-size: 12px; color: var(--text-tertiary); }
+  .home-preview__timestamp { font-size: 11px; color: var(--text-tertiary); text-align: right; white-space: nowrap; }
+
+  .home-preview__health { display: flex; align-items: center; gap: var(--sp-5); padding-bottom: var(--sp-4); border-bottom: 1px solid var(--border); margin-bottom: var(--sp-4); }
+  .home-preview__ring-label { font-size: var(--fs-sm); font-weight: 700; color: var(--text-primary); margin-bottom: 2px; }
+  .home-preview__ring-sub { font-size: 12px; color: var(--text-tertiary); max-width: 190px; line-height: 1.5; }
+
+  .home-preview__stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-2); margin-bottom: var(--sp-4); }
+  .home-preview__stat { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; }
+  .home-preview__stat-label { font-size: 10px; color: var(--text-tertiary); margin-bottom: 4px; }
+  .home-preview__stat-value { display: flex; align-items: baseline; gap: 4px; font-size: var(--fs-base); font-weight: 700; color: var(--text-primary); }
+  .home-preview__stat-status { font-size: 10px; color: var(--color-success); font-weight: 600; margin-top: 2px; }
+
+  .home-preview__foot { display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: var(--text-tertiary); }
+  .home-preview__foot b { color: var(--text-secondary); font-weight: 700; }
+
+  /* Capabilities -------------------------------------------------------- */
+  .home-capabilities { padding: var(--sp-16) var(--sp-10); max-width: 1280px; margin: 0 auto; }
+  .home-capabilities__head {
+    display: flex; align-items: flex-end; justify-content: space-between; gap: var(--sp-8);
+    margin-bottom: var(--sp-10); padding-bottom: var(--sp-8); border-bottom: 1px solid var(--border);
+  }
+  .home-capabilities__eyebrow {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-tertiary); margin-bottom: var(--sp-4);
+  }
+  .home-capabilities__eyebrow::before { content: ''; width: 20px; height: 2px; background: var(--color-primary); display: inline-block; }
+  .home-capabilities__head h2 { font-size: var(--fs-2xl); letter-spacing: -0.01em; max-width: 480px; }
+  .home-capabilities__head p { font-size: var(--fs-base); color: var(--text-secondary); line-height: 1.6; max-width: 340px; text-align: right; }
+
+  .home-capabilities__grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--sp-4); }
+  .home-cap-card {
+    border: 1px solid var(--border); border-radius: var(--radius-md);
+    background: var(--surface); padding: var(--sp-5); box-shadow: var(--shadow-sm);
+  }
+  .home-cap-card__icon {
+    width: 38px; height: 38px; border-radius: var(--radius-sm);
+    display: flex; align-items: center; justify-content: center; margin-bottom: var(--sp-4);
+  }
+  .home-cap-card__icon svg { width: 18px; height: 18px; }
+  .home-cap-card h3 { font-size: var(--fs-base); font-weight: 700; margin-bottom: 6px; }
+  .home-cap-card p { font-size: 13px; color: var(--text-secondary); line-height: 1.55; }
+
+  /* Footer ---------------------------------------------------------------- */
+  .home-footer {
+    border-top: 1px solid var(--border);
+    padding: var(--sp-6) var(--sp-10);
+    max-width: 1280px; margin: 0 auto;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: var(--fs-sm); color: var(--text-tertiary);
+  }
+  .home-footer__brand { display: flex; align-items: center; gap: 10px; color: var(--text-secondary); }
+  .home-footer__mark {
+    width: 26px; height: 26px; border-radius: 7px; background: var(--color-primary);
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .home-footer__name { font-weight: 700; color: var(--text-primary); }
+  .home-footer__sep { color: var(--border-strong); }
+
+  @media (max-width: 980px) {
+    .home-hero__inner { grid-template-columns: 1fr; }
+    .home-capabilities__grid { grid-template-columns: repeat(2, 1fr); }
+    .home-capabilities__head { flex-direction: column; align-items: flex-start; }
+    .home-capabilities__head p { text-align: left; }
+    .home-tagline { display: none; }
+  }
+  @media (max-width: 640px) {
+    .home-nav { padding: var(--sp-4); }
+    .home-nav__access span { display: none; }
+    .home-hero { padding: var(--sp-8) var(--sp-4); }
+    .home-hero__ctas { flex-direction: column; }
+    .home-hero__ctas .btn { width: 100%; justify-content: center; }
+    .home-capabilities { padding: var(--sp-10) var(--sp-4); }
+    .home-capabilities__grid { grid-template-columns: 1fr; }
+    .home-footer { padding: var(--sp-5) var(--sp-4); flex-direction: column; gap: 10px; text-align: center; }
+  }
+</style>
+</head>
+<body>
+
+<div class="home">
+
+  <nav class="home-nav">
+    <div class="home-nav__brand">
+      <div class="home-nav__mark" style="background:#fff;overflow:hidden;"><img src="assets/img/logo.png" alt="AuditPulse logo" style="width:100%;height:100%;object-fit:contain;"></div>
+      <div class="home-nav__brand-text">
+        <span class="home-nav__name">AuditPulse</span>
+        <span class="home-nav__badge">INTERNAL PLATFORM</span>
+      </div>
+    </div>
+    <div class="home-nav__right">
+      <div class="home-nav__access">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M9 8h1M9 12h1M9 16h1M14 8h1M14 12h1M14 16h1"/></svg>
+        <span>Internal Access Only</span>
+      </div>
+      <a href="internal-login.html" class="btn btn--primary">
+        Sign in
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+    </div>
+  </nav>
+
+  <section class="home-hero">
+    <div class="home-hero__grid"></div>
+    <div class="home-hero__inner">
+      <div>
+        <div class="home-hero__eyebrow">Internal Digital Audit Platform</div>
+        <h1>A smarter way to monitor<br>your <span>digital experience.</span></h1>
+        <p class="lede">AuditPulse provides a centralized workspace to assess website performance, accessibility, analytics, consent and security — helping teams identify issues and take action with confidence.</p>
+        <div class="home-hero__ctas">
+          <a href="internal-login.html" class="btn btn--primary btn--lg">
+            Enter AuditPulse
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+          <a href="#capabilities" class="btn btn--secondary btn--lg">Platform overview</a>
+        </div>
+        <div class="home-hero__restricted">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          Restricted to authorized internal users.
+        </div>
+      </div>
+
+      <div class="home-preview">
+        <div class="home-preview__side">
+          <div class="home-preview__brand">
+            <div class="home-preview__brand-mark">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 12h6l2-4 2 8 2-4h6"/></svg>
+            </div>
+            AuditPulse
+          </div>
+          <div class="home-preview__nav">
+            <div class="home-preview__nav-item is-active">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+              Dashboard
+            </div>
+            <div class="home-preview__nav-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              New Audit
+            </div>
+            <div class="home-preview__nav-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg>
+              Reports
+            </div>
+            <div class="home-preview__nav-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6M12 7v5l4 2"/></svg>
+              History
+            </div>
+            <div class="home-preview__nav-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9M4.6 9a1.7 1.7 0 0 0-.3-1.9"/></svg>
+              Settings
+            </div>
+          </div>
+        </div>
+
+        <div class="home-preview__main">
+          <div class="home-preview__head">
+            <div>
+              <h4>Website Health</h4>
+              <div class="home-preview__url">example.com</div>
+            </div>
+            <div class="home-preview__timestamp">Last audited:<br>08 Sep 2025, 10:24 AM</div>
+          </div>
+
+          <div class="home-preview__health">
+            <div class="vring vring--sm" data-band="good" style="--ring-circumference: 176;">
+              <svg width="70" height="70" viewBox="0 0 70 70">
+                <circle class="vring__track" cx="35" cy="35" r="28" stroke-width="6"/>
+                <circle class="vring__value" cx="35" cy="35" r="28" stroke-width="6" stroke-dasharray="176" stroke-dashoffset="14"/>
+              </svg>
+              <div class="vring__label">92<small>/100</small></div>
+            </div>
+            <div>
+              <div class="home-preview__ring-label">Overall Health</div>
+              <div class="home-preview__ring-sub">Your website is performing well.</div>
+            </div>
+          </div>
+
+          <div class="home-preview__stats">
+            <div class="home-preview__stat">
+              <div class="home-preview__stat-label">Performance</div>
+              <div class="home-preview__stat-value">88</div>
+              <div class="home-preview__stat-status">● Good</div>
+            </div>
+            <div class="home-preview__stat">
+              <div class="home-preview__stat-label">Accessibility</div>
+              <div class="home-preview__stat-value">91</div>
+              <div class="home-preview__stat-status">● Good</div>
+            </div>
+            <div class="home-preview__stat">
+              <div class="home-preview__stat-label">Analytics</div>
+              <div class="home-preview__stat-value">94</div>
+              <div class="home-preview__stat-status">● Good</div>
+            </div>
+            <div class="home-preview__stat">
+              <div class="home-preview__stat-label">Security</div>
+              <div class="home-preview__stat-value">90</div>
+              <div class="home-preview__stat-status">● Good</div>
+            </div>
+          </div>
+
+          <div class="home-preview__foot">
+            <span>All core systems operational</span>
+            <b>AuditPulse</b>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="home-tagline"><span></span>Better websites<br>Stronger teams</div>
+  </section>
+
+  <section class="home-capabilities" id="capabilities">
+    <div class="home-capabilities__head">
+      <div>
+        <div class="home-capabilities__eyebrow">Core Audit Capabilities</div>
+        <h2>One platform. Multiple digital health signals.</h2>
+      </div>
+      <p>Comprehensive insights to help your team maintain high-performing and compliant websites.</p>
+    </div>
+
+    <div class="home-capabilities__grid">
+      <div class="home-cap-card">
+        <div class="home-cap-card__icon" style="background: var(--color-primary-soft);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/></svg>
+        </div>
+        <h3>Performance</h3>
+        <p>Monitor speed, Core Web Vitals and technical performance.</p>
+      </div>
+      <div class="home-cap-card">
+        <div class="home-cap-card__icon" style="background: var(--color-success-soft);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#067A55" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="4" r="2"/><path d="M19 7 12 9 5 7M12 9v5M8 21l4-7 4 7M8 14l-3 2M16 14l3 2"/></svg>
+        </div>
+        <h3>Accessibility</h3>
+        <p>Identify accessibility barriers and compliance concerns.</p>
+      </div>
+      <div class="home-cap-card">
+        <div class="home-cap-card__icon" style="background: #EDE9FE;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#7C3AED" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="12" width="4" height="8" rx="1"/><rect x="10" y="7" width="4" height="13" rx="1"/><rect x="16" y="3" width="4" height="17" rx="1"/></svg>
+        </div>
+        <h3>Analytics</h3>
+        <p>Validate tracking implementation and data flow.</p>
+      </div>
+      <div class="home-cap-card">
+        <div class="home-cap-card__icon" style="background: #FFEDD5;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#C2410C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>
+        </div>
+        <h3>Consent</h3>
+        <p>Review consent configuration and implementation.</p>
+      </div>
+      <div class="home-cap-card">
+        <div class="home-cap-card__icon" style="background: var(--color-error-soft);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#B91C1C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V6l-8-4Z"/></svg>
+        </div>
+        <h3>Security</h3>
+        <p>Check essential security controls and headers.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="home-footer">
+    <div class="home-footer__brand">
+      <div class="home-footer__mark" style="background:#fff;overflow:hidden;"><img src="assets/img/logo.png" alt="AuditPulse logo" style="width:100%;height:100%;object-fit:contain;"></div>
+      <span class="home-footer__name">AuditPulse</span>
+      <span class="home-footer__sep">|</span>
+      <span>Internal Digital Audit Platform</span>
+    </div>
+    <div><strong>Designed by Jeevan K S</strong></div>
+  </footer>
+
+</div>
+
+<script src="assets/js/env.js"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/utils.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>

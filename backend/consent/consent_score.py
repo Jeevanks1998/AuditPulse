@@ -31,8 +31,13 @@ from consent.consent_mode import ConsentModeDetection
 from consent.preferences import PreferencesDetection
 from cookies.storage import CookieSummary
 
-if TYPE_CHECKING:  # avoid importing consent.runtime at module load time
+if TYPE_CHECKING:  # avoid importing consent.runtime / consent.region_detector at module load time
     from consent.runtime import ConsentRuntimeResult
+    # consent.region_detector imports resolve_applicable_frameworks from
+    # *this* module, so a real (non-TYPE_CHECKING) import here would be
+    # circular — this annotation-only import is safe because
+    # `from __future__ import annotations` makes it a string at runtime.
+    from consent.region_detector import RegionDetectionResult
     from consent.network import PreConsentNetworkResult
 
 MODULE = "consent"
@@ -1141,11 +1146,25 @@ class ConsentSummary:
 
     # Region this audit was evaluated against, and which single regional
     # framework (if any) that resolved to — see resolve_applicable_frameworks.
-    # region_detected is whatever the caller passed in (REGION_UNKNOWN when
-    # not provided/recognized); NOT part of models.consent.Consent yet, so a
-    # caller persisting this needs a column added for it first.
-    region_detected: str = REGION_UNKNOWN
-    gdpr_framework: Optional[str] = None   # "GDPR" / "UK GDPR" / "Swiss FADP" / None
+    # Field names below match models.consent.Consent's columns 1:1 so
+    # `Consent(audit_id=..., **vars(summary))` keeps working without a
+    # translation step. detected_region is the REGION_* bucket
+    # (REGION_UNKNOWN when no region was passed in / detected);
+    # detected_country/region_confidence/region_detection_source/
+    # region_detection_reason default to their "no signal found" values
+    # and are only meaningfully populated when build_consent_summary is
+    # given a consent.region_detector.RegionDetectionResult (see
+    # `region_detection` param below) rather than a bare region string.
+    detected_region: str = REGION_UNKNOWN
+    detected_country: Optional[str] = None
+    # At most one framework ever applies per audit (resolve_applicable_
+    # frameworks picks a single regional framework), so one field covers
+    # both the GDPR-family and CCPA cases — "GDPR" / "UK GDPR" /
+    # "Swiss FADP" / "CCPA/CPRA" / None.
+    compliance_framework: Optional[str] = None
+    region_confidence: str = "none"          # "high" | "medium" | "low" | "none"
+    region_detection_source: str = "None"    # e.g. "Domain + hreflang"
+    region_detection_reason: str = ""
 
     # None ("not assessed") whenever this audit's region isn't subject to
     # the relevant framework at all — NEVER coerced to False, since that
@@ -1244,6 +1263,7 @@ def build_consent_summary(
     network_result: Optional["PreConsentNetworkResult"] = None,
     region: Optional[str] = None,
     california_applicability: Optional[bool] = None,
+    region_detection: Optional["RegionDetectionResult"] = None,
 ) -> ConsentSummary:
     """
     Assembles a ConsentSummary ready to pass straight into
@@ -1272,6 +1292,24 @@ def build_consent_summary(
     `region` defaults to None (treated as unknown, so neither framework is
     assessed) until the caller wires in real region detection.
 
+    `region_detection` is the richer alternative to passing a bare
+    `region` string: consent.region_detector.detect_region's full result
+    (region bucket + country label + confidence + which signal(s) won +
+    a human-readable reason). When given, its `.region` is what actually
+    drives resolve_applicable_frameworks (the plain `region` param is
+    ignored in favor of it), and its country/confidence/source/reason
+    are copied straight onto the summary's detected_country/
+    region_confidence/region_detection_source/region_detection_reason
+    fields — the detail models.consent.Consent's history-page columns
+    exist to show. Its own `.framework` is intentionally NOT trusted
+    directly for compliance_framework below; that's still derived from
+    resolve_applicable_frameworks (this module's own source of truth for
+    the region -> framework mapping, including california_applicability)
+    so the two never disagree even though region_detector computes the
+    same mapping once internally for its own display purposes. Omit
+    `region_detection` (pass a bare `region` string, or nothing) and the
+    detection-detail fields stay at their "no signal" defaults.
+
     `preferences` should be consent.preferences.detect_preferences_link's
     result for this page — needed here (not just the pre-reduced
     `preferences_found` bool) so consent_withdrawal_available can report
@@ -1282,7 +1320,9 @@ def build_consent_summary(
     privacy_choices = detect_privacy_choices_link(page)
     gpc_honored = detect_gpc_handling(page)
 
-    frameworks = resolve_applicable_frameworks(region, california_applicability=california_applicability)
+    effective_region = region_detection.region if region_detection is not None else region
+    frameworks = resolve_applicable_frameworks(effective_region, california_applicability=california_applicability)
+    compliance_framework = frameworks.gdpr_framework_name or ("CCPA/CPRA" if frameworks.assess_ccpa else None)
 
     gdpr_assessment = build_gdpr_assessment(
         page=page,
@@ -1324,8 +1364,12 @@ def build_consent_summary(
     return ConsentSummary(
         has_cookie_banner=banner_found,
         banner_blocks_scripts_pre_consent=behavior.blocks_scripts_pre_consent,
-        region_detected=frameworks.region,
-        gdpr_framework=frameworks.gdpr_framework_name,
+        detected_region=frameworks.region,
+        detected_country=region_detection.region_label if region_detection is not None else None,
+        compliance_framework=compliance_framework,
+        region_confidence=region_detection.confidence if region_detection is not None else "none",
+        region_detection_source=region_detection.source if region_detection is not None else "None",
+        region_detection_reason=region_detection.reason if region_detection is not None else "",
         gdpr_compliant=gdpr_compliant,
         gdpr_assessed=gdpr_assessment.applicable,
         gdpr_checks=gdpr_assessment.as_dict(),

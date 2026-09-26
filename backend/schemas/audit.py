@@ -92,6 +92,26 @@ class ConsentOut(BaseModel):
 
     has_cookie_banner: bool
     banner_blocks_scripts_pre_consent: bool
+
+    # Region detection (consent.region_detector.detect_region, persisted on
+    # models.consent.Consent) — which region this audit was evaluated
+    # against and why. detected_region is the coarse REGION_* bucket
+    # ("EU", "UK", "US-CA", "UNKNOWN", ...); detected_country is the more
+    # specific display label (e.g. "France"). compliance_framework is the
+    # single regional framework (if any) that applied — "GDPR" /
+    # "UK GDPR" / "Swiss FADP" / "CCPA/CPRA" / None. gdpr_assessed /
+    # ccpa_assessed say whether that family of checks applied to this
+    # audit at all — check these before treating gdpr_compliant/
+    # ccpa_compliant below as a real verdict rather than "not assessed".
+    detected_region: str = "UNKNOWN"
+    detected_country: Optional[str] = None
+    compliance_framework: Optional[str] = None
+    region_confidence: str = "none"
+    region_detection_source: str = "None"
+    region_detection_reason: str = ""
+    gdpr_assessed: bool = False
+    ccpa_assessed: bool = False
+
     gdpr_compliant: bool
     # Per-check breakdown behind gdpr_compliant — see
     # consent.consent_score.GDPR_CHECK_ORDER for the ten keys and their

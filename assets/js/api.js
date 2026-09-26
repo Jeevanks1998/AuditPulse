@@ -321,6 +321,7 @@ window.Api = (function () {
     get: function (auditId) { return get('/audits/' + auditId); },
     getStats: function () { return get('/audits/stats'); },
     getRecent: function () { return get('/audits/recent'); },
+    getRegionSummary: function () { return get('/audits/region-summary'); },
     getConsent: function (auditId) { return get('/audits/' + auditId + '/consent'); },
     getAnalytics: function (auditId) { return get('/audits/' + auditId + '/analytics'); }
   };

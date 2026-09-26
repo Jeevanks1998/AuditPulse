@@ -30,6 +30,58 @@ class Consent(Base):
     has_cookie_banner: Mapped[bool] = mapped_column(Boolean, default=False)
     banner_blocks_scripts_pre_consent: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # ------------------------------------------------------------------
+    # Region detection (consent.region_detector.detect_region), stored
+    # verbatim so the history page can show *why* a given audit was (or
+    # wasn't) judged against a framework without re-running detection.
+    # ------------------------------------------------------------------
+    # REGION_* bucket (consent.consent_score.REGION_EU/UK/US_CALIFORNIA/
+    # UNKNOWN/...) — the coarse region resolve_applicable_frameworks
+    # actually keys off. "UNKNOWN" default matches
+    # consent.consent_score.REGION_UNKNOWN for audits with no region
+    # signals (or where the consent module didn't run).
+    detected_region: Mapped[str] = mapped_column(String(20), default="UNKNOWN")
+    # Human-readable, more specific than detected_region — e.g. "France",
+    # "California", "Germany", or "Unknown" — RegionDetectionResult
+    # .region_label. Two sites can share detected_region="EU" but show
+    # different countries here.
+    detected_country: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    # Display name of whichever single regional framework this audit was
+    # actually judged against — "GDPR" / "UK GDPR" / "Swiss FADP" /
+    # "CCPA/CPRA" — or None when detected_region isn't in scope for any
+    # of them (RegionDetectionResult.framework /
+    # ApplicableFrameworks.gdpr_framework_name). At most one framework
+    # ever applies per audit, so this single column (rather than a
+    # separate flag per framework) is enough to know which applied.
+    compliance_framework: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    # "high" | "medium" | "low" | "none" — RegionDetectionResult
+    # .confidence. "none" means no region signal was found at all
+    # (distinct from a low-confidence guess); the history page should
+    # flag "none"/"low" rows as worth a manual look rather than trusting
+    # the auto-detected region outright.
+    region_confidence: Mapped[str] = mapped_column(String(10), default="none")
+    # Which signal(s) won — e.g. "Domain + hreflang", "Country/language
+    # selector" — RegionDetectionResult.source. "None" when no signal
+    # fired.
+    region_detection_source: Mapped[str] = mapped_column(String(200), default="None")
+    # The synthesized human-readable explanation behind the detected
+    # region — RegionDetectionResult.reason — e.g. "Domain uses the .fr
+    # country-code TLD, associated with France." Shown as a tooltip/
+    # detail row on the history page rather than making someone dig into
+    # the raw signals list.
+    region_detection_reason: Mapped[str] = mapped_column(String(1000), default="")
+
+    # Whether a GDPR-family framework (GDPR / UK GDPR / Swiss FADP) or
+    # CCPA/CPRA respectively actually applied to this audit at all —
+    # consent.consent_score.GdprAssessment.applicable /
+    # CcpaAssessment.applicable. Check these before treating
+    # gdpr_compliant/ccpa_compliant as a real verdict: both those columns
+    # are non-nullable booleans today and default to False, which is
+    # indistinguishable from a real "non-compliant" without this flag —
+    # False here means "not assessed", not "failed".
+    gdpr_assessed: Mapped[bool] = mapped_column(Boolean, default=False)
+    ccpa_assessed: Mapped[bool] = mapped_column(Boolean, default=False)
+
     gdpr_compliant: Mapped[bool] = mapped_column(Boolean, default=False)
     # Per-check breakdown behind gdpr_compliant above: one entry per key in
     # consent.consent_score.GDPR_CHECK_ORDER, each True/False/None ("not

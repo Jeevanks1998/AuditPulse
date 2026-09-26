@@ -45,6 +45,22 @@ _SCORE_BAND_GOOD = 80
 _SCORE_BAND_MID = 50
 _STATUS_LABELS = {"good": "Healthy", "mid": "Needs Attention", "bad": "Issues Found"}
 
+# Region bucket -> human label, mirroring consent.consent_score's REGION_*
+# codes (EU/EEA/UK/CH/US-CA/US/UNKNOWN — see that module's "Region ->
+# applicable regional framework" table). Same re-declared-not-imported
+# reasoning as _STATUS_LABELS above: pdf/evidence.py has its own identical
+# copy since pdf/* imports *this* module, so the reverse import would be
+# circular.
+_REGION_LABELS = {
+    "EU": "European Union",
+    "EEA": "European Economic Area",
+    "UK": "United Kingdom",
+    "CH": "Switzerland",
+    "US-CA": "California, United States",
+    "US": "United States (non-California)",
+    "UNKNOWN": "Unknown",
+}
+
 
 @dataclass
 class ReportPayload:
@@ -153,19 +169,57 @@ def _build_screenshots(consent: Optional[dict]) -> List[dict]:
 def _cookie_evidence(consent: Optional[dict]) -> Optional[dict]:
     """Raw cookie/tracker/consent-check evidence split out of the summarized
     `consent` dict, for the POC email's standalone "cookie_evidence"
-    attachment and the evidence ZIP — None (not an empty dict) when consent
-    didn't run, matching every other optional payload field's contract."""
+    attachment, the evidence ZIP, and the JSON export — None (not an empty
+    dict) when consent didn't run, matching every other optional payload
+    field's contract.
+
+    Only the ONE regional framework consent.consent_score.
+    resolve_applicable_frameworks actually judged this audit against
+    (gdpr_assessed XOR ccpa_assessed — see models.consent.Consent's
+    docstring) is included here, never both unconditionally. This used to
+    ship a `gdpr_checks` block AND a `ccpa_checks` block on every audit,
+    with `gdpr_compliant`/`ccpa_compliant` defaulted to False even when
+    that framework was never in scope for the site's detected region — so
+    a US-only site's emailed evidence read as "GDPR + CCPA assessment
+    completed" (and GDPR non-compliant) for a framework that was never
+    legally relevant to it. `compliance_summary` gives whoever opens this
+    JSON the one-line version — "<region> \u2014 <framework> assessment
+    completed", or an explicit "no regional privacy framework applies"
+    when neither one does — and the per-check block for whichever
+    framework applies is included as-is; `gdpr_compliant`/`ccpa_compliant`
+    are left as None (never coerced to False) so "not assessed" can never
+    be misread as "non-compliant".
+    """
     if not consent:
         return None
-    return {
+
+    region_code = consent.get("detected_region") or "UNKNOWN"
+    region_label = consent.get("detected_country") or _REGION_LABELS.get(region_code, region_code)
+    framework = consent.get("compliance_framework")
+    gdpr_assessed = bool(consent.get("gdpr_assessed"))
+    ccpa_assessed = bool(consent.get("ccpa_assessed"))
+
+    evidence: Dict = {
+        "detected_region": region_label,
+        "compliance_framework": framework,
+        "compliance_summary": (
+            f"{region_label} \u2014 {framework} assessment completed"
+            if (gdpr_assessed or ccpa_assessed)
+            else f"{region_label} \u2014 no regional privacy framework applies"
+        ),
         "cookies_detected": consent.get("cookies_detected", []),
         "third_party_trackers": consent.get("third_party_trackers", []),
-        "gdpr_checks": consent.get("gdpr_checks", {}),
-        "gdpr_check_evidence": consent.get("gdpr_check_evidence", {}),
-        "gdpr_compliant": consent.get("gdpr_compliant", False),
-        "ccpa_checks": consent.get("ccpa_checks", {}),
-        "ccpa_compliant": consent.get("ccpa_compliant", False),
     }
+
+    if gdpr_assessed:
+        evidence["gdpr_checks"] = consent.get("gdpr_checks", {})
+        evidence["gdpr_check_evidence"] = consent.get("gdpr_check_evidence", {})
+        evidence["gdpr_compliant"] = consent.get("gdpr_compliant")
+    elif ccpa_assessed:
+        evidence["ccpa_checks"] = consent.get("ccpa_checks", {})
+        evidence["ccpa_compliant"] = consent.get("ccpa_compliant")
+
+    return evidence
 
 
 def _network_evidence(analytics: Optional[dict]) -> Optional[dict]:

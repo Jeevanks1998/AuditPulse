@@ -219,15 +219,22 @@ async def analyze_site(
     if network_result is not None:
         findings += check_pre_consent_network(network_result)
 
-    cookie_result = analyze_cookies(
-        cookies or [], page=page, first_party_hostname=first_party_hostname,
-        blocks_scripts_pre_consent=behavior.blocks_scripts_pre_consent if behavior.verified else None,
-    )
-    findings += cookie_result.findings
-
+    # Run the runtime click-through pass (if enabled) *before* cookie
+    # analysis, not after — analyze_cookies' before/after-Reject checks
+    # need runtime_result.before_consent / .after_reject to do the
+    # before/after-consent cookie cross-reference (see consent/cookies.py).
     runtime_result: Optional[ConsentRuntimeResult] = None
     if enable_runtime_checks:
         runtime_result = await run_consent_runtime(url)
+
+    cookie_result = analyze_cookies(
+        cookies or [], page=page, first_party_hostname=first_party_hostname,
+        blocks_scripts_pre_consent=behavior.blocks_scripts_pre_consent if behavior.verified else None,
+        runtime_result=runtime_result,
+    )
+    findings += cookie_result.findings
+
+    if enable_runtime_checks:
         findings += check_runtime_consent(runtime_result, url)
         # The static "no banner" finding only reflects the raw HTML. If the
         # live browser saw the banner's Accept/Reject controls, that finding

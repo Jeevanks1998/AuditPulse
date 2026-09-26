@@ -62,6 +62,101 @@ _PRIVACY_POLICY_HREF_RE = re.compile(r"privacy[-_]?(policy|notice)", re.IGNORECA
 # (required verbatim-ish wording under CCPA/CPRA for businesses that sell data).
 _CCPA_LINK_RE = re.compile(r"do not sell (or share )?my (personal )?information", re.IGNORECASE)
 
+# ---------------------------------------------------------------------------
+# lawful_consent_controls signals (GDPR).
+#
+# GDPR's Art. 4(11)/Recital 32 affirmative-action requirement rules out
+# two specific patterns, both of which are still common on the open web:
+# a non-essential category checkbox that starts pre-checked (opt-out by
+# default instead of opt-in), and "by continuing to browse/use this site
+# you agree/consent" copy, which CNIL/ICO guidance is explicit can never
+# itself constitute valid consent — only a real affirmative click can.
+# Both are detectable statically, no runtime pass required.
+_NON_ESSENTIAL_CATEGORY_RE = re.compile(
+    r"analytics|marketing|advertis|performance|targeting|social media|personali[sz]ation",
+    re.IGNORECASE,
+)
+_IMPLIED_CONSENT_RE = re.compile(
+    r"by\s+(continuing|browsing|using)\s+(to\s+(browse|use)\s+)?(this\s+)?(site|website|page)?"
+    r"[^.]{0,60}?(you\s+)?(agree|consent|accept)"
+    r"|continu(?:ed|ing)\s+(?:to\s+)?(?:browse|use)\s+(?:this\s+)?(?:site|website)"
+    r"[^.]{0,60}?(?:constitutes|indicates|means)\s+(?:your\s+)?(?:consent|agreement|acceptance)",
+    re.IGNORECASE,
+)
+
+# ---------------------------------------------------------------------------
+# consent_state_persistence signal (GDPR).
+#
+# Recognizable cookie-name fragments for the major CMPs' own
+# consent-state cookies (OneTrust's OptanonConsent, Cookiebot's
+# CookieConsent, Didomi's token, TrustArc, etc.) plus generic
+# "cookie_consent"/"consent_state"-style names a homegrown banner might
+# use. Not exhaustive — same "known signature, generic fallback" caveat
+# as consent/banner.py's CMP list — so a genuine miss here is a signal
+# to verify manually, not an absolute "never persists".
+_CONSENT_STATE_COOKIE_RE = re.compile(
+    r"cookieconsent|cookie[-_]?consent|consent[-_]?state|onetrust|optanon|cookiebot|cybotcookiebot|"
+    r"didomi|trustarc|truste|cmpconsent|euconsent|cookieyes|cky-consent|gdpr[-_]?consent|consentmanager",
+    re.IGNORECASE,
+)
+
+
+def _checkbox_label_text(page: ParsedPage, checkbox) -> str:
+    """Best-effort label text for a checkbox: aria-label, an associated
+    <label for=id>, a wrapping <label>, or (failing those) the nearby
+    parent element's text, in that preference order."""
+    parts: List[str] = []
+    aria = checkbox.get("aria-label")
+    if aria:
+        parts.append(aria)
+    checkbox_id = checkbox.get("id")
+    if checkbox_id:
+        label_tag = page.soup.find("label", attrs={"for": checkbox_id})
+        if label_tag:
+            parts.append(label_tag.get_text(" ", strip=True))
+    wrapping_label = checkbox.find_parent("label")
+    if wrapping_label:
+        parts.append(wrapping_label.get_text(" ", strip=True))
+    if not parts:
+        parent = checkbox.find_parent()
+        if parent is not None:
+            parts.append(parent.get_text(" ", strip=True)[:120])
+    return " ".join(p for p in parts if p)
+
+
+def _detect_preticked_nonessential_checkboxes(page: ParsedPage) -> List[str]:
+    """
+    Finds checkbox inputs that are pre-checked (a `checked` attribute is
+    present) AND whose label text names an optional/non-essential cookie
+    category (analytics, marketing, advertising, etc.). "Necessary"/
+    "essential" checkboxes are routinely pre-checked and disabled by
+    design (visitors can't turn them off at all), so this deliberately
+    only flags boxes for a category that's actually supposed to be a
+    real choice.
+    """
+    hits: List[str] = []
+    for checkbox in page.soup.find_all("input", attrs={"type": re.compile("^checkbox$", re.IGNORECASE)}):
+        if not checkbox.has_attr("checked"):
+            continue
+        label_text = _checkbox_label_text(page, checkbox)
+        if label_text and _NON_ESSENTIAL_CATEGORY_RE.search(label_text):
+            hits.append(label_text.strip())
+    return hits
+
+
+def _detect_implied_consent_language(text: str) -> Optional[str]:
+    """
+    Looks for "by continuing to browse/use this site you agree/consent"
+    style phrasing anywhere in the page's visible text. Returns the
+    matched snippet (trimmed, for use in a check's detail text) or None.
+    """
+    match = _IMPLIED_CONSENT_RE.search(text or "")
+    if not match:
+        return None
+    start = max(0, match.start() - 10)
+    end = min(len(text), match.end() + 10)
+    return re.sub(r"\s+", " ", text[start:end]).strip()
+
 
 # ---------------------------------------------------------------------------
 # Region -> applicable regional framework
@@ -245,42 +340,91 @@ def _score_category(category_findings: List[dict]) -> int:
     return max(0, score)
 
 
-# The ten individual technical checks that make up a GDPR assessment,
+# The twelve individual technical checks that make up a GDPR assessment,
 # in display order. Each maps to one specific, independently-testable
 # requirement rather than being folded into a single pass/fail bit —
 # see GdprAssessment below for why that distinction matters.
 GDPR_CHECK_ORDER = (
     "consent_banner",
+    "lawful_consent_controls",
     "accept_control",
     "reject_control",
     "reject_parity",
     "trackers_blocked_pre_consent",
     "cookies_blocked_pre_consent",
     "consent_is_granular",
-    "privacy_policy_available",
     "consent_withdrawal_available",
+    "privacy_policy_available",
+    "consent_state_persistence",
     "reject_blocks_tracking",
 )
 
 GDPR_CHECK_LABELS: Dict[str, str] = {
     "consent_banner": "Consent banner",
+    "lawful_consent_controls": "Lawful consent controls (affirmative opt-in, no pre-ticked boxes)",
     "accept_control": "Accept control",
     "reject_control": "Reject control",
     "reject_parity": "Reject parity",
     "trackers_blocked_pre_consent": "Non-essential trackers blocked before consent",
     "cookies_blocked_pre_consent": "Non-essential cookies blocked before consent",
     "consent_is_granular": "Consent is granular",
-    "privacy_policy_available": "Privacy policy available",
     "consent_withdrawal_available": "Consent withdrawal available",
-    "reject_blocks_tracking": "Reject actually blocks tracking",
+    "privacy_policy_available": "Privacy policy available",
+    "consent_state_persistence": "Consent choice persists across visits",
+    "reject_blocks_tracking": "Reject actually blocks tracking (analytics behavior after rejection)",
 }
 
-# "reject_blocks_tracking" is deliberately excluded: it's the only check
-# here that depends on the optional Playwright runtime pass, so it's
-# routinely None ("not tested") on a static-only audit — counting an
-# untested check as a failure would make every such audit non-compliant
-# regardless of what the banner itself actually does.
-_REQUIRED_FOR_COMPLIANCE = frozenset(GDPR_CHECK_ORDER) - {"reject_blocks_tracking"}
+# "reject_blocks_tracking" and "consent_state_persistence" are deliberately
+# excluded: both depend on the optional Playwright runtime pass (a live
+# accept/reject click-through), so they're routinely None ("not tested")
+# on a static-only audit — counting an untested check as a failure would
+# make every such audit non-compliant regardless of what the banner
+# itself actually does. See RegionalScoringProfile.required_for_compliance.
+_REQUIRED_FOR_COMPLIANCE = frozenset(GDPR_CHECK_ORDER) - {"reject_blocks_tracking", "consent_state_persistence"}
+
+
+@dataclass(frozen=True)
+class RegionalScoringProfile:
+    """
+    One named regional compliance profile: the full ordered set of
+    checks it scores an audit against, their display labels, and which
+    of those checks are excluded from the pass/fail compliance verdict
+    because they depend on the optional Playwright runtime pass (and so
+    are routinely "not tested" on a static-only audit).
+
+    GDPR_PROFILE and CCPA_PROFILE (defined once each profile's checks
+    exist below) are the two canonical profiles this module evaluates —
+    see REGIONAL_SCORING_PROFILES for both keyed together, and
+    resolve_applicable_frameworks for which single profile (if any)
+    applies to a given audit's detected region. GDPR_CHECK_ORDER/
+    GDPR_CHECK_LABELS and CCPA_CHECK_ORDER/CCPA_CHECK_LABELS remain the
+    source of truth build_gdpr_assessment/build_ccpa_assessment read
+    from directly; this wraps them into one discoverable object for
+    anything else (this module's own _REQUIRED_FOR_COMPLIANCE constants,
+    or a report that wants to introspect "what does this profile check")
+    that wants both profiles addressable the same way instead of four
+    separately-named module constants.
+    """
+    name: str
+    check_order: tuple
+    check_labels: Dict[str, str]
+    runtime_only_checks: frozenset = field(default_factory=frozenset)
+
+    @property
+    def required_for_compliance(self) -> frozenset:
+        return frozenset(self.check_order) - self.runtime_only_checks
+
+
+# framework_name below is the profile's default display name; individual
+# GDPR-family audits override it per region ("GDPR" / "UK GDPR" / "Swiss
+# FADP" — see build_gdpr_assessment's framework_name param), since all
+# three share this exact same set of checks.
+GDPR_PROFILE = RegionalScoringProfile(
+    name="GDPR",
+    check_order=GDPR_CHECK_ORDER,
+    check_labels=GDPR_CHECK_LABELS,
+    runtime_only_checks=frozenset({"reject_blocks_tracking", "consent_state_persistence"}),
+)
 
 
 @dataclass
@@ -485,8 +629,60 @@ def _cookies_before_consent_check(
     )
 
 
+def _consent_state_persistence_check(runtime_result: Optional["ConsentRuntimeResult"]) -> GdprCheck:
+    """
+    consent_state_persistence: after a visitor makes a choice, does the
+    site remember it — a consent-state cookie gets set — rather than
+    re-showing the banner on every single page load? Judged from
+    consent.runtime's after-accept/after-reject cookie snapshots (the
+    same live data cookies_blocked_pre_consent and reject_blocks_tracking
+    use), checking whether any cookie set afterward matches a known
+    CMP/consent-state naming pattern (see _CONSENT_STATE_COOKIE_RE).
+
+    PASS / FAIL / None ("not tested") — a runtime pass that didn't run,
+    or ran but never captured either post-choice snapshot, reports None,
+    never a guessed FAIL.
+    """
+    key = "consent_state_persistence"
+    label = GDPR_CHECK_LABELS[key]
+
+    runtime_available = bool(runtime_result and runtime_result.available)
+    accept_capture = runtime_result.after_accept if runtime_available else None
+    reject_capture = runtime_result.after_reject if runtime_available else None
+    capture_available = bool(
+        (accept_capture and accept_capture.available) or (reject_capture and reject_capture.available)
+    )
+
+    if not capture_available:
+        return GdprCheck(
+            key, label, None,
+            "Not tested — requires the optional live click-through (Playwright) pass to capture "
+            "cookies set after a consent choice was made.",
+        )
+
+    cookies = []
+    if accept_capture and accept_capture.available:
+        cookies.extend(accept_capture.cookies)
+    if reject_capture and reject_capture.available:
+        cookies.extend(reject_capture.cookies)
+
+    match = next((c for c in cookies if _CONSENT_STATE_COOKIE_RE.search(c.name)), None)
+    if match:
+        return GdprCheck(
+            key, label, True,
+            f"A consent-state cookie ({match.name}) was set after the visitor's choice, so the "
+            "banner shouldn't reappear on the next page load.",
+        )
+    return GdprCheck(
+        key, label, False,
+        "No recognizable consent-state cookie was found after accepting/rejecting — the choice may "
+        "not persist, and the banner could reappear on every visit.",
+    )
+
+
 def build_gdpr_assessment(
     *,
+    page: ParsedPage,
     banner_detected: bool,
     buttons: ButtonsDetection,
     behavior: BehaviorResult,
@@ -499,10 +695,13 @@ def build_gdpr_assessment(
     framework_name: str = "GDPR",
 ) -> GdprAssessment:
     """
-    Builds the ten checks in `GDPR_CHECK_ORDER` from detections that
+    Builds the twelve checks in `GDPR_CHECK_ORDER` from detections that
     consent/__init__.py's run_page_checks / analyze_site have already
-    computed — no new page-scanning here, this only re-reads results
-    other modules produced.
+    computed — no new page-scanning here except for `lawful_consent_controls`
+    (pre-ticked non-essential checkboxes / implied-consent copy), which
+    reads `page` directly since no other consent/* module currently
+    detects it. Every other check just re-reads results other modules
+    produced.
 
     `cookie_summary` is accepted for API compatibility but no longer feeds
     any check: Set-Cookie headers from one HTTP fetch can't establish
@@ -550,6 +749,33 @@ def build_gdpr_assessment(
          "so it's injected by client-side JavaScript (e.g. a CMP script)." if banner_via_runtime_only
          else "A consent banner/CMP was found on the page." if banner_found
          else "No consent banner or CMP was detected."),
+    ))
+
+    preticked = _detect_preticked_nonessential_checkboxes(page)
+    implied_snippet = _detect_implied_consent_language(page.text_content)
+    lawful_consent_ok = not preticked and not implied_snippet
+    if lawful_consent_ok:
+        lawful_consent_detail = (
+            "No pre-ticked non-essential consent checkboxes or implied-consent "
+            "(\"by continuing to browse...\") language were found."
+        )
+    else:
+        reasons = []
+        if preticked:
+            reasons.append(
+                f"{len(preticked)} non-essential checkbox(es) pre-checked by default "
+                f"({'; '.join(preticked[:3])})"
+            )
+        if implied_snippet:
+            reasons.append(f"implied-consent language found: \"{implied_snippet}\"")
+        lawful_consent_detail = (
+            "Consent isn't collected via a clear affirmative action — " + "; ".join(reasons)
+            + " — both patterns GDPR's affirmative-action requirement (Art. 4(11)/Recital 32) "
+              "and CNIL/ICO guidance rule out."
+        )
+    checks.append(GdprCheck(
+        "lawful_consent_controls", GDPR_CHECK_LABELS["lawful_consent_controls"], lawful_consent_ok,
+        lawful_consent_detail,
     ))
 
     # buttons.accept_found/reject_found/manage_found come from static HTML
@@ -631,6 +857,13 @@ def build_gdpr_assessment(
          else "No manage/customize option was found in the banner — only an all-or-nothing choice."),
     ))
 
+    withdrawal_ok = preferences.link_found or preferences.trigger_found
+    checks.append(GdprCheck(
+        "consent_withdrawal_available", GDPR_CHECK_LABELS["consent_withdrawal_available"], withdrawal_ok,
+        "A persistent link or CMP trigger to revisit cookie preferences was found." if withdrawal_ok
+        else "No persistent footer/nav link or CMP trigger was found for withdrawing consent later.",
+    ))
+
     privacy_ok = privacy_policy_url is not None
     checks.append(GdprCheck(
         "privacy_policy_available", GDPR_CHECK_LABELS["privacy_policy_available"], privacy_ok,
@@ -638,12 +871,7 @@ def build_gdpr_assessment(
         else "No privacy policy or notice link was found.",
     ))
 
-    withdrawal_ok = preferences.link_found or preferences.trigger_found
-    checks.append(GdprCheck(
-        "consent_withdrawal_available", GDPR_CHECK_LABELS["consent_withdrawal_available"], withdrawal_ok,
-        "A persistent link or CMP trigger to revisit cookie preferences was found." if withdrawal_ok
-        else "No persistent footer/nav link or CMP trigger was found for withdrawing consent later.",
-    ))
+    checks.append(_consent_state_persistence_check(runtime_result))
 
     if runtime_result is None or runtime_result.reject_blocks_tracking is None:
         reject_runtime_check = GdprCheck(
@@ -664,7 +892,7 @@ def build_gdpr_assessment(
     return GdprAssessment(checks=checks, applicable=True, framework_name=framework_name)
 
 
-# The six individual technical checks that make up a CCPA/CPRA
+# The seven individual technical checks that make up a CCPA/CPRA
 # assessment, in display order — the CCPA counterpart to
 # GDPR_CHECK_ORDER above. CCPA compliance was previously a single
 # `ccpa_link_found and privacy_policy_url is not None` boolean; that
@@ -673,27 +901,48 @@ def build_gdpr_assessment(
 # GDPR_CHECK_ORDER already fixed for GDPR.
 CCPA_CHECK_ORDER = (
     "privacy_policy_available",
-    "privacy_choices_link",
     "do_not_sell_link",
     "opt_out_mechanism",
+    "privacy_choices_link",
     "gpc_honored",
     "opt_out_behavior_verified",
+    "advertising_analytics_behavior",
 )
 
 CCPA_CHECK_LABELS: Dict[str, str] = {
     "privacy_policy_available": "Privacy policy available",
-    "privacy_choices_link": '"Your Privacy Choices" link present',
     "do_not_sell_link": '"Do Not Sell or Share My Information" link present',
     "opt_out_mechanism": "Opt-out mechanism reachable",
+    "privacy_choices_link": '"Your Privacy Choices" link present',
     "gpc_honored": "Global Privacy Control (GPC) signal handling detected",
     "opt_out_behavior_verified": "Opt-out actually stops tracking",
+    "advertising_analytics_behavior": "Advertising/analytics behavior after opt-out (where applicable)",
 }
 
-# "opt_out_behavior_verified" is excluded for the same reason
-# GDPR's "reject_blocks_tracking" is: it depends on the optional
-# Playwright runtime pass, so it's routinely None ("not tested") on a
-# static-only audit.
-_CCPA_REQUIRED_FOR_COMPLIANCE = frozenset(CCPA_CHECK_ORDER) - {"opt_out_behavior_verified"}
+# "opt_out_behavior_verified" and "advertising_analytics_behavior" are
+# excluded for the same reason GDPR's "reject_blocks_tracking" is: both
+# depend on the optional Playwright runtime pass, so they're routinely
+# None ("not tested") on a static-only audit.
+_CCPA_REQUIRED_FOR_COMPLIANCE = frozenset(CCPA_CHECK_ORDER) - {
+    "opt_out_behavior_verified", "advertising_analytics_behavior",
+}
+
+CCPA_PROFILE = RegionalScoringProfile(
+    name="CCPA/CPRA",
+    check_order=CCPA_CHECK_ORDER,
+    check_labels=CCPA_CHECK_LABELS,
+    runtime_only_checks=frozenset({"opt_out_behavior_verified", "advertising_analytics_behavior"}),
+)
+
+# Both regional profiles, keyed the same way resolve_applicable_frameworks'
+# ApplicableFrameworks.assess_gdpr / assess_ccpa flags name them, so a
+# caller (e.g. a report) can go straight from "which framework applies"
+# to "what does that framework check" without importing four separate
+# module constants.
+REGIONAL_SCORING_PROFILES: Dict[str, RegionalScoringProfile] = {
+    "GDPR": GDPR_PROFILE,
+    "CCPA": CCPA_PROFILE,
+}
 
 
 @dataclass
@@ -753,14 +1002,15 @@ def build_ccpa_assessment(
     applicable: bool = True,
 ) -> CcpaAssessment:
     """
-    Builds the six checks in `CCPA_CHECK_ORDER`, fetched/detected the
-    same way build_gdpr_assessment builds GDPR's ten: every check here
-    is either read from a detection another consent/* module already
-    ran (consent.consent_score.detect_privacy_policy /
-    detect_ccpa_link, consent.ccpa.detect_privacy_choices_link /
-    detect_gpc_handling, consent.preferences.detect_preferences_link)
-    or, for opt_out_behavior_verified, the optional live click-through
-    (consent.runtime) pass — no new page-scanning happens here.
+    Builds the seven checks in `CCPA_CHECK_ORDER`, fetched/detected the
+    same way build_gdpr_assessment builds GDPR's twelve: every check here
+    is either read from a detection another consent/* module already ran
+    (consent.consent_score.detect_privacy_policy / detect_ccpa_link,
+    consent.ccpa.detect_privacy_choices_link / detect_gpc_handling,
+    consent.preferences.detect_preferences_link) or, for
+    opt_out_behavior_verified and advertising_analytics_behavior, the
+    optional live click-through (consent.runtime) pass — no new
+    page-scanning happens here.
 
     `applicable` comes from resolve_applicable_frameworks: when this
     audit's detected region isn't California (and isn't Other-US with
@@ -788,12 +1038,6 @@ def build_ccpa_assessment(
     ))
 
     checks.append(CcpaCheck(
-        "privacy_choices_link", CCPA_CHECK_LABELS["privacy_choices_link"], privacy_choices.found,
-        f"Found a privacy-choices/CCPA link: \"{privacy_choices.text}\"." if privacy_choices.found
-        else "No \"Your Privacy Choices\" / California privacy rights link was found.",
-    ))
-
-    checks.append(CcpaCheck(
         "do_not_sell_link", CCPA_CHECK_LABELS["do_not_sell_link"], ccpa_link_found,
         "A \"Do Not Sell or Share My Personal Information\" link was found." if ccpa_link_found
         else "No \"Do Not Sell or Share My Personal Information\" link was found.",
@@ -804,6 +1048,12 @@ def build_ccpa_assessment(
         "opt_out_mechanism", CCPA_CHECK_LABELS["opt_out_mechanism"], opt_out_ok,
         "A persistent opt-out link or CMP trigger is reachable." if opt_out_ok
         else "No persistent, reachable opt-out mechanism (link or CMP trigger) was found.",
+    ))
+
+    checks.append(CcpaCheck(
+        "privacy_choices_link", CCPA_CHECK_LABELS["privacy_choices_link"], privacy_choices.found,
+        f"Found a privacy-choices/CCPA link: \"{privacy_choices.text}\"." if privacy_choices.found
+        else "No \"Your Privacy Choices\" / California privacy rights link was found.",
     ))
 
     checks.append(CcpaCheck(
@@ -831,7 +1081,56 @@ def build_ccpa_assessment(
         )
     checks.append(opt_out_behavior_check)
 
+    checks.append(_advertising_analytics_behavior_check(runtime_result))
+
     return CcpaAssessment(checks=checks, applicable=True)
+
+
+def _advertising_analytics_behavior_check(
+    runtime_result: Optional["ConsentRuntimeResult"],
+) -> CcpaCheck:
+    """
+    advertising_analytics_behavior: CCPA/CPRA's opt-out right is
+    specifically about the sale/sharing of personal information for
+    cross-context behavioral advertising — narrower than GDPR's general
+    reject_blocks_tracking, this singles out whether *named*
+    advertising/analytics trackers (consent.network.KNOWN_TRACKER_DOMAINS
+    — Google Ads, Meta Pixel, TikTok Pixel, etc.) are still firing after
+    the visitor opts out, since that's the concrete, checkable signal
+    that a "sale"/"share" is still happening post opt-out. Read from the
+    same after_reject snapshot consent.runtime's reject leg already
+    captures — the opt-out click and GDPR's reject click are the same
+    live pass, just interpreted for a different legal question.
+
+    "(where applicable)" in the check's own label reflects that a site
+    with no advertising/analytics trackers at all simply has nothing to
+    opt out of — that's still a pass (0 trackers observed), not
+    "untested" or "failed".
+    """
+    key = "advertising_analytics_behavior"
+    label = CCPA_CHECK_LABELS[key]
+
+    after_reject = runtime_result.after_reject if runtime_result and runtime_result.available else None
+    if not (after_reject and after_reject.available):
+        return CcpaCheck(
+            key, label, None,
+            "Not evaluated — requires the optional live click-through (Playwright) pass, which "
+            "either didn't run or couldn't locate/click an opt-out control.",
+        )
+
+    tracker_requests = after_reject.tracker_requests
+    if not tracker_requests:
+        return CcpaCheck(
+            key, label, True,
+            "No advertising/analytics tracker requests were observed after opting out.",
+        )
+
+    names = sorted({r.tracker_name for r in tracker_requests})
+    return CcpaCheck(
+        key, label, False,
+        f"{len(tracker_requests)} advertising/analytics request(s) to known tracker(s) "
+        f"({', '.join(names)}) were still observed after opting out.",
+    )
 
 
 @dataclass
@@ -986,6 +1285,7 @@ def build_consent_summary(
     frameworks = resolve_applicable_frameworks(region, california_applicability=california_applicability)
 
     gdpr_assessment = build_gdpr_assessment(
+        page=page,
         banner_detected=banner_detected,
         buttons=buttons,
         behavior=behavior,

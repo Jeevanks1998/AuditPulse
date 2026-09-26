@@ -44,6 +44,7 @@ from reportlab.lib.units import mm
 from reportlab.platypus import Flowable, Image, Paragraph, Spacer, Table, TableStyle
 
 from analytics.analytics_score import TRACKER_DISPLAY_NAMES
+from consent.consent_score import CCPA_CHECK_LABELS, CCPA_CHECK_ORDER, GDPR_CHECK_LABELS, GDPR_CHECK_ORDER
 from pdf.theme import BORDER, ERROR, STATUS_COLORS, STATUS_LABELS, STYLES, SUCCESS, SURFACE_SUNKEN, TEXT_TERTIARY, esc
 from reports.generator import ReportPayload
 from utils.screenshots import screenshot_url_to_path
@@ -212,34 +213,19 @@ _CONSENT_CHECKS = (
     ("banner_blocks_scripts_pre_consent", "Non-essential scripts blocked before consent"),
 )
 
-# Mirrors consent.consent_score.GDPR_CHECK_ORDER / GDPR_CHECK_LABELS — read
-# from the `gdpr_checks` dict (not top-level fields like _CONSENT_CHECKS
-# above), since these ten replace the old single gdpr_compliant boolean.
-_GDPR_CHECKS = (
-    ("consent_banner", "Consent banner"),
-    ("accept_control", "Accept control"),
-    ("reject_control", "Reject control"),
-    ("reject_parity", "Reject parity"),
-    ("trackers_blocked_pre_consent", "Non-essential trackers blocked before consent"),
-    ("cookies_blocked_pre_consent", "Non-essential cookies blocked before consent"),
-    ("consent_is_granular", "Consent is granular"),
-    ("privacy_policy_available", "Privacy policy available"),
-    ("consent_withdrawal_available", "Consent withdrawal available"),
-    ("reject_blocks_tracking", "Reject actually blocks tracking"),
-)
+# Built from consent.consent_score.GDPR_CHECK_ORDER / GDPR_CHECK_LABELS —
+# read from the `gdpr_checks` dict (not top-level fields like
+# _CONSENT_CHECKS above), since these twelve replace the old single
+# gdpr_compliant boolean. Built from the live constants (not a hand-copied
+# tuple) so this table can never silently drift out of sync with what
+# build_gdpr_assessment actually evaluates.
+_GDPR_CHECKS = tuple((key, GDPR_CHECK_LABELS[key]) for key in GDPR_CHECK_ORDER)
 
-# Mirrors consent.consent_score.CCPA_CHECK_ORDER / CCPA_CHECK_LABELS — read
-# from the `ccpa_checks` dict, same relationship _GDPR_CHECKS above has to
-# gdpr_checks. These six replace the old single
+# Built from consent.consent_score.CCPA_CHECK_ORDER / CCPA_CHECK_LABELS —
+# read from the `ccpa_checks` dict, same relationship _GDPR_CHECKS above
+# has to gdpr_checks. These seven replace the old single
 # `ccpa_link_found and privacy_policy_url is not None` boolean.
-_CCPA_CHECKS = (
-    ("privacy_policy_available", "Privacy policy available"),
-    ("privacy_choices_link", '"Your Privacy Choices" link present'),
-    ("do_not_sell_link", '"Do Not Sell or Share My Information" link present'),
-    ("opt_out_mechanism", "Opt-out mechanism reachable"),
-    ("gpc_honored", "Global Privacy Control (GPC) signal handling detected"),
-    ("opt_out_behavior_verified", "Opt-out actually stops tracking"),
-)
+_CCPA_CHECKS = tuple((key, CCPA_CHECK_LABELS[key]) for key in CCPA_CHECK_ORDER)
 
 _RUNTIME_CHECKS = (
     # reject_blocks_tracking is intentionally omitted here — it's already
@@ -293,7 +279,7 @@ def _build_consent_section(consent: Optional[dict], screenshots: List[dict]) -> 
     story.append(_build_bool_table(_CONSENT_CHECKS, consent))
     story.append(Spacer(1, 10))
 
-    # GDPR is ten separate checks (consent.consent_score.GDPR_CHECK_ORDER),
+    # GDPR is twelve separate checks (consent.consent_score.GDPR_CHECK_ORDER),
     # not one collapsed boolean — this table shows exactly which
     # requirement(s) fail rather than only a single pass/fail verdict.
     story.append(Paragraph("GDPR Assessment", STYLES["H2"]))
@@ -305,7 +291,7 @@ def _build_consent_section(consent: Optional[dict], screenshots: List[dict]) -> 
     ))
     story.append(Spacer(1, 10))
 
-    # CCPA is likewise six separate checks (consent.consent_score.CCPA_CHECK_ORDER),
+    # CCPA is likewise seven separate checks (consent.consent_score.CCPA_CHECK_ORDER),
     # not one collapsed boolean.
     story.append(Paragraph("CCPA Assessment", STYLES["H2"]))
     ccpa_checks = consent.get("ccpa_checks") or {}

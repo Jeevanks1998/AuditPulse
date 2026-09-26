@@ -8,9 +8,149 @@
   var V = window.Validation;
   var CFG = window.APP_CONFIG;
 
+  // ------------------------------------------------------------------
+  // Regional Information — client-side domain-only preview, shown the
+  // moment a URL is typed, before the real audit runs. Mirrors a small
+  // subset of the backend's consent.region_detector._COUNTRY_CODE_TABLE
+  // (ccTLD -> country/framework); it is deliberately less thorough than
+  // that module (no hreflang/lang/locale-path/selector/CMP/text signals,
+  // since those need the crawled page), so it's always shown as a
+  // "preliminary" guess and gets replaced by the backend's real,
+  // multi-signal result once the audit's consent scan completes.
+  // ------------------------------------------------------------------
+  var REGION_TABLE = {
+    FR: ['France', 'EU'], DE: ['Germany', 'EU'], IT: ['Italy', 'EU'], ES: ['Spain', 'EU'],
+    BE: ['Belgium', 'EU'], IE: ['Ireland', 'EU'], NL: ['Netherlands', 'EU'], SE: ['Sweden', 'EU'],
+    NO: ['Norway', 'EU'], DK: ['Denmark', 'EU'], FI: ['Finland', 'EU'], AT: ['Austria', 'EU'],
+    PT: ['Portugal', 'EU'], PL: ['Poland', 'EU'], CZ: ['Czechia', 'EU'], RO: ['Romania', 'EU'],
+    GR: ['Greece', 'EU'], HU: ['Hungary', 'EU'], LU: ['Luxembourg', 'EU'], MT: ['Malta', 'EU'],
+    IS: ['Iceland', 'EU'], LI: ['Liechtenstein', 'EU'],
+    UK: ['United Kingdom', 'UK'], GB: ['United Kingdom', 'UK'],
+    CH: ['Switzerland', 'CH'],
+    US: ['United States', 'US']
+  };
+  var REGION_FRAMEWORK_NAME = { EU: 'GDPR', UK: 'UK GDPR', CH: 'Swiss FADP', 'US-CA': 'CCPA/CPRA', US: null, UNKNOWN: null };
+  var REGION_FLAG = {
+    EU: '🇪🇺', UK: '🇬🇧', CH: '🇨🇭', 'US-CA': '🇺🇸', US: '🇺🇸', UNKNOWN: '🌐',
+    France: '🇫🇷', Germany: '🇩🇪', Italy: '🇮🇹', Spain: '🇪🇸', Belgium: '🇧🇪', Ireland: '🇮🇪',
+    Netherlands: '🇳🇱', Sweden: '🇸🇪', Norway: '🇳🇴', Denmark: '🇩🇰', Finland: '🇫🇮', Austria: '🇦🇹',
+    Portugal: '🇵🇹', Poland: '🇵🇱', Czechia: '🇨🇿', Romania: '🇷🇴', Greece: '🇬🇷', Hungary: '🇭🇺',
+    Luxembourg: '🇱🇺', Malta: '🇲🇹', Iceland: '🇮🇸', Liechtenstein: '🇱🇮',
+    'United Kingdom': '🇬🇧', Switzerland: '🇨🇭', 'United States': '🇺🇸', California: '🇺🇸'
+  };
+  var REGION_OVERRIDE_LABEL = {
+    EU: ['European Union', 'GDPR'], UK: ['United Kingdom', 'UK GDPR'], CH: ['Switzerland', 'Swiss FADP'],
+    'US-CA': ['California', 'CCPA/CPRA'], US: ['United States', null], UNKNOWN: ['Unknown', null]
+  };
+
+  function quickDomainRegionGuess(url) {
+    var host;
+    try { host = new URL(/^https?:\/\//i.test(url) ? url : 'https://' + url).hostname.toLowerCase(); }
+    catch (e) { return null; }
+    if (!host) return null;
+    if (host.endsWith('.co.uk') || host.endsWith('.uk')) {
+      return { country: 'United Kingdom', bucket: 'UK', confidence: 'low', source: 'Domain (preliminary)' };
+    }
+    var tld = host.split('.').pop().toUpperCase();
+    var hit = REGION_TABLE[tld];
+    if (!hit) return null;
+    return { country: hit[0], bucket: hit[1], confidence: 'low', source: 'Domain (preliminary)' };
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     var urlInput = document.getElementById('auditUrlInput');
     if (!urlInput || !window.Api) return; // not on audit.html
+
+    /* ------------------------- Regional Information card ------------------------- */
+
+    var regionInfoPlaceholder = document.getElementById('regionInfoPlaceholder');
+    var regionInfoBody = document.getElementById('regionInfoBody');
+    var regionInfoUrl = document.getElementById('regionInfoUrl');
+    var regionInfoFlag = document.getElementById('regionInfoFlag');
+    var regionInfoRegion = document.getElementById('regionInfoRegion');
+    var regionInfoFramework = document.getElementById('regionInfoFramework');
+    var regionInfoConfidence = document.getElementById('regionInfoConfidence');
+    var regionInfoSource = document.getElementById('regionInfoSource');
+    var regionInfoNote = document.getElementById('regionInfoNote');
+    var regionModeBadge = document.getElementById('regionModeBadge');
+    var regionAdvancedToggle = document.getElementById('regionAdvancedToggle');
+    var regionAdvanced = document.getElementById('regionAdvanced');
+    var regionOverrideSelect = document.getElementById('regionOverrideSelect');
+
+    var lastDetected = null; // { country, framework, confidence, source, note }
+
+    function renderRegionCard() {
+      var value = urlInput.value.trim();
+      var overrideCode = regionOverrideSelect ? regionOverrideSelect.value : 'auto';
+
+      if (regionModeBadge) {
+        regionModeBadge.textContent = overrideCode === 'auto' ? 'Auto Detect' : 'Manual Override';
+        regionModeBadge.className = 'badge ' + (overrideCode === 'auto' ? 'badge--neutral' : 'badge--warning');
+      }
+
+      if (overrideCode !== 'auto') {
+        var meta = REGION_OVERRIDE_LABEL[overrideCode] || ['Unknown', null];
+        showRegionData({
+          country: meta[0],
+          framework: meta[1],
+          confidence: 'override',
+          source: 'Manually set (internal use)',
+          note: 'This is a manual override for internal review — it does not change the real audit, only what\u2019s shown here.'
+        });
+        return;
+      }
+
+      if (lastDetected) {
+        showRegionData(lastDetected);
+      } else if (value) {
+        var guess = quickDomainRegionGuess(value);
+        if (guess) {
+          showRegionData({
+            country: guess.country,
+            framework: REGION_FRAMEWORK_NAME[guess.bucket] || null,
+            confidence: guess.confidence,
+            source: guess.source,
+            note: 'Preliminary guess from the domain only — the full audit also checks hreflang tags, page language, locale paths and on-page text for a more confident result.'
+          });
+        } else {
+          hideRegionData();
+        }
+      } else {
+        hideRegionData();
+      }
+    }
+
+    function showRegionData(data) {
+      if (regionInfoPlaceholder) regionInfoPlaceholder.style.display = 'none';
+      if (regionInfoBody) regionInfoBody.classList.add('is-visible');
+      if (regionInfoUrl) regionInfoUrl.textContent = urlInput.value.trim() ? U.hostnameOf(urlInput.value.trim()) : '—';
+      if (regionInfoFlag) regionInfoFlag.textContent = REGION_FLAG[data.country] || '🌐';
+      if (regionInfoRegion) regionInfoRegion.textContent = data.country || 'Unknown';
+      if (regionInfoFramework) regionInfoFramework.textContent = data.framework || 'None applicable';
+      if (regionInfoConfidence) {
+        var conf = data.confidence || 'none';
+        regionInfoConfidence.textContent = conf === 'override' ? 'Override' : conf.charAt(0).toUpperCase() + conf.slice(1);
+        regionInfoConfidence.className = 'region-info-confidence region-info-confidence--' + conf;
+      }
+      if (regionInfoSource) regionInfoSource.textContent = data.source || 'None';
+      if (regionInfoNote) regionInfoNote.textContent = data.note || '';
+    }
+
+    function hideRegionData() {
+      if (regionInfoPlaceholder) regionInfoPlaceholder.style.display = '';
+      if (regionInfoBody) regionInfoBody.classList.remove('is-visible');
+    }
+
+    U.on(urlInput, 'input', renderRegionCard);
+    if (regionOverrideSelect) U.on(regionOverrideSelect, 'change', renderRegionCard);
+    if (regionAdvancedToggle && regionAdvanced) {
+      U.on(regionAdvancedToggle, 'click', function () {
+        regionAdvanced.classList.toggle('is-visible');
+      });
+    }
+    renderRegionCard();
+
+    /* ------------------------------------------------------------------ */
 
     var urlError = document.getElementById('urlError');
     var urlWrap = urlInput.closest('.url-input-wrap');
@@ -158,6 +298,23 @@
       }).then(function (report) {
         if (progressStatusText) progressStatusText.textContent = 'Audit complete — redirecting to report…';
         window.Notifications.success('Audit complete', U.hostnameOf(config.url) + ' scored ' + report.overall + '/100.');
+        // Swap the domain-only preview for the backend's real, multi-signal
+        // region detection (consent.region_detector) now that the crawl +
+        // consent scan have actually run — best-effort: if this fails or
+        // the redirect fires first, the preview simply stays as-is.
+        if (config.modules.indexOf('consent') !== -1 && window.Api.audits.getConsent) {
+          window.Api.audits.getConsent(report.id).then(function (consent) {
+            if (!consent) return;
+            lastDetected = {
+              country: consent.detectedCountry || (consent.detectedRegion === 'UNKNOWN' ? 'Unknown' : consent.detectedRegion),
+              framework: consent.complianceFramework || null,
+              confidence: consent.regionConfidence || 'none',
+              source: consent.regionDetectionSource || 'None',
+              note: consent.regionDetectionReason || 'Detected from the crawled page — domain, hreflang, page language, locale path, and on-page signals.'
+            };
+            renderRegionCard();
+          }).catch(function () { /* keep the preview shown — not worth surfacing an error here */ });
+        }
         setTimeout(function () { window.location.href = 'report.html?id=' + encodeURIComponent(report.id); }, 900);
       }).catch(function (err) {
         window.Loader.setButtonLoading(startBtn, false);

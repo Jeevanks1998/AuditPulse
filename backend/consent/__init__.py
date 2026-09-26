@@ -100,6 +100,7 @@ from consent.consent_score import (
 from consent.cookies import analyze_cookies
 from consent.network import PreConsentNetworkResult, capture_pre_consent_requests, check_pre_consent_network
 from consent.preferences import PreferencesDetection, check_preferences, detect_preferences_link
+from consent.region_detector import detect_region
 from consent.runtime import ConsentRuntimeResult, check_runtime_consent, run_consent_runtime
 from consent.screenshots import capture_banner_screenshot
 from cookies.detector import Cookie
@@ -245,6 +246,12 @@ async def analyze_site(
             findings = [f for f in findings if f not in banner_findings]
 
     score = score_consent(findings)
+    # Region detection reads only the already-fetched/parsed page (domain,
+    # hreflang, lang, locale path, selectors, CMP config, on-page
+    # regulatory text) — no extra network calls — so it's safe to run
+    # unconditionally here rather than gating it behind enable_live_checks/
+    # enable_runtime_checks like the Playwright-dependent passes above.
+    region_detection = detect_region(page, url=url)
     summary = build_consent_summary(
         page=page,
         banner_detected=banner.detected,
@@ -256,6 +263,7 @@ async def analyze_site(
         score_result=score,
         runtime_result=runtime_result,
         network_result=network_result,
+        region_detection=region_detection,
     )
 
     banner_screenshot_path = None

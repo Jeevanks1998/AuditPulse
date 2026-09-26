@@ -32,7 +32,12 @@ async def get_recent(db: AsyncSession, user: User, limit: int = DEFAULT_RECENT_L
     return await audit_service.get_recent_audits(db, user, limit=limit)
 
 
+async def get_region_summary(db: AsyncSession, user: User):
+    return await audit_service.compute_region_summary(db, user)
+
+
 async def get_summary(db: AsyncSession, user: User) -> DashboardOut:
     stats = await get_stats(db, user)
     recent = await get_recent(db, user)
-    return DashboardOut(stats=stats, recent=recent)
+    region_summary = await get_region_summary(db, user)
+    return DashboardOut(stats=stats, recent=recent, region_summary=region_summary)

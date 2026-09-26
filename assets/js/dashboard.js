@@ -95,6 +95,53 @@
     loadStats();
     loadRecentAudits();
 
+    /* ------------------------- Consent Compliance (region summary) ------------------------- */
+
+    var regionSummaryGrid = document.getElementById('regionSummaryGrid');
+    var regionSummaryEmpty = document.getElementById('regionSummaryEmpty');
+    var regionSummaryGdpr = document.getElementById('regionSummaryGdpr');
+    var regionSummaryCcpa = document.getElementById('regionSummaryCcpa');
+    var regionSummaryNotAssessed = document.getElementById('regionSummaryNotAssessed');
+
+    function loadRegionSummary() {
+      if (!regionSummaryGrid || !window.Api || !window.Api.audits.getRegionSummary) return;
+      [regionSummaryGdpr, regionSummaryCcpa, regionSummaryNotAssessed].forEach(function (el) { window.Loader.setSkeleton(el, true); });
+      return window.Api.audits.getRegionSummary()
+        .then(applyRegionSummary)
+        .catch(function () {
+          [regionSummaryGdpr, regionSummaryCcpa, regionSummaryNotAssessed].forEach(function (el) {
+            window.Loader.setSkeleton(el, false);
+            if (el) el.textContent = '–';
+          });
+        });
+    }
+
+    function applyRegionSummary(summary) {
+      summary = summary || {};
+      [regionSummaryGdpr, regionSummaryCcpa, regionSummaryNotAssessed].forEach(function (el) { window.Loader.setSkeleton(el, false); });
+
+      var gdpr = summary.gdpr || 0;
+      var ccpa = summary.ccpa || 0;
+      var notAssessed = summary.notAssessed || 0;
+      var total = gdpr + ccpa + notAssessed;
+
+      if (total === 0) {
+        if (regionSummaryGrid) regionSummaryGrid.style.display = 'none';
+        if (regionSummaryEmpty) regionSummaryEmpty.style.display = '';
+        return;
+      }
+      if (regionSummaryGrid) regionSummaryGrid.style.display = '';
+      if (regionSummaryEmpty) regionSummaryEmpty.style.display = 'none';
+
+      // Never combined into one number — see the comment on this card in
+      // dashboard.html: a GDPR gap and a CCPA gap are different findings.
+      if (regionSummaryGdpr) U.animateCountUp(regionSummaryGdpr, gdpr, 700);
+      if (regionSummaryCcpa) U.animateCountUp(regionSummaryCcpa, ccpa, 700);
+      if (regionSummaryNotAssessed) U.animateCountUp(regionSummaryNotAssessed, notAssessed, 700);
+    }
+
+    loadRegionSummary();
+
     function loadStats() {
       if (healthOverviewError) healthOverviewError.style.display = 'none';
       if (healthOverviewMain) healthOverviewMain.style.display = '';

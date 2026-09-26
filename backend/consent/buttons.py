@@ -1,12 +1,33 @@
 """
 consent/buttons.py
 
-Looks at every <button>/<a> in the page for consent-banner-style call
-to actions and classifies each as accept / reject / manage-preferences,
-then checks the classic "dark pattern" complaint regulators
-(CNIL, ICO) have specifically called out: an "Accept All" button that's
-one click away while "Reject All" is missing, buried in a sub-menu, or
-requires more clicks than accepting does.
+Looks at every <button>/<a>/<input> in the page for consent-banner-style
+calls to action and classifies each into one of five buckets — accept,
+reject, preferences, necessary_only, or unknown — then checks the
+classic "dark pattern" complaint regulators (CNIL, ICO) have specifically
+called out: an "Accept All" button that's one click away while
+"Reject All" is missing, buried in a sub-menu, or requires more clicks
+than accepting does.
+
+Classification is a GLOBAL, page-wide text match (unlike
+consent/runtime.py's live click-through pass, which only searches
+*inside* an already-found consent container — see that module's
+docstring). Because this scan isn't scoped to a container, it must be
+conservative about which wordings it treats as consent-specific:
+
+    A generic "OK" must never become Accept.
+    A generic "Close" must never become Reject.
+    A generic "Continue" must never become Accept.
+
+Those three (and anything else that doesn't clearly match) fall through
+to "unknown" rather than being guessed at. Matching a bare, ambiguous
+word like that globally would misclassify the "OK" on an unrelated
+alert dialog, or the "Continue" on a login form, as a consent decision
+— and that false signal would then feed straight into the reject-parity
+dark-pattern check below. Every pattern in this module therefore
+requires an unambiguous consent-decision keyword (accept/allow/agree/
+consent, reject/decline/refuse/deny, etc.) to actually appear in the
+label; nothing here matches on filler words alone.
 
 Static/markup-only, same as banner.py — this reads text + attributes,
 it doesn't measure rendered click depth or visual prominence (that
@@ -24,60 +45,82 @@ from crawler.parser import ParsedPage
 MODULE = "consent"
 CATEGORY = "buttons"
 
+# ---------------------------------------------------------------------------
+# Classification buckets.
+#
 # Exact-phrase allowlists first (normalized via _normalize below) so the
-# specific wordings sites actually ship — "I Agree", "Only Necessary",
-# "Your Privacy Choices", etc. — are recognized outright rather than
-# relying on a single generic pattern to happen to cover them.
+# specific wordings sites actually ship are recognized outright rather
+# than relying on a regex to happen to cover them. Fallback regexes below
+# then catch close variations (e.g. "Accept All Cookies", "Refuse Non-
+# Essential", "Customize Settings") without needing every possible
+# wording enumerated by hand — but every regex still requires one of the
+# real consent-decision keywords to be present. Nothing here matches on
+# "ok", "close", or "continue" alone; those are deliberately absent from
+# every bucket and fall through to "unknown".
+
+ACCEPT = "accept"
+REJECT = "reject"
+PREFERENCES = "preferences"
+NECESSARY_ONLY = "necessary_only"
+UNKNOWN = "unknown"
+
 _ACCEPT_LABELS = {
     "accept",
     "accept all",
-    "allow",
     "allow all",
-    "agree",
     "i agree",
-    "continue",
-    "accept cookies",
-    "allow all cookies",
+    "agree",
+    "consent",
 }
 _REJECT_LABELS = {
     "reject",
     "reject all",
     "decline",
-    "decline all",
+    "refuse",
+    "refuse all",
     "deny",
-    "deny all",
-    "continue without accepting",
-    "only necessary",
-    "necessary only",
 }
-_MANAGE_LABELS = {
+_PREFERENCES_LABELS = {
     "manage preferences",
     "cookie settings",
-    "privacy settings",
     "customize",
     "customise",
-    "manage cookies",
-    "cookie preferences",
-    "your privacy choices",
+    "settings",
+    "manage consent",
+}
+_NECESSARY_ONLY_LABELS = {
+    "only necessary",
+    "necessary cookies only",
+    "continue without accepting",
+    "essential only",
 }
 
-# Fallback patterns catch close variations not in the exact lists above
-# (e.g. "Accept All Cookies", "Reject Non-Essential", "Customize Settings")
-# without needing every possible wording enumerated by hand.
+# Fallback patterns for close variants. Each still anchors on a real
+# consent-decision keyword (accept/allow/agree/consent, reject/decline/
+# refuse/deny, manage/customize/settings, necessary/essential-only) — a
+# bare "OK", "Close", or "Continue" contains none of these and will
+# never match any of them, by design.
 _ACCEPT_RE = re.compile(
-    r"^\s*(accept|allow|agree)\s*(all)?\s*(cookies|everything)?\s*$", re.IGNORECASE
-)
-_REJECT_RE = re.compile(
-    r"^\s*(reject|decline|deny|disagree)\s*(all)?\s*(cookies|non[\s-]?essential)?\s*$"
-    r"|^\s*(only\s+)?necessary(\s+only)?\s*$"
-    r"|^\s*continue without accepting\s*$",
+    r"^\s*(i\s+)?(accept|allow|agree|consent)(\s+(all|everything|cookies))*\s*$",
     re.IGNORECASE,
 )
-_MANAGE_RE = re.compile(
-    r"^\s*(manage|customi[sz]e)\s*.*$"
-    r"|^\s*(cookie|privacy)\s+(settings|preferences|choices)\s*$"
-    r"|^\s*(your\s+)?privacy\s+(settings|choices)\s*$"
-    r"|^\s*more options\s*$",
+_REJECT_RE = re.compile(
+    r"^\s*(reject|decline|refuse|deny|disagree)"
+    r"(\s+(all|everything|cookies|non[\s-]?essential))*\s*$",
+    re.IGNORECASE,
+)
+_PREFERENCES_RE = re.compile(
+    r"^\s*(manage\s+(preferences|consent|cookies)"
+    r"|(cookie|privacy)\s+(settings|preferences|choices)"
+    r"|customi[sz]e(\s+.*)?"
+    r"|settings"
+    r"|more options)\s*$",
+    re.IGNORECASE,
+)
+_NECESSARY_ONLY_RE = re.compile(
+    r"^\s*((only\s+)?necessary(\s+cookies)?(\s+only)?"
+    r"|essential\s+only"
+    r"|continue\s+without\s+accepting)\s*$",
     re.IGNORECASE,
 )
 
@@ -86,19 +129,62 @@ def _normalize(label: str) -> str:
     return re.sub(r"\s+", " ", label.strip().lower())
 
 
+def classify_button(label: str) -> str:
+    """
+    Classify a single button/link label into one of the five buckets:
+    accept / reject / preferences / necessary_only / unknown.
+
+    Order matters only in that necessary_only and reject are checked
+    before the looser accept/preferences patterns, so phrases like
+    "Continue Without Accepting" (contains neither "accept" as its own
+    decision nor a reject keyword) resolve to necessary_only rather than
+    falling through. In practice the keyword sets are disjoint — nothing
+    in one bucket's regex can satisfy another's — so this mostly just
+    keeps the check order readable.
+
+    Anything that doesn't clearly match — including bare "OK", "Close",
+    "Continue", "Submit", "Got it", etc. — returns "unknown". Those
+    generic words are intentionally never added to any pattern above.
+    """
+    normalized = _normalize(label)
+    if not normalized:
+        return UNKNOWN
+
+    if normalized in _NECESSARY_ONLY_LABELS or _NECESSARY_ONLY_RE.match(normalized):
+        return NECESSARY_ONLY
+    if normalized in _REJECT_LABELS or _REJECT_RE.match(normalized):
+        return REJECT
+    if normalized in _ACCEPT_LABELS or _ACCEPT_RE.match(normalized):
+        return ACCEPT
+    if normalized in _PREFERENCES_LABELS or _PREFERENCES_RE.match(normalized):
+        return PREFERENCES
+    return UNKNOWN
+
+
 @dataclass
 class ButtonsDetection:
     accept_found: bool = False
     reject_found: bool = False
     manage_found: bool = False
+    necessary_only_found: bool = False
+
     accept_labels: List[str] = field(default_factory=list)
     reject_labels: List[str] = field(default_factory=list)
     manage_labels: List[str] = field(default_factory=list)
+    necessary_only_labels: List[str] = field(default_factory=list)
+    unknown_labels: List[str] = field(default_factory=list)
 
     @property
     def has_reject_parity(self) -> bool:
-        """True when reject is offered at all — the bar this module checks, not visual weight."""
-        return self.accept_found and self.reject_found
+        """
+        True when the visitor has *some* one-click way to decline
+        non-essential cookies — a true "Reject" control, or a
+        "Necessary Only" / "Continue Without Accepting" control, which
+        serves the same functional purpose even though it's classified
+        separately above. Visual weight/click-depth isn't measured here
+        (see this module's docstring).
+        """
+        return self.accept_found and (self.reject_found or self.necessary_only_found)
 
 
 def detect_buttons(page: ParsedPage) -> ButtonsDetection:
@@ -110,20 +196,22 @@ def detect_buttons(page: ParsedPage) -> ButtonsDetection:
         if not label:
             continue
 
-        normalized = _normalize(label)
+        category = classify_button(label)
 
-        # Reject is checked before accept: reject phrases like "Continue
-        # Without Accepting" or "Necessary Only" can otherwise get pulled
-        # into a looser accept pattern first.
-        if normalized in _REJECT_LABELS or _REJECT_RE.match(label):
-            result.reject_found = True
-            result.reject_labels.append(label)
-        elif normalized in _ACCEPT_LABELS or _ACCEPT_RE.match(label):
+        if category == ACCEPT:
             result.accept_found = True
             result.accept_labels.append(label)
-        elif normalized in _MANAGE_LABELS or _MANAGE_RE.match(label):
+        elif category == REJECT:
+            result.reject_found = True
+            result.reject_labels.append(label)
+        elif category == PREFERENCES:
             result.manage_found = True
             result.manage_labels.append(label)
+        elif category == NECESSARY_ONLY:
+            result.necessary_only_found = True
+            result.necessary_only_labels.append(label)
+        else:
+            result.unknown_labels.append(label)
 
     return result
 
@@ -141,7 +229,7 @@ def check_buttons(page: ParsedPage, banner_detected: bool = True) -> List[dict]:
     detection = detect_buttons(page)
     findings: List[dict] = []
 
-    if detection.accept_found and not detection.reject_found:
+    if detection.accept_found and not (detection.reject_found or detection.necessary_only_found):
         findings.append(_finding(
             "critical",
             "Accept-all button present with no equivalent reject option",
@@ -150,7 +238,7 @@ def check_buttons(page: ParsedPage, banner_detected: bool = True) -> List[dict]:
             "(CNIL, ICO) have explicitly flaged as non-compliant.",
             recommendation="Offer 'Reject All' with the same prominence and click-depth as 'Accept All'.",
         ))
-    elif not detection.accept_found and not detection.reject_found:
+    elif not detection.accept_found and not detection.reject_found and not detection.necessary_only_found:
         findings.append(_finding(
             "warning",
             "No accept/reject controls found in banner markup",
@@ -160,7 +248,7 @@ def check_buttons(page: ParsedPage, banner_detected: bool = True) -> List[dict]:
             recommendation="Verify the banner exposes clearly labeled accept and reject actions.",
         ))
 
-    if detection.reject_found and not detection.manage_found:
+    if (detection.reject_found or detection.necessary_only_found) and not detection.manage_found:
         findings.append(_finding(
             "info",
             "No granular preferences/manage option found",

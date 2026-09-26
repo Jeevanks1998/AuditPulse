@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.auth import User, get_current_user
 from config.database import get_db
 from schemas.audit import AuditOut, AuditStatsOut
-from schemas.dashboard import DashboardOut
+from schemas.dashboard import DashboardOut, RegionSummaryOut
 from services import dashboard_service
 
 router = APIRouter()
@@ -42,3 +42,10 @@ async def dashboard_recent(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     return await dashboard_service.get_recent(db, current_user)
+
+
+@router.get("/region-summary", response_model=RegionSummaryOut)
+async def dashboard_region_summary(
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    return await dashboard_service.get_region_summary(db, current_user)

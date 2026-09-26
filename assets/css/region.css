@@ -1,0 +1,111 @@
+/* ==========================================================================
+   region.css — Regional Information card (audit.html) + Consent Compliance
+   summary card (dashboard.html). Shared file since both render the same
+   GDPR / UK GDPR / Swiss FADP / CCPA-CPRA framework vocabulary and confidence
+   language coming from backend consent.region_detector.detect_region.
+   ========================================================================== */
+
+/* ---------------------------------------------------------------------
+   audit.html — Regional Information card
+   --------------------------------------------------------------------- */
+.region-info-card { margin-bottom: var(--sp-5); }
+
+.region-info-placeholder {
+  display: flex; align-items: center; gap: var(--sp-2);
+  color: var(--text-tertiary); font-size: var(--fs-sm);
+  padding: var(--sp-2) 0;
+}
+
+.region-info-body { display: none; }
+.region-info-body.is-visible { display: block; }
+
+.region-info-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-sm);
+}
+.region-info-row:last-of-type { border-bottom: none; }
+.region-info-row__label { color: var(--text-secondary); }
+.region-info-row__value { font-weight: 600; color: var(--text-primary); text-align: right; }
+.region-info-row__value.mono { font-family: var(--font-mono); }
+
+.region-info-region {
+  display: flex; align-items: center; gap: var(--sp-2);
+  font-size: var(--fs-base); font-weight: 700; color: var(--text-primary);
+}
+.region-info-region__flag { font-size: 1.25em; line-height: 1; }
+
+.region-info-confidence {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px; border-radius: 999px;
+  font-size: var(--fs-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+}
+.region-info-confidence--high { background: var(--color-success-soft); color: var(--color-success-text); }
+.region-info-confidence--medium { background: var(--color-warning-soft); color: var(--color-warning-text); }
+.region-info-confidence--low { background: var(--color-warning-soft); color: var(--color-warning-text); }
+.region-info-confidence--none { background: var(--surface-sunken); color: var(--text-tertiary); }
+.region-info-confidence--override { background: var(--color-primary-soft); color: var(--color-primary); }
+
+.region-info-note {
+  margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px dashed var(--border);
+  font-size: var(--fs-2xs); color: var(--text-tertiary); line-height: 1.5;
+}
+
+.region-info-advanced-toggle {
+  background: none; border: none; padding: 0; margin-top: var(--sp-3);
+  font-size: var(--fs-xs); color: var(--text-tertiary); text-decoration: underline;
+  cursor: pointer;
+}
+.region-info-advanced-toggle:hover { color: var(--text-secondary); }
+
+.region-info-advanced {
+  display: none;
+  margin-top: var(--sp-3); padding: var(--sp-3); border-radius: var(--radius-input, 8px);
+  background: var(--surface-sunken); border: 1px solid var(--border);
+}
+.region-info-advanced.is-visible { display: block; }
+.region-info-advanced__label {
+  display: block; font-size: var(--fs-2xs); font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--text-tertiary); margin-bottom: var(--sp-2);
+}
+.region-info-advanced select {
+  width: 100%; padding: 8px 10px; border-radius: var(--radius-input, 8px);
+  border: 1px solid var(--border-strong); background: var(--surface);
+  color: var(--text-primary); font-size: var(--fs-sm); font-family: var(--font-body);
+}
+.region-info-advanced__hint {
+  margin-top: var(--sp-2); font-size: var(--fs-2xs); color: var(--text-tertiary);
+}
+
+/* ---------------------------------------------------------------------
+   dashboard.html — Consent Compliance summary card
+   --------------------------------------------------------------------- */
+.region-summary-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-4);
+}
+.region-summary-item {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-card);
+  background: var(--surface-sunken); border: 1px solid var(--border);
+}
+.region-summary-item__icon {
+  flex: none; width: 34px; height: 34px; border-radius: var(--radius-icon);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.1rem; background: var(--color-primary-soft);
+}
+.region-summary-item[data-framework="ccpa"] .region-summary-item__icon { background: var(--color-accent-sky, var(--color-primary-soft)); }
+.region-summary-item--neutral .region-summary-item__icon { background: var(--border); color: var(--text-tertiary); }
+.region-summary-item__body { display: flex; flex-direction: column; gap: 2px; }
+.region-summary-item__label { font-size: var(--fs-xs); color: var(--text-secondary); font-weight: 600; }
+.region-summary-item__value {
+  font-family: var(--font-mono); font-weight: 700; font-size: var(--fs-xl);
+  color: var(--text-primary); letter-spacing: -0.02em;
+}
+.region-summary-empty {
+  padding: var(--sp-3) 0; font-size: var(--fs-sm); color: var(--text-tertiary); text-align: center;
+}
+
+@media (max-width: 640px) {
+  .region-summary-grid { grid-template-columns: 1fr; }
+}

@@ -50,7 +50,15 @@ from models.issue import sync_issues_from_findings
 from models.user import User
 from models.website import Website, get_or_create_website, record_audit_result
 from schemas.audit import AuditCreate, AuditStatsOut
+from schemas.dashboard import RegionSummaryOut
 from services import ai_service
+
+# Display names consent.consent_score.resolve_applicable_frameworks ever
+# assigns to Consent.compliance_framework for a GDPR-family verdict — see
+# consent.consent_score._GDPR_FAMILY_FRAMEWORK_NAME. Kept here (rather than
+# imported) since this module only needs the bucket, not the resolver.
+_GDPR_FAMILY_FRAMEWORKS = {"GDPR", "UK GDPR", "Swiss FADP"}
+_CCPA_FRAMEWORK = "CCPA/CPRA"
 
 # Only present in a given audit's real breakdown when the matching module
 # was selected in its modules (see run_audit_pipeline) — kept here at 0
@@ -109,6 +117,35 @@ async def compute_stats(db: AsyncSession, user: User) -> AuditStatsOut:
         overall=avg_overall,
         breakdown=latest.breakdown or dict(EMPTY_BREAKDOWN),
     )
+
+
+async def compute_region_summary(db: AsyncSession, user: User) -> RegionSummaryOut:
+    """
+    Buckets every completed, consent-scanned audit by which regional
+    framework consent.region_detector actually resolved for it — see
+    RegionSummaryOut for why GDPR and CCPA are kept as separate counts
+    instead of one combined "failures" number. An audit with no Consent
+    row at all (consent module wasn't selected, or the scan failed) is
+    counted under not_assessed alongside a resolved-but-unrecognized
+    region, since neither is a framework verdict.
+    """
+    result = await db.execute(
+        select(Consent.compliance_framework)
+        .join(Audit, Audit.id == Consent.audit_id)
+        .where(Audit.user_id == user.id, Audit.status == "completed")
+    )
+    frameworks = [row[0] for row in result.all()]
+
+    gdpr = sum(1 for f in frameworks if f in _GDPR_FAMILY_FRAMEWORKS)
+    ccpa = sum(1 for f in frameworks if f == _CCPA_FRAMEWORK)
+
+    scanned_completed = await db.execute(
+        select(Audit.id).where(Audit.user_id == user.id, Audit.status == "completed")
+    )
+    total_completed = len(scanned_completed.all())
+    not_assessed = total_completed - gdpr - ccpa
+
+    return RegionSummaryOut(gdpr=gdpr, ccpa=ccpa, not_assessed=max(not_assessed, 0))
 
 
 # --------------------------------------------------------------------------

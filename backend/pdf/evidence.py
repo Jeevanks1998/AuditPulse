@@ -236,6 +236,56 @@ _RUNTIME_CHECKS = (
     ("personalize_exposes_controls", "Personalize/Manage exposes controls"),
 )
 
+# Human-readable label for consent.consent_score's REGION_* bucket codes —
+# the same buckets named in that module's "Region -> applicable regional
+# framework" table — so "Detected Region" on the report always matches the
+# terms that actually decided which framework (if any) was assessed.
+_REGION_LABELS = {
+    "EU": "European Union",
+    "EEA": "European Economic Area",
+    "UK": "United Kingdom",
+    "CH": "Switzerland",
+    "US-CA": "California, United States",
+    "US": "United States (non-California)",
+    "UNKNOWN": "Unknown",
+}
+
+# Static, check-level remediation text for the "Recommendations" list under
+# a failed check. Deliberately generic (never derived from a specific
+# audit's data — that would belong in gdpr_check_evidence/Failures, not
+# here); keyed the same way GDPR_CHECK_ORDER/CCPA_CHECK_ORDER are so a
+# lookup for any failed check always resolves.
+_GDPR_RECOMMENDATIONS = {
+    "consent_banner": "Add a cookie consent banner that appears before any non-essential script runs.",
+    "lawful_consent_controls": "Remove pre-ticked non-essential checkboxes and any \u201cby continuing to "
+                                "browse\u201d consent language; require a real affirmative opt-in click.",
+    "accept_control": "Add a clearly labeled Accept control to the consent banner.",
+    "reject_control": "Add a clearly labeled Reject control to the consent banner.",
+    "reject_parity": "Give Reject the same visual prominence as Accept, rather than burying it in a sub-menu.",
+    "trackers_blocked_pre_consent": "Hold non-essential tracker requests until after the visitor consents.",
+    "cookies_blocked_pre_consent": "Hold non-essential cookies until after the visitor consents.",
+    "consent_is_granular": "Let visitors choose consent by category (analytics, marketing, etc.) instead of "
+                            "only an all-or-nothing choice.",
+    "consent_withdrawal_available": "Add a way to change or withdraw consent later, e.g. a persistent "
+                                     "\u201cCookie preferences\u201d link.",
+    "privacy_policy_available": "Link to a privacy policy from the consent banner or site footer.",
+    "consent_state_persistence": "Set a consent-state cookie so the visitor's choice persists across page "
+                                  "loads instead of re-prompting every visit.",
+    "reject_blocks_tracking": "Verify that rejecting actually stops analytics/marketing scripts from firing.",
+}
+
+_CCPA_RECOMMENDATIONS = {
+    "privacy_policy_available": "Link to a privacy policy from the site footer.",
+    "do_not_sell_link": "Add a \u201cDo Not Sell or Share My Personal Information\u201d link.",
+    "opt_out_mechanism": "Provide a reachable opt-out mechanism for the sale/sharing of personal information.",
+    "privacy_choices_link": "Add a \u201cYour Privacy Choices\u201d link.",
+    "gpc_honored": "Honor the Global Privacy Control (GPC) browser signal as a valid opt-out request.",
+    "opt_out_behavior_verified": "Verify that opting out actually stops the sale/sharing of personal "
+                                  "information.",
+    "advertising_analytics_behavior": "Verify advertising/analytics behavior changes appropriately after "
+                                       "opt-out.",
+}
+
 
 def _build_bool_table(rows_spec, values: dict, col_widths=(110 * mm, 44 * mm)) -> Table:
     """Shared helper for the consent/GDPR/runtime check tables below —
@@ -279,28 +329,7 @@ def _build_consent_section(consent: Optional[dict], screenshots: List[dict]) -> 
     story.append(_build_bool_table(_CONSENT_CHECKS, consent))
     story.append(Spacer(1, 10))
 
-    # GDPR is twelve separate checks (consent.consent_score.GDPR_CHECK_ORDER),
-    # not one collapsed boolean — this table shows exactly which
-    # requirement(s) fail rather than only a single pass/fail verdict.
-    story.append(Paragraph("GDPR Assessment", STYLES["H2"]))
-    gdpr_checks = consent.get("gdpr_checks") or {}
-    story.append(_build_bool_table(_GDPR_CHECKS, gdpr_checks))
-    story.append(Paragraph(
-        "GDPR compliant overall: " + ("PASS" if consent.get("gdpr_compliant") else "FAIL"),
-        STYLES["BodyMuted"],
-    ))
-    story.append(Spacer(1, 10))
-
-    # CCPA is likewise seven separate checks (consent.consent_score.CCPA_CHECK_ORDER),
-    # not one collapsed boolean.
-    story.append(Paragraph("CCPA Assessment", STYLES["H2"]))
-    ccpa_checks = consent.get("ccpa_checks") or {}
-    story.append(_build_bool_table(_CCPA_CHECKS, ccpa_checks))
-    story.append(Paragraph(
-        "CCPA compliant overall: " + ("PASS" if consent.get("ccpa_compliant") else "FAIL"),
-        STYLES["BodyMuted"],
-    ))
-    story.append(Spacer(1, 10))
+    story.extend(_build_regional_assessment(consent))
 
     if consent.get("runtime_tested"):
         story.append(_build_bool_table(_RUNTIME_CHECKS, consent.get("runtime_result") or {}))
@@ -321,6 +350,96 @@ def _build_consent_section(consent: Optional[dict], screenshots: List[dict]) -> 
     story.append(Spacer(1, 10))
 
     story.extend(_build_consent_evidence(screenshots))
+    return story
+
+
+def _build_regional_assessment(consent: dict) -> List[Flowable]:
+    """
+    Renders exactly ONE regional-privacy assessment — whichever single
+    framework consent.consent_score.resolve_applicable_frameworks actually
+    judged this audit against (gdpr_assessed XOR ccpa_assessed; both False
+    when the detected region isn't in scope for either one) — instead of
+    unconditionally printing a full GDPR block and a full CCPA block on
+    every audit.
+
+    That used to mean a US-only site could show "GDPR: Failed" for a
+    framework that was never legally relevant to it, right next to
+    "CCPA: Failed" for the same underlying finding — two verdicts for one
+    fact, and one of them meaningless. Instead this prints, in order:
+    Detected Region -> Applicable Framework -> Assessment (PASS/FAIL) ->
+    Evidence (the full per-check table) -> Failures (the reason each
+    failed check actually recorded) -> Recommendations (what to do about
+    each failure) — and nothing at all for whichever framework didn't
+    apply to this audit's region.
+    """
+    region_code = consent.get("detected_region") or "UNKNOWN"
+    region_label = consent.get("detected_country") or _REGION_LABELS.get(region_code, region_code)
+    framework = consent.get("compliance_framework")
+
+    story: List[Flowable] = [Paragraph("Regional Privacy Assessment", STYLES["H2"])]
+    story.append(Paragraph(f"<b>Detected Region:</b> {esc(region_label)}", STYLES["Body"]))
+
+    gdpr_assessed = bool(consent.get("gdpr_assessed"))
+    ccpa_assessed = bool(consent.get("ccpa_assessed"))
+
+    if not (gdpr_assessed or ccpa_assessed):
+        story.append(Paragraph(
+            "<b>Applicable Framework:</b> None \u2014 the detected region is not in scope for GDPR or "
+            "CCPA/CPRA, so no regional compliance verdict applies to this audit.",
+            STYLES["Body"],
+        ))
+        story.append(Spacer(1, 10))
+        return story
+
+    story.append(Paragraph(f"<b>Applicable Framework:</b> {esc(framework or 'Unknown')}", STYLES["Body"]))
+    story.append(Spacer(1, 6))
+
+    if gdpr_assessed:
+        checks_spec = _GDPR_CHECKS
+        checks_values = consent.get("gdpr_checks") or {}
+        compliant = consent.get("gdpr_compliant")
+        # Per-check reason/evidence text — currently only recorded for GDPR
+        # (consent.consent_score.GdprAssessment.as_evidence_dict).
+        evidence = consent.get("gdpr_check_evidence") or {}
+        recommendations_map = _GDPR_RECOMMENDATIONS
+    else:
+        checks_spec = _CCPA_CHECKS
+        checks_values = consent.get("ccpa_checks") or {}
+        compliant = consent.get("ccpa_compliant")
+        evidence = {}
+        recommendations_map = _CCPA_RECOMMENDATIONS
+
+    story.append(Paragraph(
+        f"<b>{esc(framework or 'Regional')} Assessment:</b> " + ("PASS" if compliant else "FAIL"),
+        STYLES["Body"],
+    ))
+    story.append(Spacer(1, 6))
+
+    story.append(Paragraph("Evidence", STYLES["H2"]))
+    story.append(_build_bool_table(checks_spec, checks_values))
+    story.append(Spacer(1, 8))
+
+    labels_by_key = dict(checks_spec)
+    failed_keys = [key for key, _label in checks_spec if checks_values.get(key) is False]
+
+    if failed_keys:
+        story.append(Paragraph("Failures", STYLES["H2"]))
+        for key in failed_keys:
+            reason = (evidence.get(key) or {}).get("reason") or "No further detail was recorded for this check."
+            story.append(Paragraph(f"<b>{esc(labels_by_key[key])}</b>", STYLES["TableCell"]))
+            story.append(Paragraph(esc(reason), STYLES["TableCellMuted"]))
+            story.append(Spacer(1, 3))
+        story.append(Spacer(1, 4))
+
+        story.append(Paragraph("Recommendations", STYLES["H2"]))
+        for key in failed_keys:
+            recommendation = recommendations_map.get(key, "Review and remediate this check.")
+            story.append(Paragraph(f"\u2022 {esc(recommendation)}", STYLES["ListItem"]))
+        story.append(Spacer(1, 6))
+    else:
+        story.append(Paragraph("No failing checks were recorded for this framework.", STYLES["BodyMuted"]))
+        story.append(Spacer(1, 6))
+
     return story
 
 

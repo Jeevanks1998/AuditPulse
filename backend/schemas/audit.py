@@ -17,6 +17,11 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
+from config.compliance_profiles import (
+    ComplianceStatus,
+    build_ccpa_final_assessment,
+    build_gdpr_final_assessment,
+)
 from config.constants import DEFAULT_MAX_PAGES, MAX_PAGES_LIMIT, MIN_PAGES_LIMIT
 
 
@@ -67,6 +72,19 @@ class AuditProgressOut(BaseModel):
     current_step: Optional[str] = None
     percent: int
     overall_score: Optional[int] = None
+
+
+class ComplianceStatusOut(BaseModel):
+    """
+    The only shape a regional compliance verdict takes once it reaches
+    the browser: which framework was evaluated, and one status out of
+    ComplianceStatus. See config.compliance_profiles for how that status
+    is derived — the internal requirements feeding into it (score
+    floors, runtime-verification requirements, which team owns them)
+    stop at the backend; this model has no field for any of that.
+    """
+    framework: Optional[str] = None
+    status: ComplianceStatus
 
 
 class ConsentOut(BaseModel):
@@ -142,6 +160,45 @@ class ConsentOut(BaseModel):
     def accept_screenshot_url(self) -> Optional[str]:
         """Screenshot taken right after the runtime pass clicked Accept (separate clean browser context)."""
         return _screenshot_url(self.accept_screenshot_path)
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def gdpr_status(self) -> ComplianceStatusOut:
+        """
+        The browser-facing GDPR-family verdict — see
+        config.compliance_profiles.build_gdpr_final_assessment. Everything
+        this depends on (the internal score floor, the runtime-
+        verification requirement) lives in that private module, not here.
+
+        `gdpr_checks` being empty is this schema's only available signal
+        for "no regional framework applied to this audit" until the
+        detected region/framework name is itself persisted on the Consent
+        row (gdpr_compliant is a non-nullable column today, so it can't
+        yet distinguish "not applicable" from a real False) — see the
+        migration note on consent.consent_score.ConsentSummary.gdpr_compliant.
+        """
+        applicable = bool(self.gdpr_checks)
+        assessment = build_gdpr_final_assessment(
+            framework_name="GDPR",
+            applicable=applicable,
+            compliant=self.gdpr_compliant if applicable else None,
+            consent_score=self.consent_score,
+            runtime_tested=self.runtime_tested,
+        )
+        return ComplianceStatusOut(framework=assessment.framework, status=assessment.status)
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def ccpa_status(self) -> ComplianceStatusOut:
+        """The browser-facing CCPA/CPRA verdict — see gdpr_status above for the same caveat on applicability."""
+        applicable = bool(self.ccpa_checks)
+        assessment = build_ccpa_final_assessment(
+            applicable=applicable,
+            compliant=self.ccpa_compliant if applicable else None,
+            consent_score=self.consent_score,
+            runtime_tested=self.runtime_tested,
+        )
+        return ComplianceStatusOut(framework=assessment.framework, status=assessment.status)
 
 
 def _screenshot_url(path: Optional[str]) -> Optional[str]:

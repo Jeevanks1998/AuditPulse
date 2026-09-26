@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="assets/css/animations.css">
 <link rel="stylesheet" href="assets/css/audit.css">
 <link rel="stylesheet" href="assets/css/responsive.css">
+<link rel="stylesheet" href="assets/css/region.css">
 <style>
   .url-input-wrap.is-invalid { border-color: var(--color-error) !important; box-shadow: 0 0 0 3px var(--color-error-soft) !important; }
   .url-error { font-size: 12px; color: var(--color-error); margin-top: 6px; display:none; }
@@ -125,6 +126,67 @@
               <input type="url" id="auditUrlInput" placeholder="https://example.com">
             </div>
             <div class="url-error" id="urlError">Please enter a valid website URL (e.g. https://example.com)</div>
+          </div>
+
+          <!-- Regional Information — auto-detected GDPR/CCPA applicability.
+               Hidden until a URL is entered; starts as a client-side
+               domain-only preview and is replaced with the backend's
+               full signal-based detection (consent.region_detector) once
+               the audit completes. Auto Detect is always the default —
+               nobody should have to manually pick GDPR vs CCPA for a
+               normal audit; the manual override below exists only for
+               internal audit/testing. -->
+          <div class="card card__pad region-info-card" id="regionInfoCard">
+            <div class="card__head">
+              <h3>Regional Information</h3>
+              <span class="badge badge--neutral" id="regionModeBadge">Auto Detect</span>
+            </div>
+
+            <div class="region-info-placeholder" id="regionInfoPlaceholder">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+              Enter a website URL to detect its applicable privacy framework.
+            </div>
+
+            <div class="region-info-body" id="regionInfoBody">
+              <div class="region-info-row">
+                <span class="region-info-row__label">Website URL</span>
+                <span class="region-info-row__value mono" id="regionInfoUrl">—</span>
+              </div>
+              <div class="region-info-row">
+                <span class="region-info-row__label">Detected Region</span>
+                <span class="region-info-row__value">
+                  <span class="region-info-region"><span class="region-info-region__flag" id="regionInfoFlag">🌐</span><span id="regionInfoRegion">—</span></span>
+                </span>
+              </div>
+              <div class="region-info-row">
+                <span class="region-info-row__label">Applicable Framework</span>
+                <span class="region-info-row__value" id="regionInfoFramework">—</span>
+              </div>
+              <div class="region-info-row">
+                <span class="region-info-row__label">Confidence</span>
+                <span class="region-info-row__value"><span class="region-info-confidence region-info-confidence--none" id="regionInfoConfidence">—</span></span>
+              </div>
+              <div class="region-info-row">
+                <span class="region-info-row__label">Detection</span>
+                <span class="region-info-row__value" id="regionInfoSource">—</span>
+              </div>
+              <div class="region-info-note" id="regionInfoNote">Preliminary guess from the domain only — the full audit checks hreflang tags, page language, locale paths and on-page text for a more confident result.</div>
+            </div>
+
+            <button type="button" class="region-info-advanced-toggle" id="regionAdvancedToggle">Internal use: manual framework override</button>
+            <div class="region-info-advanced" id="regionAdvanced">
+              <label class="region-info-advanced__label" for="regionOverrideSelect">Override for this audit (internal testing only)</label>
+              <select id="regionOverrideSelect">
+                <option value="auto" selected>Auto Detect (recommended)</option>
+                <option value="EU">GDPR — European Union</option>
+                <option value="UK">UK GDPR — United Kingdom</option>
+                <option value="CH">Swiss FADP — Switzerland</option>
+                <option value="US-CA">CCPA / CPRA — California</option>
+                <option value="US">United States (other, no state framework)</option>
+                <option value="UNKNOWN">None / Unknown</option>
+              </select>
+              <div class="region-info-advanced__hint">Only changes what's shown here for review purposes — it does not skip or replace the real detection the audit runs.</div>
+            </div>
           </div>
 
           <div class="card card__pad" style="margin-bottom: var(--sp-5);">

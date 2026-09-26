@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="assets/css/HEALTH_OVERVIEW_PHASE4.css">
 <link rel="stylesheet" href="assets/css/ANALYTICS_CONSENT_PHASE5.css">
 <link rel="stylesheet" href="assets/css/RECENT_AUDITS_PHASE6.css">
+<link rel="stylesheet" href="assets/css/region.css">
 <link rel="stylesheet" href="assets/css/responsive.css">
 </head>
 <body>
@@ -269,6 +270,46 @@
           </div>
         </div>
       </div>
+      </div>
+
+      <!-- Consent Compliance — GDPR vs CCPA/CPRA breakdown across every
+           completed, consent-scanned audit (services.audit_service
+           .compute_region_summary). Kept as three separate counts, never
+           combined into one "failures" number, since a GDPR gap and a
+           CCPA gap aren't the same finding. -->
+      <div class="dash-section">
+        <div class="card card__pad" id="regionSummaryCard">
+          <div class="card__head">
+            <div>
+              <h3>Consent Compliance</h3>
+              <div class="card__head-sub">Completed audits, by applicable regional framework</div>
+            </div>
+          </div>
+          <div class="region-summary-grid" id="regionSummaryGrid">
+            <div class="region-summary-item" data-framework="gdpr">
+              <span class="region-summary-item__icon" aria-hidden="true">🇪🇺</span>
+              <div class="region-summary-item__body">
+                <span class="region-summary-item__label">GDPR</span>
+                <span class="region-summary-item__value" id="regionSummaryGdpr">–</span>
+              </div>
+            </div>
+            <div class="region-summary-item" data-framework="ccpa">
+              <span class="region-summary-item__icon" aria-hidden="true">🇺🇸</span>
+              <div class="region-summary-item__body">
+                <span class="region-summary-item__label">CCPA / CPRA</span>
+                <span class="region-summary-item__value" id="regionSummaryCcpa">–</span>
+              </div>
+            </div>
+            <div class="region-summary-item region-summary-item--neutral" data-framework="not_assessed">
+              <span class="region-summary-item__icon" aria-hidden="true">–</span>
+              <div class="region-summary-item__body">
+                <span class="region-summary-item__label">Not Assessed</span>
+                <span class="region-summary-item__value" id="regionSummaryNotAssessed">–</span>
+              </div>
+            </div>
+          </div>
+          <div class="region-summary-empty" id="regionSummaryEmpty" style="display:none;">Run an audit with the Consent Banner module enabled to see regional compliance here.</div>
+        </div>
       </div>
 
       <!-- Analytics / Consent Health — runtime-validated pass/fail summary

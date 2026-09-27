@@ -1,0 +1,143 @@
+/* ==========================================================================
+   Scheduler page
+   ========================================================================== */
+
+/* ---- Schedule modal form (mirrors settings.css's .form-grid/.form-field
+   and audit.css's .depth-select so the modal matches the rest of the app —
+   duplicated here rather than importing those page CSS files, since
+   scheduler.html is otherwise self-contained) ---- */
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
+.form-field { display: flex; flex-direction: column; gap: 8px; }
+.form-field--full { grid-column: 1 / -1; }
+.form-field label { font-size: var(--fs-sm); font-weight: 600; }
+.form-field input, .form-field select {
+  padding: 11px 14px; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+  font-size: var(--fs-sm); outline: none; width: 100%; font-family: inherit; color: var(--text-primary);
+  background: var(--surface);
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.form-field input:focus, .form-field select:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-soft); }
+.form-field__hint { font-size: var(--fs-xs); color: var(--text-tertiary); }
+.form-field input.is-invalid { border-color: var(--color-error); }
+
+.form-field label.form-section-label { font-size: var(--fs-base); font-weight: 700; }
+
+.depth-select { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
+
+.module-select {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.depth-option {
+  position: relative;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--sp-3);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+.depth-option:hover:not(:has(input:checked)) { border-color: var(--border-strong); }
+.depth-option input { position: absolute; opacity: 0; }
+.depth-option:has(input:checked) { border-color: var(--color-primary); background: var(--color-primary-soft); }
+.depth-option__title { font-weight: 600; font-size: var(--fs-sm); display: flex; align-items: center; gap: 8px; }
+.depth-option__radio {
+  width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--border-strong);
+  flex-shrink: 0; display: inline-block; position: relative;
+}
+.depth-option:has(input:checked) .depth-option__radio { border-color: var(--color-primary); }
+.depth-option:has(input:checked) .depth-option__radio::after {
+  content: ''; position: absolute; inset: 2px; border-radius: 50%; background: var(--color-primary);
+}
+
+.schedule-modal .modal-dialog { max-width: 480px; text-align: left; max-height: 85vh; overflow-y: auto; }
+.schedule-modal .modal-dialog__body { margin-bottom: var(--sp-5); }
+.schedule-modal .modal-dialog__body > * + * { margin-top: var(--sp-4); }
+
+/* ---- Frequency segmented toggle (Daily / Weekly / Monthly / Yearly) ---- */
+.freq-toggle {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.freq-toggle__btn {
+  padding: 9px 6px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.freq-toggle__btn:hover { border-color: var(--border-strong); }
+.freq-toggle__btn.is-active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+/* ---- Per-frequency field group (Day/Time/Timezone etc., swapped in based
+   on the selected frequency) ---- */
+[data-frequency-fields] { display: flex; flex-direction: column; gap: var(--sp-4); }
+.schedule-summary { font-style: italic; }
+
+.radio-row { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
+.radio-row__option {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: var(--fs-sm); color: var(--text-primary); cursor: pointer;
+}
+.radio-row__option input { width: 16px; height: 16px; accent-color: var(--color-primary); }
+
+/* ---- Schedule Period (separate from Frequency: how long the recurring
+   schedule stays active, not when it repeats) ---- */
+.schedule-period {
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.schedule-period__title { font-weight: 600; font-size: var(--fs-sm); }
+.schedule-period__hint { font-size: var(--fs-xs); color: var(--text-tertiary); margin-top: -6px; }
+
+.checkbox-field {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: var(--fs-sm); color: var(--text-primary); cursor: pointer;
+}
+.checkbox-field input { width: 16px; height: 16px; accent-color: var(--color-primary); }
+
+.form-field input[type="date"]:disabled { color: var(--text-tertiary); background: var(--surface-sunken); cursor: not-allowed; }
+
+/* ---- Status pill (reuses .badge tokens from style.css) ---- */
+.schedule-status { display: inline-flex; align-items: center; gap: 6px; }
+.schedule-status__dot { width: 7px; height: 7px; border-radius: 50%; }
+.schedule-status__dot--active { background: var(--color-success); }
+.schedule-status__dot--paused { background: var(--text-tertiary); }
+
+/* ---- Row action menu ("⋯") ---- */
+.action-menu { position: relative; display: inline-block; }
+.action-menu .icon-btn { width: 32px; height: 32px; border: none; background: transparent; }
+.action-menu .icon-btn:hover { background: var(--surface-sunken); }
+.action-menu__dropdown {
+  position: absolute; top: calc(100% + 4px); right: 0; z-index: 40;
+  min-width: 160px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-lg); padding: 6px;
+  display: none;
+}
+.action-menu.is-open .action-menu__dropdown { display: block; }
+.action-menu__item {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  padding: 8px 10px; border-radius: var(--radius-sm); font-size: var(--fs-sm);
+  color: var(--text-primary); background: none; border: none; cursor: pointer;
+}
+.action-menu__item:hover { background: var(--surface-sunken); }
+.action-menu__item svg { width: 14px; height: 14px; flex-shrink: 0; }
+.action-menu__item--danger { color: var(--color-error); }
+.action-menu__item--danger:hover { background: var(--color-error-soft); }
+
+.schedule-empty { text-align: center; padding: var(--sp-8) 0; color: var(--text-tertiary); }
+.schedule-empty p { margin-bottom: var(--sp-3); }

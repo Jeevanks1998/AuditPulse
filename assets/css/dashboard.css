@@ -1,0 +1,89 @@
+/* ==========================================================================
+   Dashboard page
+   ========================================================================== */
+
+.greeting {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: var(--sp-8); flex-wrap: wrap; gap: var(--sp-4);
+}
+.greeting h1 { font-size: var(--fs-2xl); line-height: 1.15; }
+.greeting p { margin-top: 6px; max-width: 46ch; }
+
+/* ---- Section rhythm ----
+   Consistent vertical spacing between the dashboard's major blocks
+   (stat cards / health overview / runtime health / quick actions),
+   replacing the mix of ad-hoc inline margins that previously drifted
+   between var(--sp-6) and var(--sp-8). */
+.dash-section { margin-top: var(--sp-10); }
+.dash-section--first,
+.dash-section:first-child { margin-top: 0; }
+
+.dash-section__head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+.dash-section__head h3 { font-size: var(--fs-md); font-weight: 600; }
+
+/* ---- Topbar left cluster (search + mobile menu toggle) ---- */
+.topbar__left { display: flex; align-items: center; gap: var(--sp-3); }
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: var(--sp-5);
+  align-items: start;
+}
+
+/* Health overview card with big ring + mini breakdown */
+.health-card__body {
+  display: flex; align-items: center; gap: var(--sp-8);
+}
+.health-breakdown { flex: 1; display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.health-breakdown__row { display: flex; align-items: center; gap: var(--sp-3); }
+.health-breakdown__label {
+  width: 108px; font-size: var(--fs-sm); font-weight: 500; color: var(--text-secondary);
+  display: flex; align-items: center; gap: 6px;
+  flex-shrink: 0;
+}
+.health-breakdown__dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.health-breakdown__bar { flex: 1; }
+.health-breakdown__val { width: 34px; text-align: right; font-family: var(--font-mono); font-weight: 700; font-size: var(--fs-sm); flex-shrink: 0; }
+
+/* Runtime health check rows (Analytics/Consent cards) — container classes
+   for the pass/fail rows dashboard.js renders into #analyticsHealthBody
+   and #consentHealthBody. */
+.health-check-list { display: flex; flex-direction: column; gap: var(--sp-2); }
+.health-check-link { margin-top: var(--sp-4); }
+
+/* Quick actions — compact action buttons, 2x2 grid, not full cards */
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--sp-3);
+}
+.qa-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-3) var(--sp-4);
+  display: flex; flex-direction: row; align-items: center; gap: var(--sp-3);
+  transition: border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+.qa-card:hover { border-color: var(--color-primary); transform: translateY(-1px); background: var(--surface-sunken); }
+.qa-card__icon {
+  flex: none;
+  width: 28px; height: 28px; border-radius: var(--radius-sm);
+  background: var(--color-primary-soft); color: var(--color-primary);
+  display: flex; align-items: center; justify-content: center;
+}
+.qa-card__icon svg { width: 15px; height: 15px; }
+.qa-card__title { font-weight: 600; font-size: var(--fs-sm); }
+
+/* Trend mini-chart placeholder (Chart.js canvas mounts here) */
+.chart-canvas-wrap { position: relative; height: 220px; }
+.chart-canvas-wrap canvas { width: 100% !important; height: 100% !important; }
+
+.legend-inline { display: flex; gap: var(--sp-4); flex-wrap: wrap; }
+.legend-inline__item { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-secondary); }
+.legend-inline__dot { width: 8px; height: 8px; border-radius: 50%; }

@@ -1,0 +1,23 @@
+<!-- ==========================================================================
+     components/charts.html
+     Reusable chart-card shell. Drop a <canvas> with a unique id inside
+     .chart-canvas-wrap, then render into it with assets/js/charts.js:
+
+       window.Charts.renderRadar('myCanvasId', labels, values, opts)
+       window.Charts.renderTrendLine('myCanvasId', labels, values, opts)
+       window.Charts.renderSeverityDoughnut('myCanvasId', counts, opts)
+
+     Requires Chart.js to be loaded on the page before charts.js — see
+     assets/vendor/README.md for the CDN tag used elsewhere in this project.
+
+     Optional loader: assets/js/include.js → Components.include('charts')
+     ========================================================================== -->
+<div class="card card__pad">
+  <div class="card__head">
+    <h3 data-chart-title>Chart title</h3>
+    <span class="card__head-sub" data-chart-subtitle>Subtitle</span>
+  </div>
+  <div class="chart-canvas-wrap">
+    <canvas id="genericChart" aria-label="Chart"></canvas>
+  </div>
+</div>

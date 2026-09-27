@@ -1,0 +1,31 @@
+<!-- ==========================================================================
+     components/footer.html
+     Public marketing footer. Wired into index.html. Uses only existing
+     design tokens (variables.css) — no new CSS file needed.
+
+     Optional loader: assets/js/include.js → Components.include('footer')
+     ========================================================================== -->
+<footer class="landing-footer" style="border-top:1px solid var(--border); padding: var(--sp-8) var(--sp-10); margin-top: var(--sp-10);">
+  <div style="max-width:1280px; margin:0 auto; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap: var(--sp-6);">
+    <div style="display:flex; align-items:center; gap:10px; color: var(--text-primary);">
+      <div style="width:28px; height:28px; border-radius:8px; overflow:hidden; background:#fff; display:flex; align-items:center; justify-content:center;">
+        <img src="../img/logo.png" alt="AuditPulse logo" style="width:100%;height:100%;object-fit:contain;">
+      </div>
+      <span style="font-family: var(--font-display); font-weight:700;">AuditPulse</span>
+      <span style="color: var(--text-tertiary); font-size: var(--fs-sm); margin-left: 6px;">© <span id="footerYear">2026</span> AuditPulse. All rights reserved.</span>
+    </div>
+    <div style="display:flex; gap: var(--sp-6); font-size: var(--fs-sm); color: var(--text-secondary);">
+      <a href="index.html#features" style="color:inherit;">Features</a>
+      <a href="#" style="color:inherit;">Docs</a>
+      <a href="#" style="color:inherit;">Privacy</a>
+      <a href="#" style="color:inherit;">Terms</a>
+    </div>
+  </div>
+  <div style="text-align:center; margin-top: var(--sp-6); font-size: var(--fs-sm);"><strong>Designed by Jeevan K S</strong></div>
+</footer>
+<script>
+  (function () {
+    var el = document.getElementById('footerYear');
+    if (el) el.textContent = new Date().getFullYear();
+  })();
+</script>

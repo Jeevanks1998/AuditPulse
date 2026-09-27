@@ -1,0 +1,379 @@
+/* ==========================================================================
+   email-reports.css — email-reports.html only.
+
+   Scope note: the "Send to POC" dialog itself is NOT styled here. It lives
+   in report.css (.composer-overlay and friends), and email-reports.html
+   links report.css ahead of this file for exactly that reason. The two
+   read-only dialogs this page adds (the sent-email detail view and the
+   audit picker) reuse that same .composer shell, so only their *contents*
+   are styled below.
+
+   Everything else (.card, .btn, .badge, .stat-card, .dtable, .score-chip,
+   .email-empty) is reused as-is from style.css / report.css.
+   ========================================================================== */
+
+/* ---- Utilities this page needs that report.css's block doesn't define.
+        Named to match that block's convention so they read as one set. ---- */
+.u-mt-5 { margin-top: var(--sp-5); }
+
+/* Visually hidden but still announced — used for the actions column's
+   header, which needs a name for screen readers but would be noise on
+   screen above two buttons that already say what they do. */
+.u-sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- Stat cards ----
+   The counters describe the whole account and deliberately ignore the
+   filters below them, so each carries a note saying what it counts —
+   without it, "Total Sent 12" next to a filtered table reading 3 rows
+   looks like a bug rather than a different scope. */
+.er-stat__note {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-2xs);
+  color: var(--text-tertiary);
+}
+
+/* ---- Card head: count + status tabs ---- */
+.er-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.er-tabs {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+}
+
+.er-tab {
+  padding: 5px 14px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out);
+}
+
+.er-tab:hover { color: var(--text-primary); }
+.er-tab:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+.er-tab.is-active {
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ---- History table ----
+   Six content columns plus actions is wide, so the table is given a
+   minimum width and allowed to scroll inside .table-wrap rather than
+   letting the subject column crush down to two characters. */
+.er-table { min-width: 940px; }
+
+.er-table td { vertical-align: middle; }
+
+/* Website + favicon */
+.er-site { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+
+.er-site__favicon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-icon);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+/* Two-line cells: the value, then a quieter qualifier under it
+   (relative time, "+2 more"). */
+.er-cell__primary {
+  display: block;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.er-cell__more {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-2xs);
+  color: var(--text-tertiary);
+}
+
+/* Subjects run long and are the least important thing to read in full —
+   clamp to two lines rather than letting one row tower over the rest. */
+.er-cell__subject {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 260px;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+/* Attachment pills */
+.er-files { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; max-width: 220px; }
+
+.er-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+}
+
+.er-file svg { width: 12px; height: 12px; flex-shrink: 0; }
+.er-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Actions. Kept right-aligned and on one line so the two buttons read as a
+   pair belonging to the row rather than as wrapped content. */
+.er-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  white-space: nowrap;
+}
+
+.er-actions .btn[disabled] { opacity: 0.55; pointer-events: none; }
+
+/* ---- Empty / loading / error placeholder ---- */
+.er-state {
+  display: none;              /* the JS shows this and hides .table-wrap */
+  padding: var(--sp-8) 0;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: var(--fs-sm);
+}
+
+.er-state p { margin: 0; }
+
+/* ---- Pager ---- */
+.er-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-4);
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--border);
+}
+
+.er-pager[hidden] { display: none; }
+.er-pager__label { font-size: var(--fs-xs); color: var(--text-tertiary); }
+.er-pager .btn[disabled] { opacity: 0.5; pointer-events: none; }
+
+/* ==========================================================================
+   Dialogs — both reuse report.css's .composer shell (head / body / foot),
+   so only their inner content is defined here.
+   ========================================================================== */
+
+/* ---- Sent-email detail ("View") ---- */
+.er-detail__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+
+.er-detail__subject {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 700;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.er-detail__error {
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-sm);
+  /* Translucent tint rather than --color-error-soft, which stays pale pink
+     in dark mode — same approach as .composer__alert in report.css. */
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-error-text);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.er-detail__meta {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 6px var(--sp-3);
+  margin: 0 0 var(--sp-4);
+  font-size: var(--fs-sm);
+}
+
+.er-detail__meta dt { color: var(--text-tertiary); }
+.er-detail__meta dd { margin: 0; overflow-wrap: anywhere; }
+
+.er-detail__body {
+  margin: 0;
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  line-height: 1.7;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.er-detail__files { margin-top: var(--sp-4); }
+
+.er-detail__files-label {
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.er-detail__files-list { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+
+/* The pills are roomier here than in the table, where they're squeezed
+   into a 220px column. */
+.er-detail__files-list .er-file { padding: 6px 10px; font-size: var(--fs-xs); }
+.er-detail__files-list .er-file svg { width: 14px; height: 14px; }
+
+/* ---- Audit picker ("Send a Report") ---- */
+.er-picker-dialog { max-width: 540px; }
+
+.er-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+/* Each row is a real <button>: the whole row is the action ("email this
+   report"), so it should be one tab stop and one click target, not a strip
+   of text with a small button hiding at the end. */
+.er-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-3);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              background var(--dur-fast) var(--ease-out),
+              transform var(--dur-fast) var(--ease-out);
+}
+
+.er-item:hover { border-color: var(--color-primary); background: var(--surface-sunken); }
+.er-item:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.er-item:active { transform: translateY(1px); }
+
+.er-item__favicon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-icon);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.er-item__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.er-item__host {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.er-item__meta { font-size: var(--fs-xs); color: var(--text-tertiary); }
+
+/* The "Send to POC" affordance is a label, not a nested button — the row
+   itself is the control. */
+.er-item__send {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.er-item__send svg { width: 14px; height: 14px; }
+
+/* ---- Responsive ---- */
+
+@media (max-width: 900px) {
+  .er-filters { width: 100%; justify-content: space-between; }
+}
+
+@media (max-width: 560px) {
+  .er-item { gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); }
+  .er-item__send span { display: none; }
+  .er-item__send { padding: 6px; }
+  .er-detail__meta { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .er-detail__meta dt { margin-top: var(--sp-2); }
+  .er-pager { gap: var(--sp-3); }
+}
+
+@media print {
+  .er-tabs, .er-actions, .er-pager, .er-detail-dialog { display: none !important; }
+  .er-table { min-width: 0; }
+}

@@ -1,0 +1,254 @@
+/* ==========================================================================
+   Phase 5 — Analytics & Consent Health
+   
+   Redesigns the "Analytics Health" and "Consent Health" cards (§6 runtime
+   checks in dashboard.js) from a plain checkmark list into KPI tiles that
+   match the Phase 4 visual language (card-based, color-coded, animated).
+
+   IMPORTANT: every value rendered into these tiles comes straight from the
+   /audits/{id}/analytics and /audits/{id}/consent API responses (see
+   dashboard.js renderAnalyticsHealthCard / renderConsentHealthCard). There
+   is no synthetic or placeholder data here — a tile whose underlying field
+   wasn't tested renders a "Not tested" state instead of a fabricated value.
+
+   All HTML IDs (#analyticsHealthCard, #analyticsHealthBody, etc.) are
+   unchanged from Phase 3/4, so this is additive CSS only.
+   ========================================================================== */
+
+.health-check-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+/* ---- KPI tile grid ---- */
+.health-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--sp-3);
+}
+
+.health-kpi-tile {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--sp-4);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  transition: border-color var(--dur-fast) var(--ease-out),
+              background var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.health-kpi-tile:hover {
+  border-color: var(--border-strong);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.health-kpi-tile__icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--border);
+  color: var(--text-tertiary);
+}
+
+.health-kpi-tile__icon svg { width: 16px; height: 16px; }
+
+.health-kpi-tile__content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.health-kpi-tile__label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.health-kpi-tile__value {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: var(--fs-md);
+  color: var(--text-primary);
+  line-height: 1.25;
+}
+
+.health-kpi-tile__sub {
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+  font-family: var(--font-body);
+  font-weight: 500;
+}
+
+/* Status color variants — driven by real pass/fail/not-tested state,
+   never by a hard-coded default. */
+.health-kpi-tile[data-status="good"] .health-kpi-tile__icon {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+.health-kpi-tile[data-status="good"] .health-kpi-tile__value { color: var(--color-success); }
+
+.health-kpi-tile[data-status="bad"] .health-kpi-tile__icon {
+  background: var(--color-error-soft);
+  color: var(--color-error);
+}
+.health-kpi-tile[data-status="bad"] .health-kpi-tile__value { color: var(--color-error); }
+
+.health-kpi-tile[data-status="warning"] .health-kpi-tile__icon {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+.health-kpi-tile[data-status="warning"] .health-kpi-tile__value { color: var(--color-warning); }
+
+.health-kpi-tile[data-status="neutral"] .health-kpi-tile__icon {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+.health-kpi-tile[data-status="neutral"] .health-kpi-tile__value { color: var(--text-primary); }
+
+/* Not-tested / no-data state — explicit, not zeroed-out or hidden */
+.health-kpi-tile[data-status="untested"] .health-kpi-tile__value {
+  color: var(--text-tertiary);
+  font-style: italic;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+}
+.health-kpi-tile[data-status="untested"] .health-kpi-tile__icon {
+  background: var(--border);
+  color: var(--text-tertiary);
+}
+
+/* Per-vendor page-view chips (Analytics Health, only rendered when the
+   runtime pass actually ran) */
+.health-vendor-chips {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.health-vendor-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.health-vendor-chip__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.health-vendor-chip[data-status="good"] .health-vendor-chip__dot { background: var(--color-success); }
+.health-vendor-chip[data-status="bad"] .health-vendor-chip__dot { background: var(--color-error); }
+
+/* ---- Compliance detail (GDPR / CCPA) ----
+   Kept as a distinct block below the KPI tiles rather than squeezed into a
+   tile, since each can expand into a multi-line "why did it fail" list
+   sourced from the backend's gdpr_checks/ccpa_checks dicts. */
+.health-compliance-block {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.health-compliance-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--fs-sm);
+}
+
+.health-compliance-row__label { font-weight: 600; color: var(--text-primary); }
+
+.health-compliance-row .badge { font-size: var(--fs-xs); }
+
+/* Full per-check ✓/✕/○ list (renderCheckListRows in dashboard.js), shown
+   above each GDPR/CCPA roll-up row — .check-item itself is already styled
+   globally in style.css, this just spaces the list and shrinks it to fit
+   the health card. */
+.health-compliance-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  margin-bottom: 2px;
+}
+.health-compliance-checklist .check-item__icon { width: 16px; height: 16px; }
+
+.health-compliance-detail {
+  margin: 2px 0 var(--sp-2) 0;
+}
+
+.health-compliance-detail summary {
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.health-compliance-detail summary:hover { color: var(--text-secondary); }
+
+.health-compliance-detail ul {
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.health-compliance-detail li {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+/* Real runtime-verified enforcement (does Reject actually block tracking,
+   does Accept actually allow it) — separate from the compliance checklist
+   because it comes from consent.runtimeResult, not consent.*Checks. */
+.health-runtime-note {
+  grid-column: 1 / -1;
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+  padding-top: var(--sp-2);
+  border-top: 1px dashed var(--border);
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 640px) {
+  .health-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Dark mode ----
+   Matches the app's [data-theme="dark"] attribute (set by the manual
+   theme toggle in app.js), not the OS-level prefers-color-scheme —
+   see the note in HEALTH_OVERVIEW_PHASE4.css for why. */
+[data-theme="dark"] .health-kpi-tile {
+  background: rgba(255, 255, 255, 0.02);
+}
+[data-theme="dark"] .health-kpi-tile:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+[data-theme="dark"] .health-vendor-chip {
+  background: rgba(255, 255, 255, 0.03);
+}

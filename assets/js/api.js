@@ -270,7 +270,11 @@ window.Api = (function () {
   // shouldn't abandon an audit that is still running server-side), and the
   // overall ceiling on how long we wait for a terminal status.
   var AUDIT_POLL_MAX_ERRORS = 5;
-  var AUDIT_POLL_TIMEOUT_MS = 10 * 60 * 1000;
+  // 45 min: a homepage audit of a large site now runs the full Customer
+  // Journey (dozens of live interaction tests) and takes ~10 min; full-site
+  // audits take longer. The old 10-min ceiling gave up on audits that went
+  // on to finish fine on the server.
+  var AUDIT_POLL_TIMEOUT_MS = 45 * 60 * 1000;
 
   var audits = {
     // Starts an audit, polls progress until it finishes, then resolves

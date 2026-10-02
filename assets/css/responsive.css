@@ -71,3 +71,20 @@
   .stat-grid { grid-template-columns: 1fr; }
   .metric-card-grid { grid-template-columns: 1fr; }
 }
+
+/* ---- Phones: never wider than the screen ----
+   A plain `1fr` grid column can't shrink below its widest content, so the
+   top bar (bell + theme switch + profile) and wide report rows pushed every
+   page 30–170px past the screen edge. minmax(0,1fr) + min-width:0 lets the
+   column fit the viewport; wide tables keep their own horizontal scroll. */
+@media (max-width: 960px) {
+  .app-shell { grid-template-columns: minmax(0, 1fr); }
+  .app-shell > * { min-width: 0; }
+}
+@media (max-width: 640px) {
+  .topbar { gap: var(--sp-2); }
+  .topbar__actions { gap: var(--sp-2); min-width: 0; }
+  .report-banner__row { gap: var(--sp-4); }
+  .report-banner__actions { width: 100%; }
+  .report-banner__actions .btn { flex: 1 1 auto; justify-content: center; }
+}

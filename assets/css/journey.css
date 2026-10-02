@@ -145,3 +145,9 @@
   .jr-gallery { grid-template-columns: 1fr; }
   .jr-bar { grid-template-columns: 96px 1fr 32px; }
 }
+
+/* Report v2: use the width instead of one long column */
+@media (min-width: 1200px) {
+  .jr-flows { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--sp-2); }
+  .jr-bars { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--sp-8); }
+}

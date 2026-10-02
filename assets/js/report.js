@@ -97,7 +97,6 @@
     mobile: 'Mobile', forms: 'Forms', consent: 'Consent', analytics: 'Analytics', journey: 'Customer Journey', ai: 'AI Review'
   };
   var OVERALL_STATUS_LABELS = { good: 'Healthy', mid: 'Needs Attention', bad: 'Issues Found' };
-  var MAX_KEY_AREAS = 6;
 
   /* ------------------------- shared report-derived helpers ------------------------- */
   // These mirror reports/generator.py's count_by_severity / weakest_module /
@@ -166,10 +165,50 @@
      and forcing every module open before printing/PDF export so the printed output
      always shows everything regardless of what's expanded on screen. */
 
+  /* Module details are shown as tabs (Consent / Analytics / Customer
+     Journey): the three <details> stay in the page (so every renderer and
+     deep link keeps working) and the tab bar decides which one is open.
+     CSS (.is-tabbed) hides the closed ones and their summary rows. */
+  var currentModuleTab = null;
+
+  function selectModuleTab(id, scroll) {
+    var group = document.getElementById('moduleDetails');
+    var target = id && document.getElementById(id);
+    if (!group || !target || target.parentElement !== group) return null;
+    currentModuleTab = id;
+    U.qsa('.module-accordion', group).forEach(function (d) { d.open = (d.id === id); });
+    U.qsa('#moduleTabs .rp-tab').forEach(function (t) {
+      var on = t.dataset.tab === id;
+      t.setAttribute('aria-selected', String(on));
+      t.classList.toggle('is-active', on);
+    });
+    if (scroll) {
+      var sec = document.getElementById('details');
+      if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    return target;
+  }
+
   function openModuleAccordion(id) {
     var el = id && document.getElementById(id);
-    if (el && el.tagName === 'DETAILS' && !el.open) el.open = true;
+    if (!el) return el;
+    if (selectModuleTab(id, false)) return el;
+    if (el.tagName === 'DETAILS' && !el.open) el.open = true;
     return el;
+  }
+
+  function wireModuleTabs() {
+    U.qsa('#moduleTabs .rp-tab').forEach(function (tab) {
+      U.on(tab, 'click', function () { selectModuleTab(tab.dataset.tab, false); });
+      U.on(tab, 'keydown', function (e) {
+        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+        var tabs = U.qsa('#moduleTabs .rp-tab');
+        var i = tabs.indexOf(tab) + (e.key === 'ArrowRight' ? 1 : -1);
+        var next = tabs[(i + tabs.length) % tabs.length];
+        selectModuleTab(next.dataset.tab, false);
+        next.focus();
+      });
+    });
   }
 
   function wireModuleAccordions() {
@@ -208,6 +247,7 @@
         if (el) el.open = false;
       });
       reopenIds = [];
+      if (currentModuleTab) selectModuleTab(currentModuleTab, false);
     });
   }
 
@@ -270,6 +310,7 @@
     // Wired unconditionally (before the auditId guard below) so the
     // module accordions — sidebar deep-links, print-all-open — still
     // work even if there's no report to load yet.
+    wireModuleTabs();
     wireModuleAccordions();
 
     if (!auditId) {
@@ -454,13 +495,13 @@
     ]).then(function (results) {
       currentReport = results[0];
       renderBanner(currentReport);
-      renderExecutiveSummary(currentReport);
-      renderScoreGrid(currentReport);
-      renderSeverityDistribution(currentReport);
-      renderCriticalFindings(currentReport);
-      renderBusinessImpact(currentReport);
-      renderActionPlanSection(currentReport);
-      renderRecommendations(currentReport);
+      renderGlance(currentReport);
+      renderIssues(currentReport);
+      if (!currentModuleTab) {
+        var scored = (currentReport.scoreGrid || []).filter(function (c) { return DETAIL_TABS.indexOf(c.module) !== -1; });
+        var weakest = weakestModule(scored);
+        selectModuleTab(weakest ? weakest.module : 'consent', false);
+      }
       renderModuleSections(currentReport);
       renderConsent(results[1]);
       renderAnalytics(results[2]);
@@ -513,294 +554,255 @@
       }
     }
 
-    function renderScoreGrid(report) {
-      if (!scoreGrid || !window.Components) return;
-      scoreGrid.innerHTML = report.scoreGrid.map(function (cell) {
-        var target = (cell.targetSection || '').replace(/^section-/, '');
-        return window.Components.renderScoreCard({ score: cell.score, label: cell.label, target: target });
-      }).join('');
+    /* ============================ At a glance ============================
+       One card: AI summary sentence, a tile per module (click = open that
+       module's details) and the severity counts (click = filter issues). */
 
-      // Re-wire score-cell -> section scroll + radar chart now that the
-      // grid has been rebuilt (report.js used to do this once on load
-      // against static markup; now it has to happen after each render).
-      var cells = U.qsa('.score-cell', scoreGrid);
-      var labels = [];
-      var values = [];
-      cells.forEach(function (cell) {
-        var labelEl = cell.querySelector('.score-cell__label');
-        var valueEl = cell.querySelector('.vring__label');
-        if (labelEl && valueEl) {
-          labels.push(labelEl.textContent.trim());
-          values.push(parseInt(valueEl.textContent, 10) || 0);
-        }
-        var target = cell.dataset.target;
-        var section = target && document.getElementById(target);
-        if (!section) return;
-        function jump() {
-          if (section.tagName === 'DETAILS') section.open = true;
-          section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-        U.on(cell, 'click', jump);
-        U.on(cell, 'keydown', function (e) {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jump(); }
+    var SEV_ORDER = { critical: 0, warning: 1, info: 2 };
+    var SEV_LABEL = { critical: 'Critical', warning: 'Warning', info: 'Info' };
+    var DETAIL_TABS = ['consent', 'analytics', 'journey'];
+
+    function bandWord(score) {
+      var band = U.scoreBand(score);
+      return band === 'good' ? 'Good' : (band === 'mid' ? 'Needs attention' : 'Poor');
+    }
+
+    function renderGlance(report) {
+      var summaryEl = document.getElementById('execSummaryText');
+      if (summaryEl) {
+        var text = typeof report.executiveSummary === 'string' ? report.executiveSummary.trim() : '';
+        summaryEl.textContent = text;
+        summaryEl.hidden = !text;
+      }
+
+      var findings = report.findings || [];
+      var issuesByModule = {};
+      groupByTitleModule(findings).forEach(function (g) {
+        if (g.severity === 'info') return;
+        issuesByModule[g.module] = (issuesByModule[g.module] || 0) + 1;
+      });
+
+      if (scoreGrid) {
+        var cells = (report.scoreGrid || []).slice().sort(function (a, b) {
+          var ia = DETAIL_TABS.indexOf(a.module), ib = DETAIL_TABS.indexOf(b.module);
+          return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+        });
+        scoreGrid.innerHTML = cells.map(function (cell) {
+          var band = U.scoreBand(cell.score);
+          var n = issuesByModule[cell.module] || 0;
+          var sub = (n ? n + (n === 1 ? ' issue' : ' issues') : 'No issues') + ' · ' + bandWord(cell.score);
+          var clickable = DETAIL_TABS.indexOf(cell.module) !== -1;
+          return '<' + (clickable ? 'button type="button"' : 'div') + ' class="rp-mod" data-band="' + band + '"' +
+              (clickable ? ' data-module="' + U.escapeHtml(cell.module) + '" title="Open ' + U.escapeHtml(cell.label) + ' details"' : '') + '>' +
+            '<span class="rp-mod__score">' + cell.score + '</span>' +
+            '<span class="rp-mod__text"><span class="rp-mod__label">' + U.escapeHtml(cell.label) + '</span>' +
+              '<span class="rp-mod__sub">' + U.escapeHtml(sub) + '</span></span>' +
+            '<span class="rp-mod__bar" aria-hidden="true"><i style="width:' + Math.max(0, Math.min(100, cell.score)) + '%"></i></span>' +
+          '</' + (clickable ? 'button' : 'div') + '>';
+        }).join('') || '<p class="rp-muted">No module scores for this audit.</p>';
+        U.qsa('.rp-mod[data-module]', scoreGrid).forEach(function (btn) {
+          U.on(btn, 'click', function () { selectModuleTab(btn.dataset.module, true); });
+        });
+      }
+
+      // Score badges on the module tabs.
+      (report.scoreGrid || []).forEach(function (cell) {
+        var el = document.getElementById('tabScore-' + cell.module);
+        if (el) { el.textContent = cell.score; el.setAttribute('data-band', U.scoreBand(cell.score)); }
+      });
+
+      var counts = severityCounts(findings);
+      var sevEl = document.getElementById('severityTable');
+      if (sevEl) {
+        sevEl.innerHTML = ['critical', 'warning', 'info'].map(function (sev) {
+          return '<button type="button" class="rp-count rp-count--' + sev + '" data-sev="' + sev + '">' +
+            '<span class="rp-count__num">' + (counts[sev] || 0) + '</span>' +
+            '<span class="rp-count__label">' + (sev === 'warning' && counts[sev] !== 1 ? 'Warnings' : SEV_LABEL[sev]) + '</span>' +
+          '</button>';
+        }).join('');
+        U.qsa('.rp-count', sevEl).forEach(function (btn) {
+          U.on(btn, 'click', function () {
+            issueState.sev = btn.dataset.sev;
+            issueState.expandAll = false;
+            renderIssueList();
+            var sec = document.getElementById('issues');
+            if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          });
+        });
+      }
+    }
+
+    /* ============================ Issues to fix ============================
+       Every finding once (same title + module grouped), worst first. Each row
+       opens to: what we found / why it matters (business impact) / how to fix
+       (action plan step or the finding's own recommendation) / link to the
+       module evidence. Replaces the old Critical Findings, Business Impact,
+       AI Recommendations and Action Plan sections, which repeated the same
+       findings four times. */
+
+    var ISSUES_INITIAL = 10;
+    var issueState = { sev: 'all', module: 'all', q: '', expandAll: false, items: [] };
+
+    function buildIssues(report) {
+      var steps = {};
+      var plan = report.actionPlan || {};
+      ['quickWins', 'shortTerm', 'longTerm'].forEach(function (k) {
+        (plan[k] || []).forEach(function (s) {
+          var key = (s.title || '') + '\u0000' + (s.module || '');
+          if (s.step && !steps[key]) steps[key] = s.step;
+          if (s.step && !steps['\u0000' + s.title]) steps['\u0000' + s.title] = s.step;
         });
       });
+      var impact = {};
+      (report.businessImpact || []).forEach(function (b) {
+        if (b.title && b.impact && !impact[b.title]) impact[b.title] = b.impact;
+      });
+      var rank = {};
+      (report.priorities || []).forEach(function (p, i) { if (p.title && !(p.title in rank)) rank[p.title] = i; });
 
-      var radarCanvas = document.getElementById('radarChart');
-      if (radarCanvas && window.Charts && labels.length) {
-        window.Charts.renderRadar('radarChart', labels, values, { datasetLabel: 'Score' });
-      }
+      var recos = {};
+      (report.findings || []).forEach(function (f) {
+        var key = (f.title || '') + '\u0000' + (f.module || '');
+        if (f.recommendation && !recos[key]) recos[key] = f.recommendation;
+      });
+
+      var items = groupByTitleModule(report.findings || []).map(function (g) {
+        var key = g.title + '\u0000' + g.module;
+        return {
+          title: g.title, module: g.module, severity: SEV_ORDER[g.severity] != null ? g.severity : 'info',
+          description: g.description, count: g.count, findingId: g.finding_id,
+          fix: recos[key] || steps[key] || steps['\u0000' + g.title] || '',
+          impact: impact[g.title] || '',
+          rank: (g.title in rank) ? rank[g.title] : 999
+        };
+      });
+      items.sort(function (a, b) {
+        return (SEV_ORDER[a.severity] - SEV_ORDER[b.severity]) || (a.rank - b.rank) || (b.count - a.count);
+      });
+      return items;
     }
 
-    /* --------------------- Executive Summary (§3.3) --------------------- */
-
-    function renderExecutiveSummary(report) {
-      var textEl = document.getElementById('execSummaryText');
-      var statusBadge = document.getElementById('overallStatusBadge');
-      var cardGrid = document.getElementById('metricCardGrid');
-      var keyAreasCard = document.getElementById('keyAreasCard');
-      var keyAreasList = document.getElementById('keyAreasList');
-
-      if (textEl) {
-        textEl.textContent = report.executiveSummary || '';
-        textEl.style.display = report.executiveSummary ? '' : 'none';
+    function issueMatches(it) {
+      if (issueState.sev !== 'all' && it.severity !== issueState.sev) return false;
+      if (issueState.module !== 'all' && it.module !== issueState.module) return false;
+      if (issueState.q) {
+        var hay = (it.title + ' ' + it.description + ' ' + moduleLabel(it.module)).toLowerCase();
+        if (hay.indexOf(issueState.q) === -1) return false;
       }
-
-      var counts = severityCounts(report.findings);
-      var totalCount = (report.findings || []).length;
-      var weakest = weakestModule(report.scoreGrid);
-      var status = overallStatusLabel(report.overall);
-      var band = U.scoreBand(report.overall);
-
-      if (statusBadge) {
-        statusBadge.textContent = 'Overall Status: ' + status;
-        statusBadge.className = 'badge ' + (band === 'good' ? 'badge--success' : (band === 'mid' ? 'badge--warning' : 'badge--error'));
-      }
-
-      if (cardGrid) {
-        var cards = [
-          { label: 'Overall Score', value: report.overall + '/100' },
-          { label: 'Critical Findings', value: String(counts.critical) },
-          { label: 'Total Findings', value: String(totalCount) },
-          { label: 'Weakest Module', value: weakest ? (weakest.label + ' (' + weakest.score + '/100)') : 'N/A' }
-        ];
-        cardGrid.innerHTML = cards.map(function (c) {
-          return '<div class="metric-card">' +
-            '<div class="metric-card__value">' + U.escapeHtml(c.value) + '</div>' +
-            '<div class="metric-card__label">' + U.escapeHtml(c.label) + '</div>' +
-          '</div>';
-        }).join('');
-      }
-
-      // "Key Areas Requiring Attention" — the real critical/warning findings,
-      // grouped so a repeated issue (e.g. five contrast failures) contributes
-      // one line instead of five (mirrors pdf/summary.py's _render_key_areas).
-      var notable = (report.findings || []).filter(function (f) { return f.severity === 'critical' || f.severity === 'warning'; });
-      var groups = groupByTitleModule(notable).slice(0, MAX_KEY_AREAS);
-      if (keyAreasCard && keyAreasList) {
-        if (!groups.length) {
-          keyAreasCard.style.display = 'none';
-        } else {
-          keyAreasCard.style.display = '';
-          keyAreasList.innerHTML = groups.map(function (g) {
-            var suffix = g.count > 1 ? ' (' + g.count + ' instances)' : '';
-            return '<li><b>' + U.escapeHtml(g.title) + '</b> — ' + U.escapeHtml(moduleLabel(g.module)) + U.escapeHtml(suffix) + '</li>';
-          }).join('');
-        }
-      }
+      return true;
     }
 
-    /* ----------------- Finding Severity Distribution (§3.5) ----------------- */
+    var CHEVRON = '<svg class="rp-issue__chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
 
-    function renderSeverityDistribution(report) {
-      var table = document.getElementById('severityTable');
-      var counts = severityCounts(report.findings);
-
-      if (window.Charts && document.getElementById('severityChart')) {
-        window.Charts.renderSeverityDoughnut('severityChart', { high: counts.critical, medium: counts.warning, low: counts.info }, { showLegend: false });
-      }
-
-      if (table) {
-        var rows = [
-          { label: 'Critical', count: counts.critical, cls: 'badge--error' },
-          { label: 'Warning', count: counts.warning, cls: 'badge--warning' },
-          { label: 'Info', count: counts.info, cls: 'badge--neutral' }
-        ];
-        table.innerHTML = rows.map(function (r) {
-          return '<div class="severity-dist__row">' +
-            '<span class="badge ' + r.cls + '">' + r.label + '</span>' +
-            '<span class="severity-dist__count">' + r.count + '</span>' +
-          '</div>';
-        }).join('');
-      }
+    function issueRowHtml(it, idx) {
+      var meta = [];
+      if (it.rank < 5 && it.severity !== 'info') meta.push('<span class="rp-tag rp-tag--first">Fix first</span>');
+      meta.push('<span class="rp-issue__module">' + U.escapeHtml(moduleLabel(it.module)) + '</span>');
+      if (it.count > 1) meta.push('<span class="rp-issue__count">' + it.count + '×</span>');
+      var bodyId = 'issueBody' + idx;
+      var rows = '';
+      if (it.description) rows += '<div class="rp-kv"><dt>What we found</dt><dd>' + U.escapeHtml(it.description) + '</dd></div>';
+      if (it.impact) rows += '<div class="rp-kv"><dt>Why it matters</dt><dd>' + U.escapeHtml(it.impact) + '</dd></div>';
+      if (it.fix) rows += '<div class="rp-kv rp-kv--fix"><dt>How to fix</dt><dd>' + U.escapeHtml(it.fix) + '</dd></div>';
+      var link = DETAIL_TABS.indexOf(it.module) !== -1
+        ? '<button type="button" class="rp-link" data-goto="' + U.escapeHtml(it.module) + '">See evidence in ' + U.escapeHtml(moduleLabel(it.module)) + ' →</button>'
+        : '';
+      return '<div class="rp-issue rp-issue--' + it.severity + '" role="listitem">' +
+        '<button type="button" class="rp-issue__row" aria-expanded="false" aria-controls="' + bodyId + '">' +
+          '<span class="rp-sev rp-sev--' + it.severity + '">' + SEV_LABEL[it.severity] + '</span>' +
+          '<span class="rp-issue__title">' + findingIdBadge(it.findingId) + U.escapeHtml(it.title) + '</span>' +
+          '<span class="rp-issue__meta">' + meta.join('') + '</span>' +
+          CHEVRON +
+        '</button>' +
+        '<div class="rp-issue__body" id="' + bodyId + '" hidden><dl>' + rows + '</dl>' + link + '</div>' +
+      '</div>';
     }
 
-    /* --------------------------- Critical Findings (§3.6) --------------------------- */
-
-    function renderCriticalFindings(report) {
-      var list = document.getElementById('criticalFindingsList');
-      var badge = document.getElementById('criticalFindingsBadge');
+    function renderIssueList() {
+      var list = document.getElementById('issueList');
+      var more = document.getElementById('issueShowMore');
+      var sub = document.getElementById('issuesSubhead');
+      var segEl = document.getElementById('issueSevFilter');
       if (!list) return;
+      var all = issueState.items;
 
-      var critical = (report.findings || []).filter(function (f) { return f.severity === 'critical'; });
-      var groups = groupByTitleModule(critical);
-
-      if (badge) {
-        badge.textContent = critical.length !== groups.length
-          ? (critical.length + ' grouped into ' + groups.length)
-          : (critical.length + ' open');
-      }
-
-      if (!groups.length) {
-        list.innerHTML = '<div class="issue-row"><div class="issue-row__body"><div class="issue-row__title">No critical findings</div><div class="issue-row__desc">Nothing critical-severity was found in this audit.</div></div></div>';
-        return;
-      }
-
-      // Each finding is a scannable, stacked card: a CRITICAL severity badge
-      // (the only place severity color is used) + Finding ID up top, then
-      // title, module/instance-count, description, and a "View details"
-      // link that jumps to that module's detailed check section below.
-      list.innerHTML = groups.map(function (g) {
-        var moduleText = moduleLabel(g.module) + (g.count > 1 ? ' \u00b7 ' + g.count + ' instances' : '');
-        var link = g.module
-          ? '<div class="issue-row__footer"><a class="issue-row__link" href="#' + U.escapeHtml(g.module) + '">View details \u2192</a></div>'
-          : '';
-        return (
-          '<div class="issue-row issue-row--finding">' +
-            '<div class="issue-row__top">' +
-              '<span class="badge badge--error issue-row__sevbadge">Critical</span>' +
-              findingIdBadge(g.finding_id) +
-            '</div>' +
-            '<div class="issue-row__title">' + U.escapeHtml(g.title) + '</div>' +
-            '<div class="issue-row__module">' + U.escapeHtml(moduleText) + '</div>' +
-            (g.description ? '<div class="issue-row__desc">' + U.escapeHtml(g.description) + '</div>' : '') +
-            link +
-          '</div>'
-        );
-      }).join('');
-    }
-
-    /* ------------------------------ Business Impact (§3.7) ------------------------------ */
-
-    function renderBusinessImpact(report) {
-      var card = document.getElementById('businessImpactCard');
-      var list = document.getElementById('businessImpactList');
-      if (!card || !list) return;
-
-      var items = report.businessImpact || [];
-      if (!items.length) {
-        card.style.display = 'none';
-        return;
-      }
-      card.style.display = '';
-
-      // Cross-reference each item back to the real Finding ID that produced
-      // it (same (title, module) natural key pdf/recommendations.py uses),
-      // rather than inventing one here.
-      var findingByTitle = {};
-      (report.findings || []).forEach(function (f) {
-        if (!(f.title in findingByTitle)) findingByTitle[f.title] = f.finding_id;
-      });
-
-      // Executive-friendly framing: each item becomes its own labeled card —
-      // "Business Risk" (what/where, from the same generated title +
-      // affected_area) above "Potential impact" (the plain-English
-      // consequence) — instead of one dense generic list, so a manager can
-      // read the risk and its cost without the technical finding detail.
-      list.innerHTML = items.map(function (item) {
-        var sevClass = item.severity === 'critical' ? 'badge--error' : (item.severity === 'warning' ? 'badge--warning' : 'badge--neutral');
-        var fid = findingByTitle[item.title];
-        return (
-          '<div class="impact-card">' +
-            '<div class="impact-card__section-label">Business Risk</div>' +
-            '<div class="impact-card__risk">' +
-              '<span class="badge ' + sevClass + '">' + U.escapeHtml((item.severity || '').toUpperCase()) + '</span>' +
-              findingIdBadge(fid) + U.escapeHtml(item.title) +
-              (item.affected_area ? '<span class="impact-card__area">' + U.escapeHtml(item.affected_area) + '</span>' : '') +
-            '</div>' +
-            '<div class="impact-card__section-label">Potential impact</div>' +
-            '<div class="impact-card__impact-text">' + U.escapeHtml(item.impact || '') + '</div>' +
-          '</div>'
-        );
-      }).join('');
-    }
-
-    /* --------------------------------- Action Plan (§3.8) --------------------------------- */
-
-    var ACTION_PLAN_HORIZONS = [
-      { key: 'quickWins', title: 'Phase 1 \u2013 Immediate / High Priority Actions' },
-      { key: 'shortTerm', title: 'Phase 2 \u2013 Short-Term Actions' },
-      { key: 'longTerm', title: 'Phase 3 \u2013 Optimization Actions' }
-    ];
-
-    function renderActionPlanSection(report) {
-      var container = document.getElementById('actionPlanPhases');
-      if (!container) return;
-
-      var plan = report.actionPlan;
-      if (!plan) {
-        container.innerHTML = '';
-        return;
-      }
-
-      var findingByKey = {};
-      (report.findings || []).forEach(function (f) {
-        findingByKey[(f.title || '') + '\u0000' + (f.module || '')] = f.finding_id;
-        if (!(('\u0000title\u0000' + f.title) in findingByKey)) findingByKey['\u0000title\u0000' + f.title] = f.finding_id;
-      });
-      function lookupFindingId(title, module) {
-        return findingByKey[(title || '') + '\u0000' + (module || '')] || findingByKey['\u0000title\u0000' + title] || '';
-      }
-
-      var html = ACTION_PLAN_HORIZONS.map(function (horizon) {
-        var steps = plan[horizon.key] || [];
-        if (!steps.length) return '';
-        var groups = groupByTitleModule(steps);
-        var rows = groups.map(function (g) {
-          var fid = lookupFindingId(g.title, g.module);
-          var affects = g.count > 1 ? ('  <span style="color: var(--text-tertiary);">(affects ' + g.count + ' items)</span>') : '';
-          return '<tr style="border-top:1px solid var(--border, #e5e7eb);">' +
-            '<td style="padding:6px 10px;"><span class="badge badge--' + (g.severity === 'critical' ? 'error' : (g.severity === 'warning' ? 'warning' : 'neutral')) + '">' + U.escapeHtml((g.severity || '').replace(/^\w/, function (c) { return c.toUpperCase(); })) + '</span></td>' +
-            '<td style="padding:6px 10px; color: var(--text-tertiary);">' + (fid ? U.escapeHtml(fid) : '&mdash;') + '</td>' +
-            '<td style="padding:6px 10px; color: var(--text-tertiary);">' + U.escapeHtml(moduleLabel(g.module)) + '</td>' +
-            '<td style="padding:6px 10px;"><b>' + U.escapeHtml(g.title) + '</b>: ' + U.escapeHtml(g.step) + affects + '</td>' +
-          '</tr>';
+      if (segEl) {
+        var counts = { all: all.length, critical: 0, warning: 0, info: 0 };
+        all.forEach(function (it) { counts[it.severity] += 1; });
+        segEl.innerHTML = ['all', 'critical', 'warning', 'info'].map(function (k) {
+          var label = k === 'all' ? 'All' : SEV_LABEL[k];
+          return '<button type="button" class="rp-seg__btn" data-sev="' + k + '" aria-pressed="' + (issueState.sev === k) + '">' +
+            label + ' <span class="rp-seg__n">' + counts[k] + '</span></button>';
         }).join('');
+        U.qsa('.rp-seg__btn', segEl).forEach(function (b) {
+          U.on(b, 'click', function () { issueState.sev = b.dataset.sev; issueState.expandAll = false; renderIssueList(); });
+        });
+      }
 
-        return '<div class="card card__pad" style="margin-bottom: var(--sp-4);">' +
-          '<div class="card__head"><h3>' + U.escapeHtml(horizon.title) + '</h3></div>' +
-          '<div style="overflow-x:auto;"><table class="text-sm" style="width:100%; border-collapse:collapse;">' +
-            '<thead><tr style="text-align:left; color: var(--text-tertiary);">' +
-              '<th style="padding:6px 10px;">Priority</th><th style="padding:6px 10px;">Finding ID</th>' +
-              '<th style="padding:6px 10px;">Module</th><th style="padding:6px 10px;">Recommended Action</th>' +
-            '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
-        '</div>';
-      }).join('');
+      if (sub) {
+        var c = all.filter(function (i) { return i.severity === 'critical'; }).length;
+        var w = all.filter(function (i) { return i.severity === 'warning'; }).length;
+        sub.textContent = all.length
+          ? (c ? c + ' critical' : 'No critical issues') + ', ' + w + ' warning' + (w === 1 ? '' : 's') +
+            ' — sorted by severity. Click an issue to see the details and how to fix it.'
+          : 'No issues were found in this audit.';
+      }
 
-      container.innerHTML = html || '<p class="text-sm" style="color: var(--text-tertiary);">No action-plan items were generated for this audit.</p>';
+      var shown = all.filter(issueMatches);
+      if (!all.length) {
+        list.innerHTML = '<div class="rp-empty">Nothing to fix — no issues were found in this audit.</div>';
+      } else if (!shown.length) {
+        list.innerHTML = '<div class="rp-empty">No issues match these filters.</div>';
+      } else {
+        var limit = issueState.expandAll ? shown.length : ISSUES_INITIAL;
+        list.innerHTML = shown.slice(0, limit).map(issueRowHtml).join('');
+      }
+
+      if (more) {
+        var hiddenCount = shown.length - ISSUES_INITIAL;
+        more.hidden = issueState.expandAll || hiddenCount <= 0;
+        more.textContent = 'Show all ' + shown.length + ' issues';
+      }
+
+      U.qsa('.rp-issue__row', list).forEach(function (row) {
+        U.on(row, 'click', function () {
+          var body = document.getElementById(row.getAttribute('aria-controls'));
+          var open = row.getAttribute('aria-expanded') === 'true';
+          row.setAttribute('aria-expanded', String(!open));
+          if (body) body.hidden = open;
+        });
+      });
+      U.qsa('.rp-link[data-goto]', list).forEach(function (a) {
+        U.on(a, 'click', function () { selectModuleTab(a.dataset.goto, true); });
+      });
     }
 
-    function renderRecommendations(report) {
-      var card = document.getElementById('aiRecoCard');
-      var list = document.getElementById('recoList');
-      if (!card || !list) return;
-      if (!report.priorities || !report.priorities.length) {
-        card.style.display = 'none';
-        return;
+    function renderIssues(report) {
+      issueState.items = buildIssues(report);
+      var modSel = document.getElementById('issueModuleFilter');
+      if (modSel) {
+        var mods = [];
+        issueState.items.forEach(function (it) { if (mods.indexOf(it.module) === -1) mods.push(it.module); });
+        modSel.innerHTML = '<option value="all">All modules</option>' + mods.map(function (m) {
+          return '<option value="' + U.escapeHtml(m) + '">' + U.escapeHtml(moduleLabel(m)) + '</option>';
+        }).join('');
+        modSel.hidden = mods.length < 2;
+        U.on(modSel, 'change', function () { issueState.module = modSel.value; issueState.expandAll = false; renderIssueList(); });
       }
-      card.style.display = '';
-      list.innerHTML = report.priorities.slice(0, 6).map(function (p, i) {
-        var impactClass = p.severity === 'critical' ? 'badge--success' : 'badge--warning';
-        var impactLabel = p.severity === 'critical' ? 'High impact' : 'Medium impact';
-        var num = String(i + 1).padStart(2, '0');
-        return (
-          '<div class="reco-item">' +
-            '<span class="reco-item__num">' + num + '</span>' +
-            '<div><div class="reco-item__title">' + U.escapeHtml(p.title) + '</div><div class="reco-item__desc">' + U.escapeHtml(p.description || '') + '</div></div>' +
-            '<span class="reco-item__impact badge ' + impactClass + '">' + impactLabel + '</span>' +
-          '</div>'
-        );
-      }).join('');
+      var search = document.getElementById('issueSearch');
+      if (search) {
+        U.on(search, 'input', function () { issueState.q = search.value.trim().toLowerCase(); renderIssueList(); });
+      }
+      var more = document.getElementById('issueShowMore');
+      if (more) U.on(more, 'click', function () { issueState.expandAll = true; renderIssueList(); });
+      // Printed / PDF-from-browser output lists every issue, unfiltered.
+      U.on(window, 'beforeprint', function () {
+        issueState.sev = 'all'; issueState.module = 'all'; issueState.q = ''; issueState.expandAll = true;
+        if (search) search.value = '';
+        if (modSel) modSel.value = 'all';
+        renderIssueList();
+      });
+      renderIssueList();
     }
 
     function renderCheckGrid(containerId, findingsForModule) {
@@ -1747,6 +1749,15 @@
     // audit leaves this section hidden rather than showing a redundant
     // single-page table underneath the Phase 1 sections above.
 
+    // The API layer camel-cases nested keys (pages_scanned -> pagesScanned),
+    // but these reads used the snake_case names, so Site-Wide Coverage showed
+    // "—" for every count. Read either spelling.
+    function sk(obj, snake) {
+      if (!obj) return undefined;
+      if (obj[snake] !== undefined) return obj[snake];
+      return obj[snake.replace(/_([a-z0-9])/g, function (_, c) { return c.toUpperCase(); })];
+    }
+
     function renderAnalyticsFullSite(analytics) {
       var section = document.getElementById('analyticsFullSite');
       var coverageGrid = document.getElementById('analyticsCoverageGrid');
@@ -1769,12 +1780,12 @@
       // site_coverage; nothing is derived or estimated in the browser.
       if (coverageGrid) {
         var coverageItems = [
-          { label: 'Pages scanned', value: coverage.pages_scanned },
-          { label: 'Pages with Analytics', value: coverage.pages_with_analytics },
-          { label: 'Pages without Analytics', value: coverage.pages_without_analytics },
-          { label: 'Pages with runtime failures', value: coverage.pages_with_runtime_failures },
-          { label: 'Pages with inconsistencies', value: coverage.pages_with_analytics_inconsistencies },
-          { label: 'Pages with findings', value: coverage.pages_with_findings }
+          { label: 'Pages scanned', value: sk(coverage, 'pages_scanned') },
+          { label: 'Pages with Analytics', value: sk(coverage, 'pages_with_analytics') },
+          { label: 'Pages without Analytics', value: sk(coverage, 'pages_without_analytics') },
+          { label: 'Pages with runtime failures', value: sk(coverage, 'pages_with_runtime_failures') },
+          { label: 'Pages with inconsistencies', value: sk(coverage, 'pages_with_analytics_inconsistencies') },
+          { label: 'Pages with findings', value: sk(coverage, 'pages_with_findings') }
         ];
         coverageGrid.innerHTML = coverageItems.map(function (item) {
           var val = (item.value === null || item.value === undefined) ? '—' : item.value;
@@ -1786,9 +1797,9 @@
       // Coverage status — good when every scanned page has Analytics with
       // no inconsistencies or runtime failures, mid when any of those
       // counts is above zero.
-      var coverageHasIssue = !!(coverage.pages_without_analytics ||
-        coverage.pages_with_analytics_inconsistencies ||
-        coverage.pages_with_runtime_failures);
+      var coverageHasIssue = !!(sk(coverage, 'pages_without_analytics') ||
+        sk(coverage, 'pages_with_analytics_inconsistencies') ||
+        sk(coverage, 'pages_with_runtime_failures'));
       setAnalyticsSectionStatus('analyticsCoverageStatusIcon', coverageHasIssue ? 'mid' : 'good');
 
       // Page-Level Analytics Results (§2.7) — actual URL, detected
@@ -1803,7 +1814,7 @@
               '<th style="padding:6px 10px;">Score</th><th style="padding:6px 10px;">Findings</th>' +
             '</tr></thead><tbody>' +
             pageResults.map(function (p) {
-              var pTrackers = p.trackers_detected || [];
+              var pTrackers = sk(p, 'trackers_detected') || [];
               var pFindings = p.findings || [];
               return '<tr style="border-top:1px solid var(--border, #e5e7eb);">' +
                 '<td style="padding:6px 10px; word-break:break-all;">' + U.escapeHtml(p.url || '') + '</td>' +
@@ -1833,7 +1844,7 @@
                 '<th style="padding:6px 10px;">Affected Pages</th>' +
               '</tr></thead><tbody>' +
               crossPageFindings.map(function (f) {
-                var urls = f.affected_urls || [];
+                var urls = sk(f, 'affected_urls') || [];
                 var shown = urls.slice(0, 5).map(U.escapeHtml).join(', ');
                 var more = urls.length > 5 ? ' +' + (urls.length - 5) + ' more' : '';
                 return '<tr style="border-top:1px solid var(--border, #e5e7eb);">' +

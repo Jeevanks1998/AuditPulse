@@ -163,79 +163,53 @@
         </div>
       </div>
 
-      <!-- ============ EXECUTIVE SUMMARY ============ -->
-      <div class="card card__pad animate-in u-mb-5">
-        <div class="card__head">
-          <h3>Executive Summary</h3>
-          <span class="badge badge--neutral" id="overallStatusBadge">Overall Status</span>
+      <!-- ============ AT A GLANCE ============
+           One card instead of five: the AI summary sentence, a score tile per
+           module (click = open that module below) and the issue counts
+           (click = filter the issue list). -->
+      <section class="card rp-glance animate-in" aria-label="Summary">
+        <p class="rp-glance__summary" id="execSummaryText" hidden></p>
+        <div class="rp-glance__row">
+          <div class="rp-glance__modules" id="scoreGrid"></div>
+          <div class="rp-glance__sev" id="severityTable"></div>
         </div>
-        <p class="text-sm" id="execSummaryText" style="display:none;"></p>
-        <div class="metric-card-grid" id="metricCardGrid"></div>
+      </section>
 
-        <div class="card card__pad u-mt-4" id="keyAreasCard" style="display:none; box-shadow:none; border:1px solid var(--border);">
-          <div class="card__head"><h3>Key Areas Requiring Attention</h3></div>
-          <ul class="key-areas-list text-sm" id="keyAreasList"></ul>
-        </div>
-      </div>
-
-      <!-- ============ MODULE SCORES ============ -->
-      <div class="card card__pad animate-in u-mb-5">
-        <div class="card__head"><h3>Module Scores</h3></div>
-        <div class="score-grid" id="scoreGrid"></div>
-      </div>
-
-      <!-- ============ CRITICAL FINDINGS + KEY AREAS COLUMNS ============ -->
-      <div class="report-columns animate-in">
-        <div class="card card__pad">
-          <div class="card__head">
-            <h3>Critical Findings</h3>
-            <span class="badge badge--error" id="criticalFindingsBadge">–</span>
+      <!-- ============ ISSUES TO FIX ============
+           The single place to find problems: every finding once, grouped,
+           worst first. Each row expands to what was found, why it matters
+           (business impact) and how to fix it (action plan). -->
+      <section class="card rp-issues animate-in" id="issues" aria-labelledby="issuesTitle">
+        <div class="rp-issues__head">
+          <div>
+            <h2 class="rp-h2" id="issuesTitle">Issues to fix</h2>
+            <p class="rp-muted" id="issuesSubhead">Loading…</p>
           </div>
-          <div class="issue-list" id="criticalFindingsList"></div>
-        </div>
-
-        <div class="card card__pad">
-          <div class="card__head"><h3>Severity Distribution</h3></div>
-          <div class="severity-dist">
-            <div class="severity-dist__chart">
-              <canvas id="severityChart" width="160" height="160"></canvas>
-            </div>
-            <div class="severity-dist__table" id="severityTable"></div>
+          <div class="rp-issues__tools">
+            <div class="rp-seg" id="issueSevFilter" role="group" aria-label="Filter by severity"></div>
+            <select class="rp-select" id="issueModuleFilter" aria-label="Filter by module"></select>
+            <label class="rp-search">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+              <input type="search" id="issueSearch" placeholder="Search issues" aria-label="Search issues">
+            </label>
           </div>
         </div>
-      </div>
-
-      <!-- ============ AI RECOMMENDATIONS ============ -->
-      <div class="card card__pad animate-in u-mb-5" id="aiRecoCard" style="display:none;">
-        <div class="card__head"><h3>AI-Prioritized Recommendations</h3></div>
-        <div class="reco-list" id="recoList"></div>
-      </div>
-
-      <!-- ============ MODULE SCORE RADAR ============ -->
-      <div class="card card__pad animate-in u-mb-5">
-        <div class="card__head"><h3>Module Score Comparison</h3></div>
-        <div style="max-width:520px; margin:0 auto;">
-          <canvas id="radarChart"></canvas>
-        </div>
-      </div>
-
-      <!-- ============ BUSINESS IMPACT ============ -->
-      <div class="card card__pad animate-in u-mb-5" id="businessImpactCard" style="display:none;">
-        <div class="card__head"><h3>Business Impact</h3></div>
-        <div id="businessImpactList"></div>
-      </div>
-
-      <!-- ============ ACTION PLAN ============ -->
-      <div class="u-mb-5 animate-in">
-        <div class="card__head u-mb-3"><h3>Action Plan</h3></div>
-        <div id="actionPlanPhases"></div>
-      </div>
+        <div class="rp-issue-list" id="issueList" role="list"></div>
+        <button class="rp-more" type="button" id="issueShowMore" hidden></button>
+      </section>
 
       <!-- ============ MODULE DETAILS ============ -->
-      <div class="module-section animate-in">
-        <div class="module-section__head"><h2>Module Details</h2></div>
+      <section class="module-section animate-in" id="details">
+        <div class="rp-details-head">
+          <h2 class="rp-h2">Module details</h2>
+          <div class="rp-tabs" id="moduleTabs" role="tablist" aria-label="Module details">
+            <button class="rp-tab" type="button" role="tab" data-tab="consent" aria-selected="false">Consent <span class="rp-tab__score" id="tabScore-consent">–</span></button>
+            <button class="rp-tab" type="button" role="tab" data-tab="analytics" aria-selected="false">Analytics <span class="rp-tab__score" id="tabScore-analytics">–</span></button>
+            <button class="rp-tab" type="button" role="tab" data-tab="journey" aria-selected="false">Customer Journey <span class="rp-tab__score" id="tabScore-journey">–</span></button>
+          </div>
+        </div>
 
-        <div class="module-accordion-group card">
+        <div class="module-accordion-group card is-tabbed" id="moduleDetails">
 
 
           <!-- Consent Banner -->
@@ -457,8 +431,8 @@
                     <summary class="analytics-subsection__summary"><span>Evidence Screenshots</span></summary>
                     <div class="analytics-subsection__body" id="journeyEvidence"></div>
                   </details>
-                  <details class="analytics-subsection" open>
-                    <summary class="analytics-subsection__summary"><span>Recommendations</span></summary>
+                  <details class="analytics-subsection">
+                    <summary class="analytics-subsection__summary"><span>Recommendations (also listed in Issues to fix)</span></summary>
                     <div class="analytics-subsection__body" id="journeyRecs"></div>
                   </details>
                 </div>
@@ -467,14 +441,15 @@
           </details>
 
         </div>
-      </div>
+      </section>
 
+      <div class="rp-footer-grid">
       <!-- ============ EMAIL REPORTS ============
            Sidebar target (#email-reports). Holds the second "Send to POC"
            entry point plus the send history for this audit. The card is always
            visible — an empty history renders a placeholder line, not a hidden
            card, so the sidebar link never lands on nothing. -->
-      <div class="card card__pad animate-in u-mb-5 email-reports" id="email-reports">
+      <div class="card card__pad animate-in email-reports" id="email-reports">
         <div class="card__head">
           <div>
             <h3>Email Reports</h3>
@@ -509,6 +484,7 @@
         </form>
         <p class="ai-panel__disclaimer">AI-generated answers may be imprecise — always confirm anything critical against the report itself.</p>
       </div>
+      </div>
 
     </main>
   </div>
@@ -530,8 +506,6 @@
      it was missing here, which is why Logout and the profile chip did
      nothing on this page. -->
 <script src="assets/js/app.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
-<script src="assets/js/charts.js"></script>
 <!-- Defines window.EmailComposer, which report.js's Email Reports card and
      email-reports.html both open. Must load before report.js. -->
 <script src="assets/js/email-composer.js"></script>

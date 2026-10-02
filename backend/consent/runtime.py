@@ -81,6 +81,7 @@ from consent.network import (  # noqa: F401 — KNOWN_TRACKER_DOMAINS re-exporte
 from cookies.categories import CONSENT_MANAGEMENT, ESSENTIAL, UNKNOWN, classify_cookie, requires_consent
 from consent.screenshots import capture_page_or_element
 from crawler.screenshots import DEFAULT_VIEWPORT, NAVIGATION_TIMEOUT_MS
+from config.browser import launch_chromium
 
 MODULE = "consent"
 CATEGORY = "runtime"
@@ -563,7 +564,7 @@ async def run_consent_runtime(url: str, scan_id: Optional[str] = None) -> Consen
 
     try:
         async with async_playwright() as pw:
-            browser = await pw.chromium.launch()
+            browser = await launch_chromium(pw)
             result.available = True
             try:
                 try:

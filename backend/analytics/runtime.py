@@ -40,11 +40,13 @@ from urllib.parse import parse_qs, urlparse
 
 from config.logging import logger
 from crawler.screenshots import DEFAULT_VIEWPORT, NAVIGATION_TIMEOUT_MS
+from config.browser import launch_chromium
 
 MODULE = "analytics"
 CATEGORY = "runtime"
 
 SETTLE_MS = 1_500
+CONSENT_SETTLE_MS = 3_000  # tag managers load their vendors after the consent callback
 SCROLL_SETTLE_MS = 1_200
 CLICK_SETTLE_MS = 1_500
 
@@ -147,13 +149,29 @@ def _adobe_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedRequ
 
 def _piano_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedRequest]:
     host = urlparse(url).hostname or ""
-    if "aticdn.net" not in host and "piano.io" not in host and "xiti.com" not in host:
+    # pa-cd.com is Piano Analytics' current collection domain (e.g.
+    # <id>.pa-cd.com/event?s=...); xiti.com / aticdn.net are the AT Internet
+    # legacy ones.
+    if not any(d in host for d in ("aticdn.net", "piano.io", "xiti.com", "pa-cd.com")):
         return None
     if "event" not in url and "hit" not in url and "collect" not in url:
         return None
-    event = (qs.get("events") or qs.get("event") or [None])[0]
+    raw = (qs.get("events") or qs.get("event") or [None])[0]
+    event = raw
+    if raw and raw.lstrip().startswith("["):
+        # Piano Analytics (pa-cd.com) sends events=[{"name":"page.display",...}]
+        try:
+            import json as _json
+            parsed = _json.loads(raw)
+            if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
+                event = parsed[0].get("name") or raw
+        except ValueError:
+            event = raw
+    # Legacy AT Internet hits with no event name are page views; in Piano
+    # Analytics the page view event is called "page.display".
+    is_pv = event is None or event == "page.display"
     return CapturedRequest(url=url, phase="", vendor_key="piano", event_name=event or "page_view",
-                            is_page_view=event is None, identifier=(qs.get("s") or qs.get("site") or [None])[0])
+                            is_page_view=is_pv, identifier=(qs.get("s") or qs.get("site") or [None])[0])
 
 
 def _clarity_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedRequest]:
@@ -256,6 +274,46 @@ class AnalyticsRuntimeResult:
     # _build_vendor_results and merge_static_detected_vendors.
     scroll_tested: bool = False
     click_tested: bool = False
+    # What happened to the cookie banner before Scroll/Click: many sites
+    # (OneTrust auto-blocking, Didomi, TagCommander privacy) fire *no*
+    # analytics until consent is given, so the pass accepts it the way a
+    # real visitor would. "no_banner" | "accepted (<label>)" | ...
+    consent_state: Optional[str] = None
+    # Small JS-global evidence read from the rendered page (dataLayer,
+    # tag-manager objects). Kept tiny: this whole dataclass is stored as JSON.
+    page_globals: Dict[str, object] = field(default_factory=dict)
+
+
+# Read after load. Only booleans/counts — never page content.
+_PAGE_GLOBALS_JS = """() => ({
+  dataLayer: Array.isArray(window.dataLayer) ? window.dataLayer.length : null,
+  google_tag_manager: !!window.google_tag_manager,
+  gtag: typeof window.gtag === 'function',
+  tagcommander: !!(window.tC || window.tc_vars),
+  tealium: !!window.utag,
+  adobe_launch: !!window._satellite,
+  piano: !!(window.pa || window.ATInternet || window._pac),
+  matomo: Array.isArray(window._paq),
+  scripts: Array.from(document.scripts).map(s => s.src).filter(Boolean).length
+})"""
+
+
+async def _accept_consent(page) -> str:
+    """Click the banner's Accept control (same helpers consent/ and journey/ use)."""
+    try:
+        from consent.buttons import ACCEPT_CLICK_ORDER
+        from consent.runtime import _click_control, inventory_banner
+
+        inv, handles = await inventory_banner(page)
+        if not inv.banner_detected:
+            return "no_banner"
+        accept = inv.first(ACCEPT_CLICK_ORDER)
+        if accept is None:
+            return "banner_without_accept"
+        ok = await _click_control(page, handles, accept)
+        return f"accepted ({accept.label})" if ok else "accept_click_failed"
+    except Exception as exc:  # noqa: BLE001 — consent handling must never break the analytics pass
+        return f"not_handled ({str(exc)[:80]})"
 
 
 async def run_analytics_runtime(url: str) -> AnalyticsRuntimeResult:
@@ -289,7 +347,7 @@ async def run_analytics_runtime(url: str) -> AnalyticsRuntimeResult:
 
     try:
         async with async_playwright() as pw:
-            browser = await pw.chromium.launch()
+            browser = await launch_chromium(pw)
             try:
                 context = await browser.new_context(viewport=DEFAULT_VIEWPORT)
                 page = await context.new_page()
@@ -299,6 +357,28 @@ async def run_analytics_runtime(url: str) -> AnalyticsRuntimeResult:
                 await page.goto(url, wait_until="load", timeout=NAVIGATION_TIMEOUT_MS)
                 await page.wait_for_timeout(SETTLE_MS)
                 result.available = True
+
+                # --- consent -----------------------------------------------------------
+                # Still the "load" phase: hits fired right after the visitor
+                # accepts are this page view's analytics, not a click event.
+                result.consent_state = await _accept_consent(page)
+                if result.consent_state.startswith("accepted"):
+                    await page.wait_for_timeout(CONSENT_SETTLE_MS)
+
+                # --- rendered page evidence -----------------------------------------
+                # Many sites (Next.js, React, tag managers) inject their tags
+                # with JavaScript, so the raw HTML the server downloads has
+                # none of them. analytics.analyze_site re-runs its static
+                # detectors on this rendered DOM. Not stored in the DB (it is
+                # not a dataclass field), only handed back to the caller.
+                try:
+                    result.page_globals = await page.evaluate(_PAGE_GLOBALS_JS)
+                except Exception:  # noqa: BLE001
+                    result.page_globals = {}
+                try:
+                    result._rendered_html = await page.content()
+                except Exception:  # noqa: BLE001
+                    result._rendered_html = None
 
                 # --- scroll ------------------------------------------------------------
                 # Isolated in its own try/except: a scroll-phase failure (e.g. the
@@ -640,7 +720,7 @@ async def open_runtime_browser():
     from playwright.async_api import async_playwright
 
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch()
+        browser = await launch_chromium(pw)
         try:
             yield browser
         finally:

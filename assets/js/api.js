@@ -282,12 +282,14 @@ window.Api = (function () {
     run: function (config, onProgress) {
       var startedAt = Date.now();
 
-      return post('/audits/', {
+      var body = {
         url: config.url,
         depth: config.depth,
         maxPages: config.maxPages,
         modules: config.modules
-      }).then(function (audit) {
+      };
+      if (config.targetRegion) body.targetRegion = config.targetRegion;  // sent as target_region
+      return post('/audits/', body).then(function (audit) {
         return new Promise(function (resolve, reject) {
           var consecutiveErrors = 0;
 
@@ -365,9 +367,14 @@ window.Api = (function () {
         get('/ai/' + auditId + '/action-plan')
       ]).then(function (results) {
         var report = results[0];
-        report.executiveSummary = results[1];
-        report.priorities = results[2];
-        report.businessImpact = results[3];
+        // Each /ai endpoint wraps its data ({auditId, summary} / {auditId,
+        // priorities} / {auditId, items}); report.js expects the inner
+        // value. Storing the wrapper showed "[object Object]" as the
+        // executive summary and hid Business Impact and Priorities.
+        var pick = function (obj, key) { return obj && typeof obj === 'object' && key in obj ? obj[key] : obj; };
+        report.executiveSummary = pick(results[1], 'summary');
+        report.priorities = pick(results[2], 'priorities');
+        report.businessImpact = pick(results[3], 'items');
         report.actionPlan = results[4];
         return report;
       });

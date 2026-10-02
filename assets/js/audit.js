@@ -140,6 +140,10 @@
         maxPages: parseInt(maxPagesInput.value, 10) || 1,
         modules: modules
       };
+      var regionSelect = document.getElementById('targetRegionSelect');
+      if (regionSelect && regionSelect.value && regionSelect.value !== 'auto') {
+        config.targetRegion = regionSelect.value;
+      }
 
       runAudit(config);
     });

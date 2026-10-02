@@ -62,7 +62,7 @@ whole crawl):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 from crawler.parser import ParsedPage
 
@@ -93,7 +93,9 @@ from analytics.runtime import (
     merge_static_detected_vendors,
     run_analytics_runtime,
 )
+from analytics.tagcommander import TagCommanderDetection, check_tagcommander, detect_tagcommander
 from analytics.tiktok import TikTokDetection, check_tiktok, detect_tiktok
+from crawler.parser import parse_html
 
 __all__ = [
     "check_ga4", "check_gtm", "check_adobe", "check_piano", "check_clarity",
@@ -269,6 +271,33 @@ async def analyze_site(url: str, page: ParsedPage, enable_runtime_checks: bool =
     analyze_page (sync, static-only) is kept as-is for any caller that
     doesn't want or can't afford a browser pass (e.g. a quick recheck).
     """
+    # 1. Live browser pass first (when enabled): it also hands back the page
+    #    as the browser rendered it, after accepting the cookie banner.
+    runtime_result = None
+    rendered_page: Optional[ParsedPage] = None
+    if enable_runtime_checks:
+        runtime_result = await run_analytics_runtime(url)
+        rendered_html = getattr(runtime_result, "_rendered_html", None)
+        if runtime_result.available and rendered_html:
+            try:
+                rendered_page = parse_html(url, rendered_html)
+            except Exception:  # noqa: BLE001 — fall back to the raw HTML only
+                rendered_page = None
+
+    # 2. Pick the page to run the static detectors on. Sites built with
+    #    JavaScript (Next.js/React, tag managers, consent-gated tags) ship
+    #    raw HTML with no tracking code at all, so the rendered DOM is the
+    #    real evidence there. The raw HTML is kept when it shows as much or
+    #    more (e.g. the browser pass failed or the site blocks headless).
+    def _detected_count(pg: ParsedPage) -> int:
+        dets = (detect_ga4(pg), detect_gtm(pg), detect_adobe(pg), detect_piano(pg), detect_clarity(pg),
+                detect_hotjar(pg), detect_meta_pixel(pg), detect_linkedin(pg), detect_tiktok(pg),
+                detect_tagcommander(pg))
+        return sum(1 for d in dets if d.detected) + (1 if detect_data_layer(pg).present else 0)
+
+    if rendered_page is not None and _detected_count(rendered_page) > _detected_count(page):
+        page = rendered_page
+
     ga4 = detect_ga4(page)
     gtm = detect_gtm(page)
     adobe = detect_adobe(page)
@@ -278,7 +307,17 @@ async def analyze_site(url: str, page: ParsedPage, enable_runtime_checks: bool =
     meta_pixel = detect_meta_pixel(page)
     linkedin = detect_linkedin(page)
     tiktok = detect_tiktok(page)
+    tagcommander = detect_tagcommander(page)
     data_layer = detect_data_layer(page)
+
+    # A dataLayer created at runtime by a tag manager never appears in
+    # markup; the browser pass reads window.dataLayer directly.
+    globals_ = (runtime_result.page_globals or {}) if runtime_result is not None else {}
+    if not data_layer.present and isinstance(globals_.get("dataLayer"), int) and globals_["dataLayer"] > 0:
+        data_layer.present = True
+    if not tagcommander.detected and globals_.get("tagcommander"):
+        tagcommander.detected = True
+        tagcommander.tc_api_found = True
 
     findings: List[dict] = []
     findings += check_ga4(page)
@@ -290,21 +329,21 @@ async def analyze_site(url: str, page: ParsedPage, enable_runtime_checks: bool =
     findings += check_meta_pixel(page)
     findings += check_linkedin(page)
     findings += check_tiktok(page)
+    findings += check_tagcommander(page)
     findings += check_data_layer(page, gtm_detected=gtm.detected)
     findings += check_duplicate_tags(page, _build_tracker_loads(
         ga4, gtm, adobe, piano, clarity, hotjar, meta_pixel, linkedin, tiktok,
     ))
 
-    runtime_result = None
-    if enable_runtime_checks:
+    if runtime_result is not None:
         static_detected = {
             "ga4": ga4.detected, "gtm": gtm.detected, "adobe": adobe.detected,
             "piano": piano.detected, "clarity": clarity.detected, "hotjar": hotjar.detected,
             "meta_pixel": meta_pixel.detected, "linkedin": linkedin.detected, "tiktok": tiktok.detected,
         }
-        runtime_result = await run_analytics_runtime(url)
         findings += check_runtime_analytics(runtime_result, url, static_detected=static_detected)
         merge_static_detected_vendors(runtime_result, static_detected)
+        findings = _drop_static_warnings_disproved_at_runtime(findings, runtime_result)
 
     score = score_analytics(findings)
     summary = build_analytics_summary(
@@ -314,12 +353,53 @@ async def analyze_site(url: str, page: ParsedPage, enable_runtime_checks: bool =
         meta_pixel_detection=meta_pixel,
         tiktok_detection=tiktok,
         other_detections={"adobe": adobe, "piano": piano, "clarity": clarity,
-                           "hotjar": hotjar, "linkedin": linkedin},
+                           "hotjar": hotjar, "linkedin": linkedin, "tagcommander": tagcommander},
         score_result=score,
         runtime_result=runtime_result,
     )
 
+    # Vendors the browser actually saw sending hits are detected, even when
+    # neither the raw nor the rendered HTML names them (pixels fired from a
+    # tag manager, consent-gated tags).
+    if runtime_result is not None and runtime_result.available:
+        from analytics.analytics_score import TRACKER_DISPLAY_NAMES
+        for key, vendor in (runtime_result.vendors or {}).items():
+            if getattr(vendor, "captured_request_count", 0) <= 0 or key in summary.vendor_configs:
+                continue
+            summary.trackers_detected.append(TRACKER_DISPLAY_NAMES.get(key, getattr(vendor, "vendor_name", key)))
+            summary.vendor_configs[key] = [vendor.identifier] if getattr(vendor, "identifier", None) else []
+
     return AnalyticsAuditResult(findings=findings, score=score, summary=summary)
+
+
+# Static (markup-only) warnings that say "we couldn't see X happen". When the
+# live browser pass *observed* X, the warning is simply wrong — e.g. Piano's
+# pa.sendEvent() or a dataLayer push living in an external bundle the HTML
+# scan can't read.
+_RUNTIME_DISPROVABLE = {
+    "Piano Analytics loaded without a detected sendEvent call": ("vendor_pv", "piano"),
+    "Adobe Analytics loaded without a detected page-view call": ("vendor_pv", "adobe"),
+    "GTM installed but no dataLayer activity found": ("global", "dataLayer"),
+}
+
+
+def _drop_static_warnings_disproved_at_runtime(findings: List[dict], runtime_result) -> List[dict]:
+    if runtime_result is None or not runtime_result.available:
+        return findings
+    vendors = runtime_result.vendors or {}
+    globals_ = runtime_result.page_globals or {}
+
+    def disproved(title: str) -> bool:
+        rule = _RUNTIME_DISPROVABLE.get(title)
+        if not rule:
+            return False
+        kind, key = rule
+        if kind == "vendor_pv":
+            v = vendors.get(key)
+            return bool(v and getattr(v, "page_view_status", None) == "passed")
+        return isinstance(globals_.get(key), int) and globals_[key] > 0
+
+    return [f for f in findings if not disproved(f.get("title", ""))]
 
 
 def _build_tracker_loads(ga4, gtm, adobe, piano, clarity, hotjar, meta_pixel, linkedin, tiktok) -> List[TrackerLoad]:

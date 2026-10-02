@@ -280,6 +280,9 @@ ALTER TABLE users ALTER COLUMN auth_setup_required SET DEFAULT TRUE;
 -- Passwords are no longer used.
 ALTER TABLE users ALTER COLUMN hashed_password DROP NOT NULL;
 
+-- Per-audit privacy region (Auto / EU / UK / US-CA / IN) chosen on the audit page.
+ALTER TABLE audits ADD COLUMN IF NOT EXISTS target_region VARCHAR(10);
+
 -- -----------------------------------------------------------------------------
 -- 3. Migration bookkeeping (Alembic)
 --    Brand-new database: record it as fully up to date, so Railway's
@@ -293,11 +296,11 @@ CREATE TABLE IF NOT EXISTS alembic_version (
 );
 
 INSERT INTO alembic_version (version_num)
-SELECT 'e7a3c1f9b246'
+SELECT 'a4d2e8c6f913'
 WHERE NOT EXISTS (SELECT 1 FROM alembic_version);
 
 COMMIT;
 
--- Check: should list 10 tables + alembic_version, and version e7a3c1f9b246
+-- Check: should list 10 tables + alembic_version, and version a4d2e8c6f913
 -- SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY 1;
 -- SELECT * FROM alembic_version;

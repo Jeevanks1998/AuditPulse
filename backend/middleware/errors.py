@@ -18,6 +18,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from fastapi.encoders import jsonable_encoder
+
 from config.logging import logger
 
 
@@ -32,14 +34,26 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
         logger.warning(f"Validation error on {request.url.path}: {exc.errors()}")
+        # exc.errors() can carry the raw exception object under "ctx" (any
+        # field_validator that raises ValueError), which JSONResponse can't
+        # serialise — that turned every validation message into a 500.
+        details = [
+            {k: v for k, v in err.items() if k != "ctx"} | (
+                {"ctx": {ck: str(cv) for ck, cv in err["ctx"].items()}} if isinstance(err.get("ctx"), dict) else {}
+            )
+            for err in exc.errors()
+        ]
+        # Show the person the actual reason, e.g. "Please provide a valid website URL."
+        first = details[0].get("msg", "") if details else ""
+        message = first.removeprefix("Value error, ") if first else "Validation failed"
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={
+            content=jsonable_encoder({
                 "success": False,
-                "error": "Validation failed",
-                "details": exc.errors(),
+                "error": message or "Validation failed",
+                "details": details,
                 "request_id": _request_id(request),
-            },
+            }),
         )
 
     @app.exception_handler(HTTPException)

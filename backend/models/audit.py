@@ -47,6 +47,10 @@ class Audit(Base):
     depth: Mapped[str] = mapped_column(String(20), default="homepage")  # "homepage" | "full"
     max_pages: Mapped[int] = mapped_column(Integer, default=DEFAULT_MAX_PAGES)
     modules: Mapped[list] = mapped_column(JSON, default=list)
+    # Optional per-audit privacy region ("EU" | "UK" | "US-CA" | "IN").
+    # None = detect it from the site (consent/region.py). Set it for global
+    # .com sites, where automatic detection usually can't tell.
+    target_region: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
 
     status: Mapped[str] = mapped_column(String(20), default="queued")  # queued|running|completed|failed
     current_step: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)

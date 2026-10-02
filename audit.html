@@ -13,6 +13,12 @@
   .url-input-wrap.is-invalid { border-color: var(--color-error) !important; box-shadow: 0 0 0 3px var(--color-error-soft) !important; }
   .url-error { font-size: 12px; color: var(--color-error); margin-top: 6px; display:none; }
   .url-error.is-visible { display:block; }
+  .target-region { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: var(--sp-4, 16px); }
+  .target-region select {
+    padding: 8px 10px; border-radius: var(--radius-sm, 8px); border: 1px solid var(--border, #E2E8F0);
+    background: var(--surface, #fff); color: var(--text-primary, #0F172A); font: inherit; font-size: var(--fs-sm, 14px);
+  }
+  .target-region__hint { flex-basis: 100%; font-size: 12px; color: var(--text-tertiary, #94A3B8); }
 </style>
 </head>
 <body>
@@ -150,6 +156,18 @@
               <button class="stepper-btn" type="button" id="stepperMinus" aria-label="Decrease">−</button>
               <input type="text" value="100" class="mono" id="maxPagesInput">
               <button class="stepper-btn" type="button" id="stepperPlus" aria-label="Increase">+</button>
+            </div>
+
+            <div class="target-region">
+              <label class="text-sm text-tertiary" for="targetRegionSelect">Privacy region to assess</label>
+              <select id="targetRegionSelect">
+                <option value="auto" selected>Auto-detect from the site</option>
+                <option value="EU">EU / EEA — GDPR + ePrivacy</option>
+                <option value="UK">United Kingdom — UK GDPR + PECR</option>
+                <option value="US-CA">US / California — CCPA / CPRA</option>
+                <option value="IN">India — DPDP Act 2023</option>
+              </select>
+              <span class="target-region__hint">Global .com sites rarely show which region they target — pick one to get a regional compliance assessment.</span>
             </div>
           </div>
 

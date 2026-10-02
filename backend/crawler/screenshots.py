@@ -18,6 +18,7 @@ from typing import Optional
 
 from config.logging import logger
 from config.settings import settings
+from config.browser import launch_chromium
 
 DEFAULT_VIEWPORT = {"width": 1366, "height": 900}
 NAVIGATION_TIMEOUT_MS = 20_000
@@ -57,7 +58,7 @@ async def capture_screenshot(
 
     try:
         async with async_playwright() as pw:
-            browser = await pw.chromium.launch()
+            browser = await launch_chromium(pw)
             try:
                 page = await browser.new_page(viewport=viewport or DEFAULT_VIEWPORT)
                 await page.goto(url, wait_until="networkidle", timeout=NAVIGATION_TIMEOUT_MS)

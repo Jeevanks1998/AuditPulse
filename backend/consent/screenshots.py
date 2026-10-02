@@ -25,6 +25,7 @@ from typing import Optional, Tuple
 from config.logging import logger
 from consent.buttons import CONSENT_CONTAINER_SELECTORS
 from crawler.screenshots import DEFAULT_VIEWPORT, NAVIGATION_TIMEOUT_MS, _safe_filename, _screenshot_dir
+from config.browser import launch_chromium
 
 # Fallback only — the detected banner element is preferred.
 _BANNER_SELECTORS = list(CONSENT_CONTAINER_SELECTORS)
@@ -103,7 +104,7 @@ async def capture_banner_screenshot(url: str, filename_hint: str, scan_id: Optio
 
     try:
         async with async_playwright() as pw:
-            browser = await pw.chromium.launch()
+            browser = await launch_chromium(pw)
             try:
                 context = await browser.new_context(viewport=DEFAULT_VIEWPORT, storage_state=None,
                                                     service_workers="block")

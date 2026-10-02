@@ -31,6 +31,21 @@ class AuditCreate(BaseModel):
     # triggers — producing a "successful" audit that silently skipped
     # consent/analytics/AI scoring. Now both paths raise the same error.
     modules: List[str] = Field(default_factory=list, min_length=1, validate_default=True)
+    # "auto" (or empty) = detect from the site. Otherwise the privacy region
+    # whose rules this audit assesses — see consent/region.py.
+    target_region: Optional[str] = None
+
+    @field_validator("target_region")
+    @classmethod
+    def normalize_target_region(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        key = v.strip().upper()
+        if key in ("", "AUTO"):
+            return None
+        if key not in ("EU", "UK", "US-CA", "IN"):
+            raise ValueError("Target region must be one of: auto, EU, UK, US-CA, IN.")
+        return key
 
     @field_validator("url")
     @classmethod
@@ -55,6 +70,7 @@ class AuditOut(BaseModel):
     percent: int
     overall_score: Optional[int] = None
     breakdown: Optional[dict] = None
+    target_region: Optional[str] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
 

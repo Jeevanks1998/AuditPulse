@@ -64,6 +64,7 @@ TRACKER_DISPLAY_NAMES: Dict[str, str] = {
     "meta_pixel": "Meta Pixel",
     "linkedin": "LinkedIn Insight Tag",
     "tiktok": "TikTok Pixel",
+    "tagcommander": "TagCommander",
 }
 
 # Which attribute on each vendor's Detection dataclass holds its list of
@@ -83,6 +84,7 @@ VENDOR_ID_ATTR: Dict[str, str] = {
     "meta_pixel": "pixel_ids",
     "linkedin": "partner_ids",
     "tiktok": "pixel_ids",
+    "tagcommander": "container_ids",
 }
 
 
@@ -237,7 +239,12 @@ def build_analytics_summary(
 
     return AnalyticsSummary(
         trackers_detected=trackers,
-        tag_manager_detected=gtm_detection.detected,
+        # Any tag manager counts, not only GTM (TagCommander is common on
+        # European sites).
+        tag_manager_detected=bool(
+            gtm_detection.detected
+            or getattr((other_detections or {}).get("tagcommander"), "detected", False)
+        ),
         gtm_container_id=gtm_detection.container_ids[0] if gtm_detection.container_ids else None,
         ga_measurement_id=ga4_detection.measurement_ids[0] if ga4_detection.measurement_ids else None,
         data_layer_present=data_layer_detection.present,

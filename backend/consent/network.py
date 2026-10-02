@@ -47,6 +47,7 @@ from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from config.logging import logger
+from config.browser import launch_chromium
 
 NAVIGATION_TIMEOUT_MS = 20_000
 SETTLE_MS = 1_500  # brief idle window after load to catch requests fired from a setTimeout/deferred script
@@ -343,7 +344,7 @@ async def capture_pre_consent_requests(url: str, settle_ms: int = SETTLE_MS) -> 
 
     try:
         async with async_playwright() as pw:
-            browser = await pw.chromium.launch()
+            browser = await launch_chromium(pw)
             try:
                 context = await browser.new_context()
                 page = await context.new_page()

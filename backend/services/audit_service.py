@@ -28,7 +28,7 @@ from urllib.parse import urlparse
 
 import dataclasses
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import analytics as analytics_module
@@ -123,6 +123,7 @@ def new_audit(
     depth: str,
     max_pages: int,
     modules: list,
+    target_region: Optional[str] = None,
 ) -> Audit:
     """Build (but don't add/persist) a queued Audit row."""
     return Audit(
@@ -133,6 +134,7 @@ def new_audit(
         depth=depth,
         max_pages=max_pages,
         modules=modules,
+        target_region=target_region,
         status="queued",
     )
 
@@ -145,7 +147,10 @@ async def start_audit(db: AsyncSession, user: User, payload: AuditCreate) -> Aud
     since that's a FastAPI request-scoped concern.
     """
     website = await get_or_create_website(db, user.id, payload.url)
-    audit = new_audit(user.id, website.id, payload.url, payload.depth, payload.max_pages, payload.modules)
+    audit = new_audit(
+        user.id, website.id, payload.url, payload.depth, payload.max_pages, payload.modules,
+        target_region=payload.target_region,
+    )
     db.add(audit)
     await db.flush()
 
@@ -272,15 +277,20 @@ async def run_audit_pipeline(audit_id: int) -> None:
             # before any secondary bookkeeping. A failure in the extras
             # below then can no longer roll the audit back to "running"/
             # "failed" and throw away a finished result.
-            audit.status = "completed"
-            audit.percent = 100
+            # Status stays "running" (99%) until the module rows below are
+            # saved too. Marking it "completed" here let the report page load
+            # before the Journey/Consent/Analytics rows existed, so it showed
+            # "This audit didn't include the Customer Journey module" for a
+            # journey that had in fact run (the row landed seconds later).
+            audit.status = "running"
+            audit.percent = 99
             audit.current_step = "checkReport"
             audit.overall_score = overall
             audit.breakdown = breakdown
             audit.findings = findings
             audit.completed_at = datetime.now(timezone.utc)
             await db.commit()
-            logger.info(f"Audit {audit_id} completed — overall {overall}")
+            logger.info(f"Audit {audit_id} results saved — overall {overall}; saving module details")
 
             # Plain values only from here on: a rollback() in a secondary
             # step expires every attribute on `audit`, and touching them
@@ -355,6 +365,17 @@ async def run_audit_pipeline(audit_id: int) -> None:
             if audit_website_id:
                 await _secondary("website", _website)
             await _secondary("history", _history)
+
+            # --- Now the report can be opened: every module row exists ----
+            try:
+                await db.execute(
+                    sa_update(Audit).where(Audit.id == audit_id).values(status="completed", percent=100)
+                )
+                await db.commit()
+                logger.info(f"Audit {audit_id} completed — overall {overall}")
+            except Exception:  # noqa: BLE001
+                await db.rollback()
+                logger.exception(f"Audit {audit_id}: could not mark as completed")
 
         except Exception as exc:  # noqa: BLE001 — persist failure, don't crash the worker
             logger.exception(f"Audit {audit_id} failed: {exc}")
@@ -480,7 +501,9 @@ async def _run_consent_checks(
             # Optional override (e.g. "IN", "EU", "US-CA"); unset => region is
             # detected from site signals, and Unknown => regional compliance
             # "not assessed" (see consent.region).
-            target_region=getattr(settings, "CONSENT_TARGET_REGION", None) or None,
+            # Per-audit choice first, then the server-wide default.
+            target_region=(getattr(audit, "target_region", None)
+                           or getattr(settings, "CONSENT_TARGET_REGION", None) or None),
             scan_id=scan_id,
         )
         logger.info(

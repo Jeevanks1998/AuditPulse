@@ -1509,7 +1509,7 @@
     var VENDOR_LABELS = {
       ga4: 'Google Analytics 4', gtm: 'Google Tag Manager', adobe: 'Adobe Analytics',
       piano: 'Piano Analytics', clarity: 'Microsoft Clarity', hotjar: 'Hotjar',
-      meta_pixel: 'Meta Pixel', linkedin: 'LinkedIn Insight Tag', tiktok: 'TikTok Pixel'
+      meta_pixel: 'Meta Pixel', linkedin: 'LinkedIn Insight Tag', tiktok: 'TikTok Pixel', tagcommander: 'TagCommander'
     };
 
     function analyticsStatusBadge(status) {

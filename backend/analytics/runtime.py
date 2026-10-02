@@ -40,7 +40,7 @@ from urllib.parse import parse_qs, urlparse
 
 from config.logging import logger
 from crawler.screenshots import DEFAULT_VIEWPORT, NAVIGATION_TIMEOUT_MS
-from config.browser import launch_chromium
+from config.browser import goto_page, launch_chromium
 
 MODULE = "analytics"
 CATEGORY = "runtime"
@@ -317,6 +317,23 @@ async def _accept_consent(page) -> str:
 
 
 async def run_analytics_runtime(url: str) -> AnalyticsRuntimeResult:
+    """Runtime pass with one retry in a fresh browser.
+
+    A page that never loaded (Chromium killed for memory, a network blip,
+    a slow first byte) would otherwise leave every vendor "Not tested" for
+    the whole audit.
+    """
+    import asyncio
+
+    result = await _run_analytics_runtime_once(url)
+    if not result.available:
+        logger.warning(f"analytics/runtime.py: retrying runtime validation for {url} ({result.error})")
+        await asyncio.sleep(3)
+        result = await _run_analytics_runtime_once(url)
+    return result
+
+
+async def _run_analytics_runtime_once(url: str) -> AnalyticsRuntimeResult:
     """
     Full §3.2 runtime pass for one URL: Page View on load, Scroll,
     then a Click on a safe (non-consent) interactive element, each in
@@ -354,7 +371,7 @@ async def run_analytics_runtime(url: str) -> AnalyticsRuntimeResult:
                 page.on("request", _on_request)
 
                 # --- load / Page View ------------------------------------------------
-                await page.goto(url, wait_until="load", timeout=NAVIGATION_TIMEOUT_MS)
+                await goto_page(page, url, timeout=max(NAVIGATION_TIMEOUT_MS, 30_000))
                 await page.wait_for_timeout(SETTLE_MS)
                 result.available = True
 

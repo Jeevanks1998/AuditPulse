@@ -448,7 +448,9 @@ class TestContext:
 async def _reset_to(tc: TestContext, page_url: str, prefix: str) -> None:
     """Load the interaction's page fresh and re-tag its elements (deterministic ids)."""
     # Always reload: every interaction starts from the page's initial state.
-    await tc.page.goto(page_url, wait_until="load", timeout=20_000)
+    from config.browser import goto_page
+
+    await goto_page(tc.page, page_url)
     await tc.page.wait_for_timeout(900)
     await tc.page.evaluate(DISCOVER_JS, {"maxElements": 400, "idPrefix": prefix})
 

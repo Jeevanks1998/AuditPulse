@@ -39,9 +39,14 @@ CHROMIUM_ARGS: List[str] = [
     "--mute-audio",
     # One renderer per tab rather than one per cross-site frame: the
     # single biggest memory saving on ad/CMP-heavy pages.
-    "--disable-features=site-per-process,IsolateOrigins,Translate,MediaRouter",
+    "--disable-features=site-per-process,IsolateOrigins,Translate,MediaRouter,BackForwardCache",
     "--disable-site-isolation-trials",
-    "--renderer-process-limit=4",
+    "--renderer-process-limit=2",
+    # Cap each page's JS heap: a runaway page fails on its own instead of
+    # dragging the whole container over its memory limit.
+    "--js-flags=--max-old-space-size=512",
+    "--disable-backgrounding-occluded-windows",
+    "--autoplay-policy=user-gesture-required",   # no auto-playing hero videos
 ]
 
 # Optional extra flags without a code change, e.g. CHROMIUM_EXTRA_ARGS="--no-sandbox".
@@ -56,3 +61,19 @@ async def launch_chromium(pw, **kwargs):
     """`await launch_chromium(pw)` instead of `await pw.chromium.launch()`."""
     args = list(kwargs.pop("args", []) or []) + chromium_args()
     return await pw.chromium.launch(args=args, **kwargs)
+
+
+async def goto_page(page, url: str, timeout: int = 25_000, load_wait_ms: int = 8_000):
+    """Navigate without failing on one slow third-party asset.
+
+    `wait_until="load"` waits for every image, video and ad on the page; on
+    heavy sites (or from a far-away region) that regularly exceeds the
+    timeout even though the page is fully usable. Wait for
+    DOMContentLoaded, then give "load" a capped extra wait.
+    """
+    resp = await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+    try:
+        await page.wait_for_load_state("load", timeout=load_wait_ms)
+    except Exception:  # noqa: BLE001 — still loading a slow asset; the page is usable
+        pass
+    return resp

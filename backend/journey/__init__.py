@@ -119,8 +119,8 @@ async def run_customer_journey(
     host = urlparse(url).hostname or ""
 
     try:
-        from analytics.runtime import open_runtime_browser
         from crawler.screenshots import DEFAULT_VIEWPORT
+        from journey.browser_session import JourneyBrowser, is_browser_dead_error
     except ImportError as exc:
         result.error = f"runtime unavailable: {exc}"
         return result
@@ -131,44 +131,60 @@ async def run_customer_journey(
     interactions: List[Interaction] = []
 
     try:
-        async with open_runtime_browser() as browser:
-            context = await browser.new_context(viewport=DEFAULT_VIEWPORT, accept_downloads=True,
-                                                service_workers="block", storage_state=None)
-            try:
-                await capture.attach(context)
+        async with JourneyBrowser(capture=capture, viewport=DEFAULT_VIEWPORT) as session:
+            async def on_first(page, _url):
+                await _accept_consent_if_present(page, result)
+                await session.save_state()  # a relaunch keeps the consent choice
 
-                async def on_first(page, _url):
-                    await _accept_consent_if_present(page, result)
+            async def on_scanned(page, page_scan: PageScan):
+                page_scan.screenshot = await evidence.page_snapshot(page, page_scan.url)
 
-                async def on_scanned(page, page_scan: PageScan):
-                    page_scan.screenshot = await evidence.page_snapshot(page, page_scan.url)
+            scan = await scan_site(session, url, max_pages, depth, on_page_loaded=on_first,
+                                   on_page_scanned=on_scanned, capture=capture)
+            result.available = True
+            interactions = build_interactions(scan.elements, scan.forms, host)
+            analytics_present = bool(site_vendor_summary(capture)["analytics_present"])
 
-                scan = await scan_site(context, url, max_pages, depth, on_page_loaded=on_first,
-                                       on_page_scanned=on_scanned, capture=capture)
-                result.available = True
-                interactions = build_interactions(scan.elements, scan.forms, host)
-                analytics_present = bool(site_vendor_summary(capture)["analytics_present"])
-
-                if do_tests:
-                    page = await context.new_page()
-                    tc = TestContext(context=context, page=page, capture=capture, evidence=evidence, host=host,
-                                     analytics_present=analytics_present)
-                    prefixes = {normalize_url(p.url): f"p{n + 1}e" for n, p in enumerate(scan.pages)}
-                    for it in select_for_testing(interactions, max_tested, per_page):
-                        await test_interaction(tc, it, prefixes.get(normalize_url(it.page_url), "pXe"))
-                        if page.is_closed():
-                            page = await context.new_page()
-                            tc.page = page
-                    # Carry the tested result to repeats of the same element on other pages.
-                    by_index = {i.index: i for i in interactions}
-                    for it in interactions:
-                        if it.duplicate_of is not None:
-                            src = by_index.get(it.duplicate_of)
-                            if src is not None and src.tested:
-                                it.status = "same_as_first"
-                                it.tracking = {"status": (src.tracking or {}).get("status"), "same_as": src.index}
-            finally:
-                await context.close()
+            if do_tests:
+                # Start the tests in a fresh Chromium: the scan's memory is
+                # released, and the consent cookies carry over.
+                await session.restart("fresh browser for interaction tests")
+                session.restarts = 0  # the planned restart doesn't count against crash recovery
+                page = await session.new_page()
+                tc = TestContext(context=session.context, page=page, capture=capture, evidence=evidence,
+                                 host=host, analytics_present=analytics_present)
+                prefixes = {normalize_url(p.url): f"p{n + 1}e" for n, p in enumerate(scan.pages)}
+                for n, it in enumerate(select_for_testing(interactions, max_tested, per_page)):
+                    prefix = prefixes.get(normalize_url(it.page_url), "pXe")
+                    for attempt in range(2):
+                        await test_interaction(tc, it, prefix)
+                        dead = not session.alive() or is_browser_dead_error(it.observed)
+                        if dead:
+                            if not await session.restart(it.observed or "browser died during test"):
+                                break
+                        if dead or tc.page.is_closed() or (n + 1) % 6 == 0:
+                            # New tab (and context after a restart); recycle every
+                            # few tests so one tab doesn't accumulate memory.
+                            try:
+                                if not tc.page.is_closed():
+                                    await tc.page.close()
+                            except Exception:  # noqa: BLE001
+                                pass
+                            tc.page = await session.new_page()
+                            tc.context = session.context
+                        if not (dead and not it.tested and attempt == 0):
+                            break
+                        # Chromium died mid-test: run this interaction again once.
+                        it.status, it.observed, it.outcome = "not_tested", "", None
+                        it.screenshots = {}
+                # Carry the tested result to repeats of the same element on other pages.
+                by_index = {i.index: i for i in interactions}
+                for it in interactions:
+                    if it.duplicate_of is not None:
+                        src = by_index.get(it.duplicate_of)
+                        if src is not None and src.tested:
+                            it.status = "same_as_first"
+                            it.tracking = {"status": (src.tracking or {}).get("status"), "same_as": src.index}
     except Exception as exc:  # noqa: BLE001 — a failed journey scan never breaks the audit
         logger.warning(f"journey: customer journey scan failed for {url}: {exc}")
         result.error = str(exc)[:500]

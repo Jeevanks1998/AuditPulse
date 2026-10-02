@@ -163,6 +163,10 @@ _CMP_SIGNALS = [
 ]
 
 
+_OPT_IN_REJECT = re.compile(r"\b(reject|refuse|decline|deny)\b|tout refuser|alle ablehnen|continue without accepting", re.I)
+_OPT_IN_ACCEPT = re.compile(r"\b(accept|allow|agree)\b|tout accepter|alle akzeptieren", re.I)
+
+
 @dataclass
 class RegionSignal:
     region: str
@@ -341,10 +345,39 @@ def _text_signals(text: str, rules, source: str) -> List[RegionSignal]:
     return out
 
 
+def _alternate_signals(page: ParsedPage) -> List[RegionSignal]:
+    """EU-language versions of the site (hreflang alternates or a language
+    switcher linking to /fr/, /de/ ...): the site is published for EU
+    audiences even when the URL is a .com and the homepage is English."""
+    langs = set()
+    try:
+        for link in page.soup.find_all("link", hreflang=True):
+            code = (link.get("hreflang") or "").lower().replace("_", "-")
+            primary, _, region = code.partition("-")
+            if region in _EU_EEA_TLDS or primary in _EU_LANGS:
+                langs.add(code)
+        host = (urlparse(page.url).hostname or "").lower()
+        for a in page.anchor_tags[:600]:
+            href = (a.get("href") or "").strip()
+            parsed = urlparse(href)
+            if parsed.hostname and parsed.hostname.lower() != host:
+                continue
+            seg = (parsed.path or "").strip("/").split("/")[0].lower()
+            if seg in _EU_LANGS and len(seg) == 2:
+                langs.add(seg)
+    except Exception:  # noqa: BLE001 — a malformed page never breaks region detection
+        return []
+    if not langs:
+        return []
+    shown = ", ".join(sorted(langs)[:5])
+    return [RegionSignal(REGION_EU, 30, "lang", f"EU-language versions of the site ({shown})")]
+
+
 def detect_region_signals(url: str, page: Optional[ParsedPage] = None) -> List[RegionSignal]:
     signals = _url_signals(url)
     if page is not None:
         signals += _lang_signals(page)
+        signals += _alternate_signals(page)
         signals += _text_signals(page.text_content or "", _TEXT_SIGNALS, "content")
     return signals
 
@@ -399,6 +432,13 @@ def refine_region(result: RegionResult, runtime_result=None) -> RegionResult:
             texts.append(panel.get("text_excerpt") or "")
     texts += [c.label for c in (getattr(runtime_result, "controls", None) or [])]
     cmp_signals = _text_signals(" ".join(texts), _CMP_SIGNALS, "cmp")
+    # An opt-in banner with "Reject all" next to "Accept all" on the first
+    # layer is the GDPR / ePrivacy pattern (US banners are opt-out).
+    labels = " | ".join(c.label for c in (getattr(runtime_result, "controls", None) or []) if c.label)
+    if (_OPT_IN_REJECT.search(labels) and _OPT_IN_ACCEPT.search(labels)
+            and not any(sig.region == REGION_EU for sig in cmp_signals)):
+        cmp_signals.append(RegionSignal(REGION_EU, 25, "cmp",
+                                        "CMP regional configuration: opt-in banner with Reject all / Accept all"))
     if not cmp_signals:
         return result
     return _decide(result.signals + cmp_signals)

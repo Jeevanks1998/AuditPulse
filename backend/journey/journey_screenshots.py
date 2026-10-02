@@ -70,6 +70,9 @@ def page_slug(url: str) -> str:
     return _safe_filename(path)[:60] or "home"
 
 
+MAX_SNAPSHOT_HEIGHT = 5_000  # px
+
+
 class EvidenceWriter:
     """Writes journey screenshots for one scan and returns /screenshots-relative paths."""
 
@@ -95,7 +98,17 @@ class EvidenceWriter:
         out = self.root / "pages" / f"{page_slug(page_url)}.png"
         out.parent.mkdir(parents=True, exist_ok=True)
         try:
-            await page.screenshot(path=str(out), full_page=True, timeout=15_000)
+            # A full-page capture renders the whole page into one bitmap; on
+            # very long pages that is hundreds of MB inside Chromium. Cap it.
+            size = await page.evaluate(
+                "() => [document.documentElement.clientWidth || innerWidth,"
+                " Math.max(document.body ? document.body.scrollHeight : 0, document.documentElement.scrollHeight)]")
+            width, height = int(size[0] or 1366), int(size[1] or 900)
+            if height > MAX_SNAPSHOT_HEIGHT:
+                await page.screenshot(path=str(out), full_page=True, timeout=15_000,
+                                      clip={"x": 0, "y": 0, "width": width, "height": MAX_SNAPSHOT_HEIGHT})
+            else:
+                await page.screenshot(path=str(out), full_page=True, timeout=15_000)
             return self.relative(out)
         except Exception as exc:  # noqa: BLE001
             logger.info(f"journey screenshots: page snapshot failed for {page_url}: {exc}")

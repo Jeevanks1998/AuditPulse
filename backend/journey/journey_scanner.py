@@ -33,6 +33,8 @@ from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urljoin, urldefrag, urlparse
 
 from config.logging import logger
+from config.browser import goto_page
+from journey.browser_session import is_browser_dead_error
 from crawler.links import ASSET_EXTENSIONS, NON_CRAWLABLE_SCHEMES
 
 # Hard ceilings on top of the audit's own max_pages, so one audit can never
@@ -41,6 +43,7 @@ HOMEPAGE_DEPTH_PAGE_CAP = 8
 FULL_DEPTH_PAGE_CAP = 25
 FULL_DEPTH_LEVELS = 3
 PAGE_SETTLE_MS = 1_200
+MAX_HTML_BYTES = 4_000_000
 MAX_ELEMENTS_PER_PAGE = 400
 MAX_CRAWL_DELAY_S = 5.0
 
@@ -389,14 +392,32 @@ async def http_fetch(context, url: str, method: str = "GET", timeout: float = 15
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=timeout, cookies=jar,
                                      headers={"User-Agent": DEFAULT_USER_AGENT}) as client:
-            r = await client.request(method, url)
-            if method == "HEAD" and (r.status_code >= 400 or r.status_code == 405):
-                r = await client.request("GET", url)
-            text = r.text if method == "GET" and "text" in r.headers.get("content-type", "") else ""
-            return r.status_code, dict(r.headers), text
+            if method == "HEAD":
+                r = await client.request("HEAD", url)
+                if r.status_code < 400 and r.status_code != 405:
+                    return r.status_code, dict(r.headers), ""
+            # Streamed GET: only text/HTML bodies are read (capped), so a
+            # 50 MB PDF behind a download link is never held in memory.
+            async with client.stream("GET", url) as r:
+                text = ""
+                if method == "GET" and "text" in r.headers.get("content-type", ""):
+                    chunks, size = [], 0
+                    async for chunk in r.aiter_bytes():
+                        chunks.append(chunk)
+                        size += len(chunk)
+                        if size > MAX_HTML_BYTES:
+                            break
+                    text = b"".join(chunks).decode(r.encoding or "utf-8", errors="replace")
+                return r.status_code, dict(r.headers), text
     except Exception as exc:  # noqa: BLE001
         logger.info(f"journey: HTTP {method} {url} failed: {exc}")
         return None, {}, ""
+
+
+# Recycle the tab every N pages: one long-lived tab keeps every visited
+# page's JS heap / caches alive, which on a small container ends with
+# Chromium being killed for memory.
+RECYCLE_TAB_EVERY = 4
 
 
 async def discover_page(page, page_url: str, id_prefix: str) -> dict:
@@ -404,7 +425,7 @@ async def discover_page(page, page_url: str, id_prefix: str) -> dict:
 
 
 async def scan_site(
-    context,
+    session,
     start_url: str,
     max_pages: int,
     depth: str,
@@ -440,9 +461,29 @@ async def scan_site(
         except Exception:  # noqa: BLE001
             crawl_delay = 0.0
 
-        page = await context.new_page()
+        # `session` is a journey.browser_session.JourneyBrowser (relaunches a
+        # killed Chromium) — or, for older callers, a plain BrowserContext.
+        restartable = hasattr(session, "restart")
+
+        def _ctx():
+            return session.context if restartable else session
+
+        async def _new_page():
+            return await (session.new_page() if restartable else session.new_page())
+
+        page = await _new_page()
         first = True
+        pages_on_tab = 0
         while queue and len(result.pages) < limit:
+            if pages_on_tab >= RECYCLE_TAB_EVERY or page.is_closed():
+                try:
+                    await page.close()
+                except Exception:  # noqa: BLE001
+                    pass
+                if restartable:
+                    await session.save_state()
+                page = await _new_page()
+                pages_on_tab = 0
             url, level, parent, via_label, via_id = queue.pop(0)
             try:
                 allowed = await robots.can_fetch(client, url)
@@ -455,8 +496,17 @@ async def scan_site(
             scan = PageScan(url=url, depth=level, parent_url=parent, via_label=via_label, via_element_id=via_id)
             result.pages.append(scan)
             load_mark = capture.mark() if capture is not None else None
+            pages_on_tab += 1
             try:
-                resp = await page.goto(url, wait_until="load", timeout=20_000)
+                try:
+                    resp = await goto_page(page, url)
+                except Exception as nav_exc:  # noqa: BLE001
+                    # Chromium was killed (memory): relaunch and retry this page once.
+                    if not (restartable and is_browser_dead_error(nav_exc) and await session.restart(str(nav_exc))):
+                        raise
+                    page = await _new_page()
+                    pages_on_tab = 1
+                    resp = await goto_page(page, url)
                 scan.status = resp.status if resp else None
                 await page.wait_for_timeout(PAGE_SETTLE_MS)
                 if first and on_page_loaded is not None:
@@ -464,7 +514,7 @@ async def scan_site(
                     first = False
                 # Server-delivered HTML (same cookies as the browser) — anything
                 # rendered that isn't in it was generated dynamically.
-                _status, _headers, static_html = await http_fetch(context, url)
+                _status, _headers, static_html = await http_fetch(_ctx(), url)
                 static_sigs = _static_signatures(static_html) if static_html else set()
 
                 data = await discover_page(page, url, f"p{len(result.pages)}e")
@@ -510,5 +560,8 @@ async def scan_site(
                 logger.info(f"journey: could not scan {url}: {exc}")
             if crawl_delay:
                 await asyncio.sleep(crawl_delay)
-        await page.close()
+        try:
+            await page.close()
+        except Exception:  # noqa: BLE001
+            pass
     return result

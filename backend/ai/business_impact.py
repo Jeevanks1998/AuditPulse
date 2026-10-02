@@ -24,7 +24,6 @@ MAX_IMPACT_ITEMS = 5
 
 # Used by the heuristic fallback to phrase impact without an AI call.
 _MODULE_IMPACT_TEMPLATES: Dict[str, str] = {
-    "performance": "Slower pages increase bounce rate and lower conversion, especially on mobile.",
     "consent": "Non-compliant consent handling carries regulatory (GDPR/CCPA) risk and fines.",
     "analytics": "Gaps in tracking mean decisions get made on incomplete or wrong data.",
     "ai": "Signals a broader gap the automated review considered high-priority.",

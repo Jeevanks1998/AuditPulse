@@ -52,17 +52,10 @@ DEMO_PASSWORD_DEFAULT = "DemoPass123!"
 
 _SAMPLE_SITE_URL = "https://www.example.com"
 _SAMPLE_BREAKDOWN = {
-    "performance": 68,
     "analytics": 81,
     "consent": 74,
 }
 _SAMPLE_FINDINGS = [
-    {
-        "module": "performance",
-        "severity": "critical",
-        "title": "Unoptimized hero image",
-        "description": "The homepage hero image is 4.2MB and not lazy-loaded.",
-    },
     {
         "module": "analytics",
         "severity": "warning",
@@ -140,7 +133,7 @@ async def _seed_website_and_audits(db, user: User) -> None:
         url=_SAMPLE_SITE_URL + "/pricing",
         label="Homepage",
         depth="homepage",
-        modules=["performance"],
+        modules=["consent", "analytics"],
         status="queued",
         percent=0,
         created_at=now,

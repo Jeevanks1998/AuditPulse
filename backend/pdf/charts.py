@@ -5,7 +5,7 @@ Phase 2 (Professional Content Structure): draws "Overall Score & Module
 Performance" (target structure §2 item 4) and "Finding Severity
 Distribution" (item 5) as two separate sections.
 
-Score & Module Performance:
+Score & Module Scores:
   - a horizontal bar chart is the one primary chart (§3.4: "Keep one
     primary horizontal score chart"). The spider/radar chart from the
     original technical export is kept as an opt-in helper
@@ -72,11 +72,11 @@ _BAND_COLORS = {"good": SUCCESS, "mid": WARNING, "bad": ERROR}
 
 
 # --------------------------------------------------------------------------
-# Overall Score & Module Performance (§3.4)
+# Overall Score & Module Scores (§3.4)
 # --------------------------------------------------------------------------
 
 def build_charts_flowables(payload: ReportPayload, include_radar: bool = False) -> List[Flowable]:
-    """Returns the "Overall Score & Module Performance" section.
+    """Returns the "Overall Score & Module Scores" section.
 
     `include_radar` defaults to False (§3.4: "Remove or make the radar
     chart optional; do not show both by default") — the bar chart plus
@@ -87,7 +87,7 @@ def build_charts_flowables(payload: ReportPayload, include_radar: bool = False) 
     if not payload.score_grid:
         return []
 
-    flowables: List[Flowable] = [Paragraph("Overall Score & Module Performance", STYLES["H1"])]
+    flowables: List[Flowable] = [Paragraph("Overall Score & Module Scores", STYLES["H1"])]
     if include_radar:
         flowables.append(_radar_drawing(payload))
         flowables.append(Spacer(1, 10))

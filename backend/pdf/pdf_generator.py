@@ -75,12 +75,12 @@ def generate_pdf_report(payload: ReportPayload, screenshot_path: Optional[str] =
 
     # Phase 2 (Professional Content Structure): the section list now follows
     # the target report structure's order (docx §2) — Executive Summary is
-    # followed by its own Score & Module Performance, Severity Distribution
+    # followed by its own Score & Module Scores, Severity Distribution
     # and Critical Findings sections rather than one undifferentiated
     # "Score Breakdown" block, so each gets its own Table of Contents entry.
     sections = [
         ("Executive Summary", build_summary_flowables(payload)),
-        ("Overall Score & Module Performance", build_charts_flowables(payload)),
+        ("Overall Score & Module Scores", build_charts_flowables(payload)),
         ("Finding Severity Distribution", build_severity_distribution_flowables(payload)),
         ("Critical Findings", build_critical_findings_flowables(payload)),
         ("Page Preview", build_screenshot_flowables(screenshot_path, payload.url)),

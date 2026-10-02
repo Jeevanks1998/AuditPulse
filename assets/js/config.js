@@ -26,13 +26,12 @@ window.APP_CONFIG = {
   },
 
   // Module keys correspond to the data-module attributes in audit.html
-  MODULES: ['ai', 'pdf', 'consent', 'analytics', 'performance', 'journey'],
+  MODULES: ['ai', 'pdf', 'consent', 'analytics', 'journey'],
 
   // Steps shown in the audit.html checklist / progress UI, in run order.
   // ids correspond to the check-item element ids in audit.html.
   AUDIT_STEPS: [
     { id: 'checkCrawl', label: 'Crawling website' },
-    { id: 'checkPerformance', label: 'Performance' },
     { id: 'checkConsent', label: 'Cookie consent' },
     { id: 'checkAnalytics', label: 'Analytics' },
     { id: 'checkJourney', label: 'Customer journey' },

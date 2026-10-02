@@ -50,8 +50,8 @@
   ];
 
   document.addEventListener('DOMContentLoaded', function () {
-    var statPerf = document.getElementById('statPerformance');
-    if (!statPerf || !window.Api) return; // not on dashboard.html
+    var statJourney = document.getElementById('statJourney');
+    if (!statJourney || !window.Api) return; // not on dashboard.html
 
     var statCritical = document.getElementById('statCriticalIssues');
     var statAnalytics = document.getElementById('statAnalytics');
@@ -59,7 +59,7 @@
 
     // Trend indicators are optional — only shown when the API actually
     // returns a trend value for that KPI. Nothing here is invented.
-    var trendPerf = document.getElementById('trendPerformance');
+    var trendJourney = document.getElementById('trendJourney');
     var trendCritical = document.getElementById('trendCriticalIssues');
     var trendAnalytics = document.getElementById('trendAnalytics');
     var trendConsent = document.getElementById('trendConsent');
@@ -98,7 +98,7 @@
     function loadStats() {
       if (healthOverviewError) healthOverviewError.style.display = 'none';
       if (healthOverviewMain) healthOverviewMain.style.display = '';
-      [statPerf, statCritical, statAnalytics, statConsent].forEach(function (el) { window.Loader.setSkeleton(el, true); });
+      [statJourney, statCritical, statAnalytics, statConsent].forEach(function (el) { window.Loader.setSkeleton(el, true); });
       window.Loader.setSkeleton(healthScoreValue, true);
 
       return window.Api.audits.getStats()
@@ -109,13 +109,12 @@
     function applyStats(stats) {
         stats = stats || {};
         stats.breakdown = stats.breakdown || {};
-        window.Loader.setSkeleton(statPerf, false);
+        window.Loader.setSkeleton(statJourney, false);
         window.Loader.setSkeleton(statCritical, false);
         window.Loader.setSkeleton(statAnalytics, false);
         window.Loader.setSkeleton(statConsent, false);
         window.Loader.setSkeleton(healthScoreValue, false);
 
-        U.animateCountUp(statPerf, stats.performanceScore || 0, 700, '%');
         U.animateCountUp(statCritical, stats.criticalIssues || 0, 700);
         
         // Display Analytics and Consent status — a real 0% score must still
@@ -126,12 +125,14 @@
         var hasConsentScore = stats.breakdown && stats.breakdown.consent !== null && stats.breakdown.consent !== undefined;
         if (statAnalytics) statAnalytics.textContent = hasAnalyticsScore ? stats.breakdown.analytics + '%' : 'Pending';
         if (statConsent) statConsent.textContent = hasConsentScore ? stats.breakdown.consent + '%' : 'Pending';
+        var hasJourneyScore = stats.breakdown && stats.breakdown.journey !== null && stats.breakdown.journey !== undefined;
+        statJourney.textContent = hasJourneyScore ? stats.breakdown.journey + '%' : 'Pending';
 
         // Trend badges: rendered only when the API supplies a value for
         // that KPI (stats.trend.<key>). No trend is ever fabricated — if
         // the backend hasn't added trend data yet, these stay hidden,
         // exactly as they are today.
-        setTrend(trendPerf, stats.trend && stats.trend.performance);
+        setTrend(trendJourney, stats.trend && stats.trend.journey);
         setTrend(trendCritical, stats.trend && stats.trend.criticalIssues);
         setTrend(trendAnalytics, stats.trend && stats.trend.analytics);
         setTrend(trendConsent, stats.trend && stats.trend.consent);
@@ -153,15 +154,9 @@
           healthBadge.style.visibility = '';
         }
 
-        setBar('barPerformance', 'valPerformance', stats.breakdown.performance || 0);
         setBar('barAnalytics', 'valAnalytics', stats.breakdown.analytics || 0);
         setBar('barConsent', 'valConsent', stats.breakdown.consent || 0);
-        // Customer Journey only appears when the latest audit ran that module.
-        var journeyRow = document.getElementById('journeyHealthRow');
-        if (journeyRow && stats.breakdown.journey != null) {
-          journeyRow.style.display = '';
-          setBar('barJourney', 'valJourney', stats.breakdown.journey || 0);
-        }
+        setBar('barJourney', 'valJourney', stats.breakdown.journey || 0);
     }
 
     // KPI cards, trend badges, and the health ring all fall back to "–" /
@@ -169,11 +164,11 @@
     // (with a real retry, not just "refresh the page") lets the person
     // recover without reloading the whole dashboard.
     function handleStatsError() {
-      [statPerf, statCritical, statAnalytics, statConsent].forEach(function (el) {
+      [statJourney, statCritical, statAnalytics, statConsent].forEach(function (el) {
         window.Loader.setSkeleton(el, false);
         if (el) el.textContent = '–';
       });
-      [trendPerf, trendCritical, trendAnalytics, trendConsent].forEach(function (el) { setTrend(el, null); });
+      [trendJourney, trendCritical, trendAnalytics, trendConsent].forEach(function (el) { setTrend(el, null); });
       window.Loader.setSkeleton(healthScoreValue, false);
       if (healthScoreValue) healthScoreValue.textContent = '–';
 
@@ -232,7 +227,7 @@
     }
 
     // Shows a KPI card's trend badge only when `value` is an actual number
-    // from the API (e.g. stats.trend.performance). Any missing/undefined/
+    // from the API (e.g. stats.trend.journey). Any missing/undefined/
     // null value keeps the badge hidden rather than showing a placeholder
     // or a made-up figure.
     function setTrend(el, value) {

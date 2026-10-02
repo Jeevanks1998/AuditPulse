@@ -4,7 +4,7 @@ services/audit_service.py
 Business logic behind api/audit.py: the create flow, the query helpers
 reused by dashboard_service / history_service / api/settings.py, stats
 aggregation, and `run_audit_pipeline` — which crawls the audited URL once
-and runs the real performance/, analytics/, and consent/ check
+and runs the real analytics/, consent/ and journey/ check
 packages against it. It walks the same step sequence the frontend
 already animates through (see config.constants.AUDIT_STEPS and
 assets/js/audit.js) so the API and UI stay in lockstep, then persists
@@ -34,8 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import analytics as analytics_module
 import consent as consent_module
-import performance as performance_module
-from config.constants import AUDIT_STEPS, DEFAULT_MODULE_WEIGHT, MODULE_WEIGHTS
+from config.constants import AUDIT_MODULES, AUDIT_STEPS, CHECK_MODULES, DEFAULT_MODULE_WEIGHT, MODULE_WEIGHTS
 from config.database import AsyncSessionLocal
 from config.logging import logger
 from config.settings import settings
@@ -60,7 +59,6 @@ from services import ai_service
 # purely so the empty/no-completed-audits stats shape from compute_stats()
 # has a stable, predictable key set.
 EMPTY_BREAKDOWN = {
-    "performance": 0,
     "consent": 0,
     "analytics": 0,
 }
@@ -91,7 +89,6 @@ async def compute_stats(db: AsyncSession, user: User) -> AuditStatsOut:
         return AuditStatsOut(
             total_audits=len(all_audits),
             seo_issues=0,
-            performance_score=0,
             critical_issues=0,
             overall=0,
             breakdown=dict(EMPTY_BREAKDOWN),
@@ -107,7 +104,6 @@ async def compute_stats(db: AsyncSession, user: User) -> AuditStatsOut:
     return AuditStatsOut(
         total_audits=len(all_audits),
         seo_issues=seo_issues,
-        performance_score=(latest.breakdown or {}).get("performance", 0),
         critical_issues=critical_issues,
         overall=avg_overall,
         breakdown=latest.breakdown or dict(EMPTY_BREAKDOWN),
@@ -127,6 +123,11 @@ def new_audit(
     target_region: Optional[str] = None,
 ) -> Audit:
     """Build (but don't add/persist) a queued Audit row."""
+    # Drop modules that no longer exist (e.g. "performance" saved on an
+    # older schedule) instead of failing; never leave an audit with no checks.
+    modules = [m for m in (modules or []) if m in AUDIT_MODULES]
+    if not any(m in CHECK_MODULES for m in modules):
+        modules = modules + [m for m in CHECK_MODULES if m not in modules]
     return Audit(
         user_id=user_id,
         website_id=website_id,
@@ -169,7 +170,7 @@ async def start_audit(db: AsyncSession, user: User, payload: AuditCreate) -> Aud
 
 
 # --------------------------------------------------------------------------
-# Pipeline — crawls the audited URL once, then runs the real performance/,
+# Pipeline — crawls the audited URL once, then runs the real
 # analytics/, and consent/ check packages against it.
 # --------------------------------------------------------------------------
 async def run_audit_pipeline(audit_id: int) -> None:
@@ -220,18 +221,12 @@ async def run_audit_pipeline(audit_id: int) -> None:
                 page = parse_html(audit.url, response.text)
                 hostname = urlparse(audit.url).hostname or ""
 
-                # performance/consent/analytics/ai are all optional modules
+                # consent/analytics/journey/ai are all optional modules
                 # (see config.constants.AUDIT_MODULES / audit.html's
                 # checkboxes) — each real check package is skipped entirely
                 # when deselected.
                 breakdown: dict = {}
                 findings: list = []
-
-                if "performance" in (audit.modules or []):
-                    await _advance_step(db, audit, "checkPerformance")
-                    performance_result = await performance_module.run_performance_checks(client, audit.url)
-                    breakdown["performance"] = performance_result.score.overall
-                    findings += performance_result.findings
 
                 # consent/analytics reuse the page + response already fetched
                 # above for checkCrawl rather than crawling the site again

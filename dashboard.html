@@ -51,9 +51,6 @@
 
       <div class="sidebar__group-label" style="margin-top:20px;">Audit Modules</div>
       <ul class="sidebar__nav">
-        <li><a class="sidebar__link" href="report.html#performance">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/></svg>
-          Performance</a></li>
         <li><a class="sidebar__link" href="report.html#analytics">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-6 4 3 5-8"/></svg>
           Analytics</a></li>
@@ -130,12 +127,12 @@
         <div class="stat-card">
           <div class="stat-card__top">
             <div class="stat-card__icon stat-card__icon--success">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>
             </div>
-            <div class="stat-card__label">Performance</div>
+            <div class="stat-card__label">Customer Journey</div>
           </div>
-          <div class="stat-card__value" id="statPerformance">–</div>
-          <span class="stat-card__trend" id="trendPerformance" hidden></span>
+          <div class="stat-card__value" id="statJourney">–</div>
+          <span class="stat-card__trend" id="trendJourney" hidden></span>
         </div>
 
         <div class="stat-card">
@@ -224,16 +221,6 @@
          ids as before so dashboard.js needs no changes and no value here
          is ever anything but a real API number. -->
     <div class="health-overview__rows">
-      <div class="health-row" data-category="performance">
-        <span class="health-row__icon health-row__icon--performance" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-6 4 3 5-8"/></svg>
-        </span>
-        <span class="health-row__label">Performance</span>
-        <div class="health-row__bar">
-          <div class="health-row__fill" id="barPerformance" style="width:0%;"></div>
-        </div>
-        <span class="health-row__value" id="valPerformance">–</span>
-      </div>
 
       <div class="health-row" data-category="analytics">
         <span class="health-row__icon health-row__icon--analytics" aria-hidden="true">
@@ -256,7 +243,7 @@
         </div>
         <span class="health-row__value" id="valConsent">–</span>
       </div>
-      <div class="health-row" data-category="journey" id="journeyHealthRow" style="display:none;">
+      <div class="health-row" data-category="journey" id="journeyHealthRow">
         <span class="health-row__icon health-row__icon--analytics" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M7 6h10M6 8l5 8M18 8l-5 8"/></svg>
         </span>

@@ -283,7 +283,6 @@ class AnalyticsOut(BaseModel):
 class AuditStatsOut(BaseModel):
     total_audits: int
     seo_issues: int
-    performance_score: int
     critical_issues: int
     overall: int
     breakdown: dict

@@ -10,22 +10,25 @@ from enum import Enum
 
 APP_NAME = "AuditPulse"
 
-# Module keys — must match `data-module` attributes in audit.html
+# Module keys — must match `data-module` attributes in audit.html.
+# The audit checks are Analytics, Consent and Customer Journey; "ai" and
+# "pdf" are report outputs. (The old Performance module was removed.)
 AUDIT_MODULES = [
     "ai",
     "pdf",
     "consent",
     "analytics",
-    "performance",
     "journey",      # Customer Journey Mapping (journey/)
 ]
+
+# The modules that actually check the site (the rest are report outputs).
+CHECK_MODULES = ["analytics", "consent", "journey"]
 
 # Ordered pipeline steps for a running audit job.
 # `id` corresponds to the check-item element ids used by the frontend
 # progress UI (assets/js/audit.js -> checkList).
 AUDIT_STEPS = [
     {"id": "checkCrawl", "label": "Crawling website"},
-    {"id": "checkPerformance", "label": "Performance"},
     {"id": "checkConsent", "label": "Cookie consent"},
     {"id": "checkAnalytics", "label": "Analytics"},
     {"id": "checkJourney", "label": "Customer journey"},
@@ -45,7 +48,6 @@ SCORE_BANDS = {"good": 80, "mid": 50}
 # weight — so this doesn't need to sum to 1.0 and new modules can be added
 # here without updating every existing audit.
 MODULE_WEIGHTS = {
-    "performance": 0.10,
     "analytics": 0.15,
     "consent": 0.20,
     "journey": 0.15,

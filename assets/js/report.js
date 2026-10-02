@@ -29,11 +29,9 @@
 
   // report.html section ids that findings/score-grid modules can actually
   // map to. Modules the backend computes but this page has no section for
-  // (anything other than performance/analytics/consent, e.g. older saved audits) still show up in the score grid,
+  // (e.g. the removed Performance module on older saved audits) still show up in the score grid,
   // they just won't be clickable-to-scroll or get a detail section.
-  var MODULE_CHECK_GRID_IDS = {
-    performance: 'performanceCheckGrid'
-  };
+  var MODULE_CHECK_GRID_IDS = {};
   // Mirrors backend consent.consent_score.GDPR_CHECK_ORDER / GDPR_CHECK_LABELS —
   // keep the key list and order in sync with that module. `severity` /
   // `failReason` are display-only (not persisted anywhere) — they drive
@@ -86,9 +84,7 @@
       failReason: 'Opt-out does not actually stop tracking', required: false }
   ];
 
-  var MODULE_SCORE_CHIP_IDS = {
-    performance: 'performanceScoreChip'
-  };
+  var MODULE_SCORE_CHIP_IDS = {};
 
   // Module label + "Healthy/Needs Attention/Issues Found" status wording,
   // mirroring backend/reports/generator.py's MODULE_LABELS /
@@ -161,7 +157,7 @@
   }
 
   /* ------------------------- Module Details accordion (Phase 9) -------------------------
-     The module sections (#performance/#analytics/#consent)
+     The module sections (#analytics/#consent/#journey)
      are native <details>/<summary> elements. Native <details> already handles plain
      open/close and (in every current browser) auto-opens on direct #hash navigation —
      this just adds the two things the browser can't do on its own: opening the right
@@ -184,7 +180,7 @@
     var accordions = U.qsa('.module-accordion, .analytics-subsection');
     if (!accordions.length) return;
 
-    // Sidebar "Audit Modules" links point at #performance etc. — open the
+    // Sidebar "Audit Modules" links point at #analytics etc. — open the
     // target accordion on click so it's expanded by the time the browser
     // scrolls to it (belt-and-braces alongside the native auto-open).
     U.qsa('a[href^="#"]').forEach(function (link) {
@@ -253,7 +249,7 @@
     var emailComposeBtn = document.getElementById('emailComposeBtn');
 
     // The sidebar links in report.html are written as plain "report.html" /
-    // "report.html#email-reports" / "report.html#performance" — none of them
+    // "report.html#email-reports" / "report.html#analytics" — none of them
     // carry ?id=. Clicking one therefore reloaded the page with NO audit id,
     // so nothing loaded (scores stayed "- / 100") and the Email Reports /
     // Send to POC handlers below were never attached (the auditId guard

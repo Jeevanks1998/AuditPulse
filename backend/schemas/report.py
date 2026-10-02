@@ -11,7 +11,6 @@ from typing import List, Optional
 from pydantic import BaseModel
 
 MODULE_LABELS = {
-    "performance": "Performance",
     "analytics": "Analytics",
     "consent": "Consent",
     "journey": "Customer Journey",

@@ -265,11 +265,9 @@
     }
 
     var MODULES = [
-      { id: 'performance', label: 'Performance' },
-      { id: 'accessibility', label: 'Accessibility' },
       { id: 'analytics', label: 'Analytics' },
       { id: 'consent', label: 'Consent' },
-      { id: 'security', label: 'Security' }
+      { id: 'journey', label: 'Customer Journey' }
     ];
 
     function openScheduleModal(existing) {

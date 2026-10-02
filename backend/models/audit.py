@@ -57,7 +57,7 @@ class Audit(Base):
     percent: Mapped[int] = mapped_column(Integer, default=0)
 
     overall_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    breakdown: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # performance/analytics/consent
+    breakdown: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # analytics/consent/journey
     findings: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)   # [{module, severity, title, description}]
 
     error_message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)

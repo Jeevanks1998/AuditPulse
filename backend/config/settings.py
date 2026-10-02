@@ -89,8 +89,16 @@ class Settings(BaseSettings):
     # --- Customer Journey (journey/) ---
     # Safe interaction tests per audit / per page (each one reloads the page
     # and captures before / highlighted / after screenshots).
-    JOURNEY_MAX_TESTED_INTERACTIONS: int = 40
-    JOURNEY_MAX_TESTS_PER_PAGE: int = 12
+    JOURNEY_MAX_TESTED_INTERACTIONS: int = 25
+    JOURNEY_MAX_TESTS_PER_PAGE: int = 8
+    # Time budgets (seconds) so a journey never holds the worker for long:
+    # page discovery stops after SCAN budget, interaction tests after TEST
+    # budget (what wasn't reached is reported as "not tested"), and the
+    # whole module is cancelled after HARD_TIMEOUT whatever happens.
+    JOURNEY_SCAN_BUDGET_S: int = 180
+    JOURNEY_TEST_BUDGET_S: int = 180
+    JOURNEY_HARD_TIMEOUT_S: int = 480
+    MODULE_HARD_TIMEOUT_S: int = 300   # consent / analytics step safety net
     JOURNEY_ENABLE_INTERACTION_TESTS: bool = True
 
     # --- Reports (reports/report_storage.py) ---

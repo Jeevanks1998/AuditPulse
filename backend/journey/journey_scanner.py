@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
 from dataclasses import asdict, dataclass, field
 from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urljoin, urldefrag, urlparse
@@ -299,6 +300,7 @@ class ScanResult:
     forms: List[DiscoveredForm] = field(default_factory=list)
     skipped_by_robots: List[str] = field(default_factory=list)
     page_limit: int = 0
+    stopped_early: bool = False
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -432,6 +434,7 @@ async def scan_site(
     on_page_loaded=None,
     on_page_scanned=None,
     capture=None,
+    deadline: Optional[float] = None,
 ) -> ScanResult:
     """
     Breadth-first scan of the rendered site in an existing browser context
@@ -475,6 +478,10 @@ async def scan_site(
         first = True
         pages_on_tab = 0
         while queue and len(result.pages) < limit:
+            if deadline is not None and time.monotonic() > deadline:
+                logger.info(f"journey: scan time budget reached after {len(result.pages)} page(s)")
+                result.stopped_early = True
+                break
             if pages_on_tab >= RECYCLE_TAB_EVERY or page.is_closed():
                 try:
                     await page.close()

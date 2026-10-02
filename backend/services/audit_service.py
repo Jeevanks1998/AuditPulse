@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from urllib.parse import urlparse
 
+import asyncio
 import dataclasses
 import httpx
 from sqlalchemy import select, update as sa_update
@@ -490,7 +491,7 @@ async def _run_consent_checks(
         # network capture, banner detection, control inventory, region
         # detection and screenshots — nothing from a previous scan is reused.
         scan_id = f"a{audit.id}-{consent_module.new_scan_id()}"
-        result = await consent_module.analyze_site(
+        result = await asyncio.wait_for(consent_module.analyze_site(
             audit.url,
             page,
             cookies=page_cookies,
@@ -505,7 +506,7 @@ async def _run_consent_checks(
             target_region=(getattr(audit, "target_region", None)
                            or getattr(settings, "CONSENT_TARGET_REGION", None) or None),
             scan_id=scan_id,
-        )
+        ), timeout=int(getattr(settings, "MODULE_HARD_TIMEOUT_S", 300)))
         logger.info(
             f"_run_consent_checks: fresh consent scan {scan_id} for {audit.url} — region "
             f"{result.summary.detected_region} ({result.summary.region_confidence}), frameworks "
@@ -538,8 +539,11 @@ async def _run_journey_checks(audit: Audit) -> tuple:
 
     scan_id = f"a{audit.id}-{new_scan_id()}"
     try:
-        result = await journey_module.run_customer_journey(
-            audit.url, max_pages=audit.max_pages or 10, depth=audit.depth or "homepage", scan_id=scan_id,
+        result = await asyncio.wait_for(
+            journey_module.run_customer_journey(
+                audit.url, max_pages=audit.max_pages or 10, depth=audit.depth or "homepage", scan_id=scan_id,
+            ),
+            timeout=int(getattr(settings, "JOURNEY_HARD_TIMEOUT_S", 480)),
         )
         data = result.as_dict()
         row = Journey(
@@ -595,8 +599,12 @@ async def _run_analytics_checks_site(
     homepage-only result rather than losing the whole module.
     """
     try:
-        result = await analytics_module.analyze_site(
-            audit.url, homepage_page, enable_runtime_checks=getattr(settings, "CRAWLER_ENABLE_RUNTIME_CHECKS", True)
+        result = await asyncio.wait_for(
+            analytics_module.analyze_site(
+                audit.url, homepage_page,
+                enable_runtime_checks=getattr(settings, "CRAWLER_ENABLE_RUNTIME_CHECKS", True),
+            ),
+            timeout=int(getattr(settings, "MODULE_HARD_TIMEOUT_S", 300)),
         )
     except Exception as exc:  # noqa: BLE001 — a failed analytics scan shouldn't fail the whole audit
         logger.warning(f"_run_analytics_checks_site: analytics scan failed for {audit.url}: {exc}")

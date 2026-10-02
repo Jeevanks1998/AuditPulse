@@ -28,6 +28,8 @@ implemented here yet.
 
 from __future__ import annotations
 
+import asyncio
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
@@ -62,6 +64,7 @@ class JourneyResult:
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
     consent_state: str = "not_checked"
+    tests_stopped_early: bool = False
     health: Dict[str, object] = field(default_factory=dict)
     pages: List[dict] = field(default_factory=list)
     interactions: List[dict] = field(default_factory=list)
@@ -78,6 +81,9 @@ class JourneyResult:
 
     def as_dict(self) -> dict:
         return asdict(self)
+
+
+PER_TEST_TIMEOUT_S = 60
 
 
 async def _accept_consent_if_present(page, result: JourneyResult) -> None:
@@ -139,8 +145,11 @@ async def run_customer_journey(
             async def on_scanned(page, page_scan: PageScan):
                 page_scan.screenshot = await evidence.page_snapshot(page, page_scan.url)
 
+            scan_budget = int(getattr(settings, "JOURNEY_SCAN_BUDGET_S", 180))
+            test_budget = int(getattr(settings, "JOURNEY_TEST_BUDGET_S", 180))
             scan = await scan_site(session, url, max_pages, depth, on_page_loaded=on_first,
-                                   on_page_scanned=on_scanned, capture=capture)
+                                   on_page_scanned=on_scanned, capture=capture,
+                                   deadline=time.monotonic() + scan_budget)
             result.available = True
             interactions = build_interactions(scan.elements, scan.forms, host)
             analytics_present = bool(site_vendor_summary(capture)["analytics_present"])
@@ -154,10 +163,20 @@ async def run_customer_journey(
                 tc = TestContext(context=session.context, page=page, capture=capture, evidence=evidence,
                                  host=host, analytics_present=analytics_present)
                 prefixes = {normalize_url(p.url): f"p{n + 1}e" for n, p in enumerate(scan.pages)}
+                tests_deadline = time.monotonic() + test_budget
                 for n, it in enumerate(select_for_testing(interactions, max_tested, per_page)):
+                    if time.monotonic() > tests_deadline:
+                        logger.info(f"journey: test time budget reached after {n} interaction(s)")
+                        result.tests_stopped_early = True
+                        break
                     prefix = prefixes.get(normalize_url(it.page_url), "pXe")
                     for attempt in range(2):
-                        await test_interaction(tc, it, prefix)
+                        try:
+                            await asyncio.wait_for(test_interaction(tc, it, prefix), timeout=PER_TEST_TIMEOUT_S)
+                        except asyncio.TimeoutError:
+                            it.status = "failed" if it.tested else "not_tested"
+                            it.observed = it.observed or "Interaction test timed out (page did not respond)."
+                            await session.restart("interaction test timed out")
                         dead = not session.alive() or is_browser_dead_error(it.observed)
                         if dead:
                             if not await session.restart(it.observed or "browser died during test"):
@@ -265,6 +284,8 @@ async def run_customer_journey(
         "depth": depth, "max_pages": max_pages, "page_limit": scan.page_limit,
         "pages_scanned": len(scan.pages), "max_tested_interactions": max_tested,
         "skipped_by_robots": scan.skipped_by_robots[:20], "interaction_tests_enabled": do_tests,
+        "scan_stopped_by_time_budget": scan.stopped_early,
+        "tests_stopped_by_time_budget": result.tests_stopped_early,
     }
     result.finished_at = datetime.now(timezone.utc).isoformat()
     return result

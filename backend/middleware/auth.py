@@ -72,6 +72,11 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
         except JWTError:
             return None
 
+        # Only real sessions count — not the short-lived sign-in challenge
+        # tokens from /auth/login (see api/auth.py).
+        if payload.get("typ") != "access":
+            return None
+
         subject = payload.get("sub")
         try:
             return int(subject) if subject is not None else None

@@ -21,7 +21,10 @@ from config.permissions import require_module
 from models.analytics import Analytics
 from models.audit import Audit
 from models.consent import Consent
-from schemas.audit import AnalyticsOut, AuditCreate, AuditOut, AuditProgressOut, AuditStatsOut, ConsentOut
+from models.journey import Journey
+from schemas.audit import (
+    AnalyticsOut, AuditCreate, AuditOut, AuditProgressOut, AuditStatsOut, ConsentOut, JourneyOut,
+)
 from services import audit_service
 
 router = APIRouter()
@@ -115,6 +118,27 @@ async def audit_analytics(
             detail="No analytics scan for this audit — was 'analytics' included in its modules?",
         )
     return analytics
+
+
+@router.get("/{audit_id}/journey", response_model=JourneyOut)
+async def audit_journey(
+    audit_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Customer Journey result: pages, interactions, journey map, tracking validation, QA findings."""
+    audit = await db.get(Audit, audit_id)
+    if not audit or audit.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audit not found")
+
+    result = await db.execute(select(Journey).where(Journey.audit_id == audit_id))
+    journey = result.scalar_one_or_none()
+    if not journey:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No customer journey scan for this audit — was 'journey' included in its modules?",
+        )
+    return journey
 
 
 @router.get("/{audit_id}", response_model=AuditOut)

@@ -8,6 +8,8 @@
 <link rel="stylesheet" href="assets/css/style.css">
 <link rel="stylesheet" href="assets/css/animations.css">
 <link rel="stylesheet" href="assets/css/report.css">
+<link rel="stylesheet" href="assets/css/ANALYTICS_CONSENT_PHASE5.css">
+<link rel="stylesheet" href="assets/css/journey.css">
 <link rel="stylesheet" href="assets/css/responsive.css">
 </head>
 <body>
@@ -56,6 +58,9 @@
         <li><a class="sidebar__link" href="report.html#consent">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v4M16 4v4M3 10h18"/></svg>
           Consent Banner</a></li>
+        <li><a class="sidebar__link" href="report.html#journey">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M7 6h10M6 8l5 8M18 8l-5 8"/></svg>
+          Customer Journey</a></li>
       </ul>
 
       <div class="sidebar__group-label" style="margin-top:20px;">System</div>
@@ -265,6 +270,9 @@
             <div class="module-accordion__body">
               <div class="card card__pad">
 
+                <!-- Phase 4: consent evidence dashboard (reports.consent_view) -->
+                <div id="consentEvidenceDashboard" class="cev u-mb-4" style="display:none;"></div>
+
                 <div class="check-grid u-mb-4" id="consentFoundationCheckGrid"></div>
 
                 <div id="consentRuntimeCheckWrap" style="display:none;">
@@ -273,6 +281,22 @@
                     <strong class="text-sm">Runtime Behavior</strong>
                   </div>
                   <div class="check-grid u-mb-4" id="consentRuntimeCheckGrid"></div>
+                </div>
+
+                <div id="consentApplicabilitySection" style="display:none;">
+                  <div class="analytics-subsection__meta u-mb-3" style="display:flex; align-items:center; gap:8px;">
+                    <span class="module-accordion__status" id="consentApplicabilityStatusIcon"></span>
+                    <strong class="text-sm">Regional Applicability</strong>
+                  </div>
+                  <div class="u-mb-4" id="consentApplicabilityGrid"></div>
+                </div>
+
+                <div id="consentTechnicalSection" style="display:none;">
+                  <div class="analytics-subsection__meta u-mb-3" style="display:flex; align-items:center; gap:8px;">
+                    <span class="module-accordion__status" id="consentTechnicalStatusIcon"></span>
+                    <strong class="text-sm">Technical Consent Scan</strong>
+                  </div>
+                  <div class="u-mb-4" id="consentTechnicalGrid"></div>
                 </div>
 
                 <div id="consentGdprSection" style="display:none;">
@@ -289,6 +313,14 @@
                     <strong class="text-sm">CCPA Compliance</strong>
                   </div>
                   <div class="check-grid u-mb-4" id="consentCcpaCheckGrid"></div>
+                </div>
+
+                <div id="consentDpdpSection" style="display:none;">
+                  <div class="analytics-subsection__meta u-mb-3" style="display:flex; align-items:center; gap:8px;">
+                    <span class="module-accordion__status" id="consentDpdpStatusIcon"></span>
+                    <strong class="text-sm">India DPDP Assessment</strong>
+                  </div>
+                  <div class="check-grid u-mb-4" id="consentDpdpCheckGrid"></div>
                 </div>
 
                 <div id="consentScreenshotWrap"></div>
@@ -390,6 +422,69 @@
             </div>
           </details>
 
+          <!-- Customer Journey (journey/ — reports.journey_view) -->
+          <details class="module-accordion" id="journey">
+            <summary class="module-accordion__summary">
+              <span class="module-accordion__name">Customer Journey</span>
+              <span class="module-accordion__meta">
+                <span class="module-accordion__status" id="journeyStatusIcon"></span>
+                <span class="score-chip" id="journeyScoreChip">– / 100</span>
+                <svg class="module-accordion__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </span>
+            </summary>
+            <div class="module-accordion__body">
+              <div class="card card__pad">
+                <div id="journeyEmpty" class="text-sm" style="display:none; color: var(--text-tertiary);"></div>
+                <div id="journeyContent" class="jr" style="display:none;">
+                  <div class="jr-block">
+                    <p class="jr-title">Journey Health</p>
+                    <div id="journeyHealth"></div>
+                  </div>
+                  <div class="jr-block">
+                    <p class="jr-title">Interaction Summary</p>
+                    <div id="journeySummary"></div>
+                  </div>
+                  <div class="jr-block">
+                    <p class="jr-title">Journey Map</p>
+                    <p class="jr-muted">Built only from pages and elements discovered on the site. Click any step to see its evidence.</p>
+                    <div class="jr-map">
+                      <div id="journeyMap" class="jr-map__main"></div>
+                      <aside id="journeyDetail" class="jr-detail" aria-live="polite"></aside>
+                    </div>
+                  </div>
+                  <details class="analytics-subsection" open>
+                    <summary class="analytics-subsection__summary"><span>Tracking Coverage</span></summary>
+                    <div class="analytics-subsection__body" id="journeyCoverage"></div>
+                  </details>
+                  <details class="analytics-subsection" open>
+                    <summary class="analytics-subsection__summary"><span>Tracking Gaps</span></summary>
+                    <div class="analytics-subsection__body" id="journeyGaps"></div>
+                  </details>
+                  <details class="analytics-subsection">
+                    <summary class="analytics-subsection__summary"><span>Forms</span></summary>
+                    <div class="analytics-subsection__body" id="journeyForms"></div>
+                  </details>
+                  <details class="analytics-subsection">
+                    <summary class="analytics-subsection__summary"><span>Downloads</span></summary>
+                    <div class="analytics-subsection__body" id="journeyDownloads"></div>
+                  </details>
+                  <details class="analytics-subsection">
+                    <summary class="analytics-subsection__summary"><span>CTAs</span></summary>
+                    <div class="analytics-subsection__body" id="journeyCtas"></div>
+                  </details>
+                  <details class="analytics-subsection">
+                    <summary class="analytics-subsection__summary"><span>Evidence Screenshots</span></summary>
+                    <div class="analytics-subsection__body" id="journeyEvidence"></div>
+                  </details>
+                  <details class="analytics-subsection" open>
+                    <summary class="analytics-subsection__summary"><span>Recommendations</span></summary>
+                    <div class="analytics-subsection__body" id="journeyRecs"></div>
+                  </details>
+                </div>
+              </div>
+            </div>
+          </details>
+
         </div>
       </div>
 
@@ -459,6 +554,7 @@
 <!-- Defines window.EmailComposer, which report.js's Email Reports card and
      email-reports.html both open. Must load before report.js. -->
 <script src="assets/js/email-composer.js"></script>
+<script src="assets/js/journey-render.js"></script>
 <script src="assets/js/report.js"></script>
 
 <div style="text-align:center; padding: 18px 16px; font-size: 13px; color: var(--text-tertiary, #94A3B8); border-top: 1px solid var(--border, #E2E8F0);"><strong>Designed by Jeevan K S</strong></div>

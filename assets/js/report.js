@@ -98,7 +98,7 @@
   var MODULE_LABELS = {
     performance: 'Performance', accessibility: 'Accessibility',
     security: 'Security', ux: 'UX', images: 'Images', links: 'Links',
-    mobile: 'Mobile', forms: 'Forms', consent: 'Consent', analytics: 'Analytics', ai: 'AI Review'
+    mobile: 'Mobile', forms: 'Forms', consent: 'Consent', analytics: 'Analytics', journey: 'Customer Journey', ai: 'AI Review'
   };
   var OVERALL_STATUS_LABELS = { good: 'Healthy', mid: 'Needs Attention', bad: 'Issues Found' };
   var MAX_KEY_AREAS = 6;
@@ -453,7 +453,8 @@
         return window.Api.reports.get(auditId);
       }),
       window.Api.audits.getConsent(auditId).catch(function () { return null; }),
-      window.Api.audits.getAnalytics(auditId).catch(function () { return null; })
+      window.Api.audits.getAnalytics(auditId).catch(function () { return null; }),
+      window.Api.audits.getJourney(auditId).catch(function () { return null; })
     ]).then(function (results) {
       currentReport = results[0];
       renderBanner(currentReport);
@@ -467,12 +468,32 @@
       renderModuleSections(currentReport);
       renderConsent(results[1]);
       renderAnalytics(results[2]);
+      renderJourney(results[3]);
       document.title = 'Audit Report — ' + U.hostnameOf(currentReport.url) + ' — AuditPulse';
     }).catch(function (err) {
       window.Notifications.error('Couldn\'t load report', err.message || 'This report may not exist or may still be running.');
     });
 
     /* ------------------------------- renderers ------------------------------- */
+
+    function renderJourney(journey) {
+      var chipEl = document.getElementById('journeyScoreChip');
+      if (!window.JourneyRender) return;
+      var view = window.JourneyRender.renderReport(journey, {
+        content: 'journeyContent', empty: 'journeyEmpty', health: 'journeyHealth', summary: 'journeySummary',
+        map: 'journeyMap', detail: 'journeyDetail', coverage: 'journeyCoverage', gaps: 'journeyGaps',
+        forms: 'journeyForms', downloads: 'journeyDownloads', ctas: 'journeyCtas', evidence: 'journeyEvidence',
+        recs: 'journeyRecs'
+      });
+      if (chipEl) {
+        if (view && view.score != null) {
+          chipEl.textContent = view.score + ' / 100';
+          setModuleStatus('journeyScoreChip', 'journeyStatusIcon', view.score);
+        } else {
+          chipEl.textContent = view ? 'Not scored' : 'Not scanned';
+        }
+      }
+    }
 
     function renderBanner(report) {
       var host = U.hostnameOf(report.url);
@@ -994,6 +1015,292 @@
       return html;
     }
 
+    // ---- Phase 1: applicability + technical consent scan -----------------
+    var ACTION_TEXT = {
+      accept_all: 'Accept all', accept: 'Accept', reject_all: 'Reject all', reject: 'Reject',
+      reject_non_essential: 'Reject non-essential (necessary only)', manage_preferences: 'Manage preferences',
+      save_preferences: 'Save preferences', dismiss: 'Dismiss / close', acknowledge: 'Acknowledge (OK)',
+      unclassified: 'Unclassified'
+    };
+    var NET_CATEGORY_ORDER = ['ANALYTICS', 'ADVERTISING', 'TAG_MANAGER', 'SOCIAL', 'CMP',
+      'OTHER_THIRD_PARTY', 'CONTENT_CDN', 'FONT', 'FIRST_PARTY', 'UNKNOWN'];
+
+    function subLabel(text) {
+      return '<p class="text-sm" style="color: var(--text-tertiary); font-weight: 600; margin: 12px 0 6px;">' + U.escapeHtml(text) + '</p>';
+    }
+
+    function renderApplicability(app) {
+      var html = '';
+      var assessed = app.regional_compliance === 'assessed';
+      html += '<div class="check-item ' + (assessed ? 'check-item--pass' : 'check-item--pending') + '">' +
+        '<span class="check-item__icon">' + (assessed ? PASS_ICON : '') + '</span>' +
+        '<span class="check-item__label">Region detected: <strong>' + U.escapeHtml(app.region_label || 'Unknown') + '</strong>' +
+        (app.confidence && app.confidence !== 'none' ? ' <span style="color: var(--text-tertiary);">(' + U.escapeHtml(app.confidence) + ' confidence)</span>' : '') +
+        '</span></div>';
+      html += '<p class="text-sm" style="margin: 4px 0 0 34px;">Framework: <strong>' + U.escapeHtml(app.framework_label || 'Not determined') + '</strong>' +
+        ' · Regional compliance: <strong>' + (assessed ? 'Assessed' : 'Not assessed') + '</strong></p>';
+      html += '<p class="text-sm" style="margin: 6px 0 0 34px; color: var(--text-secondary);">' + U.escapeHtml(app.note || '') + '</p>';
+      if (app.evidence && app.evidence.length) {
+        html += subLabel('Evidence');
+        html += '<ul style="margin: 0; padding: 0; list-style: none;">' + app.evidence.map(function (e) {
+          return '<li class="text-sm" style="margin-bottom: 2px;">\u2022 ' + U.escapeHtml(e) + '</li>';
+        }).join('') + '</ul>';
+      }
+
+      html += subLabel('Frameworks');
+      (app.frameworks || []).forEach(function (fw) {
+        var cls = fw.applicable ? 'check-item--pass' : 'check-item--pending';
+        html += '<div class="check-item ' + cls + '" style="padding: 2px 0;"><span class="check-item__icon">' + (fw.applicable ? PASS_ICON : '') + '</span>' +
+          '<span class="check-item__label">' + U.escapeHtml(fw.label) + ' — ' + (fw.applicable ? 'Assessed' : 'Not assessed') +
+          '<span style="display:block; font-size: 0.85em; color: var(--text-tertiary);">' + U.escapeHtml(fw.reason || '') + '</span></span></div>';
+      });
+
+      if (!(app.evidence && app.evidence.length) && app.signals && app.signals.length) {
+        html += subLabel('Region signals');
+        html += '<ul style="margin: 0; padding: 0; list-style: none;">' + app.signals.map(function (sig) {
+          return '<li class="text-sm" style="margin-bottom: 2px;">• ' + U.escapeHtml(sig.detail) +
+            ' <span style="color: var(--text-tertiary);">(' + U.escapeHtml(sig.region) + ', +' + sig.weight + ')</span></li>';
+        }).join('') + '</ul>';
+      }
+      return html;
+    }
+
+    function renderControlsTable(controls) {
+      if (!controls || !controls.length) {
+        return '<p class="text-sm" style="color: var(--text-tertiary);">No controls were found inside a consent banner.</p>';
+      }
+      var rows = controls.map(function (c) {
+        return '<tr>' +
+          '<td style="padding:4px 8px; border-bottom:1px solid var(--border, #e5e7eb);">' + U.escapeHtml(c.label) + '</td>' +
+          '<td style="padding:4px 8px; border-bottom:1px solid var(--border, #e5e7eb);"><code>' + U.escapeHtml(c.action) + '</code>' +
+            '<span style="display:block; font-size:0.85em; color: var(--text-tertiary);">' + U.escapeHtml(ACTION_TEXT[c.action] || c.action) + (c.layer === 2 ? ' · second layer' : '') + '</span></td>' +
+          '<td style="padding:4px 8px; border-bottom:1px solid var(--border, #e5e7eb);">' + U.escapeHtml(c.evidence || '') + '</td>' +
+          '</tr>';
+      }).join('');
+      return '<div style="overflow-x:auto;"><table class="text-sm" style="width:100%; border-collapse: collapse;">' +
+        '<thead><tr style="text-align:left; color: var(--text-tertiary);">' +
+        '<th style="padding:4px 8px;">Displayed text</th><th style="padding:4px 8px;">Detected action</th><th style="padding:4px 8px;">Evidence</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+    }
+
+    function renderNetworkSummary(summary) {
+      if (!summary) return '';
+      var cats = NET_CATEGORY_ORDER.filter(function (k) { return summary[k]; });
+      if (!cats.length) return '';
+      return '<ul style="margin: 0; padding: 0; list-style: none;">' + cats.map(function (k) {
+        var e = summary[k];
+        var note = '';
+        if (k === 'TAG_MANAGER') note = ' — observation (not tracking by itself)';
+        else if ((k === 'ANALYTICS' || k === 'ADVERTISING') && e.tracking_count) note = ' — ' + e.tracking_count + ' collection request(s): tracking activity';
+        else if (k === 'ANALYTICS' || k === 'ADVERTISING') note = ' — library loads only, no collection observed';
+        return '<li class="text-sm" style="margin-bottom: 2px;">• <strong>' + U.escapeHtml(e.label || k) + '</strong>: ' + e.count + ' request(s)' +
+          (e.vendors && e.vendors.length ? ' (' + U.escapeHtml(e.vendors.join(', ')) + ')' : '') + U.escapeHtml(note) + '</li>';
+      }).join('') + '</ul>';
+    }
+
+    function renderTechnicalScan(ts) {
+      var html = '';
+      var banner = ts.banner || {};
+      var src = banner.source === 'rendered' ? 'Rendered consent banner' : banner.source === 'static_markup' ? 'Consent banner markup (static HTML)' : 'Not found';
+      html += '<div class="check-item ' + (banner.detected ? 'check-item--pass' : 'check-item--fail') + '"><span class="check-item__icon">' + (banner.detected ? PASS_ICON : FAIL_ICON) + '</span>' +
+        '<span class="check-item__label">Consent banner ' + (banner.detected ? 'detected' : 'not detected') +
+        (banner.detected ? '<span style="display:block; font-size: 0.85em; color: var(--text-tertiary);">Evidence: ' + U.escapeHtml(src) +
+          (banner.container ? ' · container ' + U.escapeHtml(banner.container) : '') +
+          (banner.frame && banner.frame !== 'main' ? ' · iframe ' + U.escapeHtml(banner.frame) : '') + '</span>' : '') +
+        '</span></div>';
+
+      if (ts.scan && ts.scan.scan_id) {
+        html += '<p class="text-sm" style="margin: 4px 0 0 34px; color: var(--text-tertiary);">Fresh scan ' + U.escapeHtml(ts.scan.scan_id) +
+          (ts.scan.fresh_browser_contexts ? ' · ' + ts.scan.fresh_browser_contexts + ' fresh browser context(s)' : '') +
+          (ts.scan.started_at ? ' · ' + U.escapeHtml(String(ts.scan.started_at).replace('T', ' ').slice(0, 19)) + ' UTC' : '') + '</p>';
+      }
+
+      html += subLabel('Banner controls');
+      html += renderControlsTable(ts.controls);
+
+      var pref = ts.preferences || {};
+      if (pref.panel_verified === true || pref.panel_verified === false) {
+        html += '<div class="check-item ' + (pref.panel_verified ? 'check-item--pass' : 'check-item--fail') + '" style="padding: 6px 0 0;">' +
+          '<span class="check-item__icon">' + (pref.panel_verified ? PASS_ICON : FAIL_ICON) + '</span>' +
+          '<span class="check-item__label">Manage preferences clicked → preference panel ' + (pref.panel_verified ? 'appeared' : 'did not appear') +
+          (pref.panel_toggle_count ? ' (' + pref.panel_toggle_count + ' category toggle(s))' : '') + '</span></div>';
+      }
+
+      var checks = ts.checks || {};
+      var details = ts.check_details || {};
+      html += subLabel('Technical checks');
+      html += GDPR_CHECK_ITEMS.map(function (item) {
+        var r = checkResultFromValue(checks[item.key]);
+        var cls = !r.tested ? 'check-item--pending' : (r.ok ? 'check-item--pass' : 'check-item--fail');
+        return '<div class="check-item ' + cls + '" style="padding: 2px 0;"><span class="check-item__icon">' + (!r.tested ? '' : (r.ok ? PASS_ICON : FAIL_ICON)) + '</span>' +
+          '<span class="check-item__label">' + U.escapeHtml(item.label) + (r.tested ? '' : ' (not tested)') +
+          (details[item.key] ? '<span style="display:block; font-size: 0.85em; color: var(--text-tertiary);">' + U.escapeHtml(details[item.key]) + '</span>' : '') +
+          '</span></div>';
+      }).join('');
+
+      var net = ts.network || {};
+      if (net.before_consent) {
+        html += subLabel('Network before consent');
+        html += renderNetworkSummary(net.before_consent);
+      }
+      var ck = ts.cookies_before_consent || {};
+      var ckGroups = [
+        ['consent_required', 'Analytics / marketing (consent required)'],
+        ['consent_management', 'Consent management (CMP storage)'],
+        ['essential', 'Essential / security'],
+        ['functional', 'Functional'],
+        ['unknown', 'Unknown (needs review — not counted as a failure)']
+      ].filter(function (g) { return ck[g[0]] && ck[g[0]].length; });
+      if (ckGroups.length) {
+        html += subLabel('Cookies before consent');
+        html += '<ul style="margin: 0; padding: 0; list-style: none;">' + ckGroups.map(function (g) {
+          return '<li class="text-sm" style="margin-bottom: 4px;">• <strong>' + U.escapeHtml(g[1]) + '</strong>: ' +
+            U.escapeHtml(ck[g[0]].slice(0, 8).join('; ')) + (ck[g[0]].length > 8 ? ' …' : '') + '</li>';
+        }).join('') + '</ul>';
+      }
+      return html;
+    }
+
+    function technicalBand(ts) {
+      var st = complianceStatus(GDPR_CHECK_ITEMS, ts.checks || {});
+      return st === 'pass' ? 'good' : st === 'fail' ? 'bad' : 'mid';
+    }
+
+    // ---- Phase 4: consent evidence from ConsentOut.report_view -------------
+    // (backend reports/consent_view.py — the same model the PDF, JSON export
+    // and evidence ZIP render, so every surface shows identical evidence.)
+    var KIND_LABEL = { tracking: 'Tracking', observation: 'Observation', infrastructure: 'Infrastructure', other: 'Unclassified' };
+    var STATE_CHIP = { pass: ['pass', 'Passed'], fail: ['fail', 'Failed'], not_tested: ['', 'Not tested'], not_assessed: ['', 'Not assessed'] };
+
+    function chip(cls, text) {
+      return '<span class="cev-chip' + (cls ? ' cev-chip--' + cls : '') + '">' + U.escapeHtml(text) + '</span>';
+    }
+
+    function renderConsentDashboard(view) {
+      var st = view.status || {};
+      var html = '<div class="cev-status">' +
+        '<span>Region: <strong>' + U.escapeHtml(st.region_label || 'Unknown') + '</strong>' +
+          (st.confidence ? ' (' + U.escapeHtml(st.confidence) + ' confidence)' : '') + '</span>' +
+        '<span>Framework: <strong>' + U.escapeHtml(st.framework_label || 'Not determined') + '</strong></span>' +
+        '<span>Regional compliance: <strong>' + U.escapeHtml(st.regional_compliance_label || '') + '</strong></span>' +
+        (st.scan_id ? '<span class="cev-status__scan">Fresh scan ' + U.escapeHtml(st.scan_id) +
+          (st.fresh_browser_contexts ? ' · ' + st.fresh_browser_contexts + ' clean browser session(s)' : '') + '</span>' : '') +
+        '</div>';
+      html += '<div class="cev-tiles">' + (view.tiles || []).map(function (t) {
+        return '<div class="cev-tile" data-state="' + U.escapeHtml(t.state) + '">' +
+          '<span class="cev-tile__label">' + U.escapeHtml(t.label) + '</span>' +
+          '<span class="cev-tile__value">' + U.escapeHtml(t.value) + '</span>' +
+          (t.sub ? '<span class="cev-tile__sub">' + U.escapeHtml(t.sub) + '</span>' : '') +
+          '</div>';
+      }).join('') + '</div>';
+      return html;
+    }
+
+    function renderApplicabilityView(view) {
+      var st = view.status || {};
+      var html = '<div class="cev">';
+      html += '<div class="cev-frameworks">' + (view.frameworks || []).map(function (fw) {
+        var c = STATE_CHIP[fw.status] || ['', fw.status_label || fw.status];
+        return '<div class="cev-fw" data-status="' + U.escapeHtml(fw.status) + '">' +
+          '<span class="cev-fw__name">' + U.escapeHtml(fw.label) + '</span>' +
+          '<span>' + chip(c[0], fw.applicable ? (fw.status_label || c[1]) : 'Not assessed') + '</span>' +
+          (fw.reason ? '<span class="cev-fw__reason">' + U.escapeHtml(fw.reason) + '</span>' : '') +
+          '</div>';
+      }).join('') + '</div>';
+      if (st.note) html += '<p class="cev-muted">' + U.escapeHtml(st.note) + '</p>';
+      if (st.evidence && st.evidence.length) {
+        html += '<div class="cev-block"><p class="cev-block__title">Region evidence</p><ul class="cev-evidence">' +
+          st.evidence.map(function (e) { return '<li>' + U.escapeHtml(e) + '</li>'; }).join('') + '</ul></div>';
+      } else {
+        html += '<p class="cev-muted">No regional signals were found on the site.</p>';
+      }
+      return html + '</div>';
+    }
+
+    function renderNetworkTable(rows) {
+      if (!rows || !rows.length) return '<p class="cev-muted">No requests captured.</p>';
+      return '<div class="cev-table-wrap"><table class="cev-table"><thead><tr>' +
+        '<th>Category</th><th>Requests</th><th>Classification</th><th>Vendors</th></tr></thead><tbody>' +
+        rows.map(function (r) {
+          return '<tr><td>' + U.escapeHtml(r.label) + '</td><td>' + r.count + '</td>' +
+            '<td>' + chip(r.kind, KIND_LABEL[r.kind] || r.kind) + '<small>' + U.escapeHtml(r.note) + '</small></td>' +
+            '<td>' + U.escapeHtml((r.vendors || []).join(', ') || '—') + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+    }
+
+    function renderTechnicalView(view) {
+      var html = '<div class="cev">';
+
+      html += '<div class="cev-block"><p class="cev-block__title">Banner controls</p>';
+      if (view.controls && view.controls.length) {
+        html += '<div class="cev-table-wrap"><table class="cev-table"><thead><tr>' +
+          '<th>Displayed text</th><th>Detected action</th><th>Evidence</th></tr></thead><tbody>' +
+          view.controls.map(function (c) {
+            return '<tr><td>' + U.escapeHtml(c.label) + '</td><td>' + chip('action', c.action) +
+              '<small>' + U.escapeHtml(ACTION_TEXT[c.action] || c.action_label || '') + (c.layer === 2 ? ' · preference panel' : '') + '</small></td>' +
+              '<td>' + U.escapeHtml(c.evidence) + '</td></tr>';
+          }).join('') + '</tbody></table></div>';
+      } else {
+        html += '<p class="cev-muted">No controls were found inside a consent banner.</p>';
+      }
+      html += '</div>';
+
+      html += '<div class="cev-block"><p class="cev-block__title">Technical checks</p>' +
+        (view.technical_checks || []).map(function (c) {
+          var r = c.state === 'pass' ? { ok: true, tested: true } : c.state === 'fail' ? { ok: false, tested: true } : { ok: false, tested: false };
+          var cls = !r.tested ? 'check-item--pending' : (r.ok ? 'check-item--pass' : 'check-item--fail');
+          return '<div class="check-item ' + cls + '" style="padding: 2px 0;"><span class="check-item__icon">' + (!r.tested ? '' : (r.ok ? PASS_ICON : FAIL_ICON)) + '</span>' +
+            '<span class="check-item__label">' + U.escapeHtml(c.label) + (r.tested ? '' : ' (not tested)') +
+            (c.detail ? '<span style="display:block; font-size: 0.85em; color: var(--text-tertiary);">' + U.escapeHtml(c.detail) + '</span>' : '') +
+            '</span></div>';
+        }).join('') + '</div>';
+
+      var net = view.network || {};
+      if (net.before_consent) {
+        html += '<div class="cev-block"><p class="cev-block__title">Network before consent</p>' + renderNetworkTable(net.before_consent) + '</div>';
+      }
+      if (net.after_reject !== undefined || net.after_accept !== undefined) {
+        html += '<details class="cev-block"><summary>Network after Reject / after Accept</summary>' +
+          (net.after_reject !== undefined ? '<p class="cev-muted">After Reject</p>' + renderNetworkTable(net.after_reject) : '') +
+          (net.after_accept !== undefined ? '<p class="cev-muted">After Accept</p>' + renderNetworkTable(net.after_accept) : '') +
+          '</details>';
+      }
+
+      if (view.cookies && view.cookies.length) {
+        var toneChip = { fail: 'fail', pass: 'pass', info: 'observation', neutral: '' };
+        html += '<div class="cev-block"><p class="cev-block__title">Cookies before consent</p><div class="cev-cookies">' +
+          view.cookies.map(function (g) {
+            return '<div class="cev-cookie-group">' + chip(toneChip[g.tone], g.count + ' · ' + g.label) +
+              '<span class="cev-cookie-group__items">' + U.escapeHtml(g.items.slice(0, 8).join('; ')) + (g.items.length > 8 ? ' …' : '') + '</span></div>';
+          }).join('') + '</div></div>';
+      }
+
+      if (view.pipeline && view.pipeline.length) {
+        html += '<details class="cev-block"><summary>Scan pipeline — ' + view.pipeline.length + ' steps (fresh scan)</summary><ol class="cev-pipeline">' +
+          view.pipeline.map(function (p) {
+            var cls = p.status === 'done' ? 'pass' : p.status === 'not_tested' ? 'warn' : '';
+            return '<li><span class="cev-pipeline__n">' + p.step + '</span><span>' + U.escapeHtml(p.name) + '</span><span>' + chip(cls, p.status) + '</span>' +
+              '<span class="cev-pipeline__detail">' + U.escapeHtml(p.detail || '') + '</span></li>';
+          }).join('') + '</ol>' +
+          ((view.legs && view.legs.length) ? '<ul class="cev-evidence" style="margin-top:8px;">' + view.legs.map(function (l) {
+            return '<li>' + U.escapeHtml(l) + '</li>'; }).join('') + '</ul>' : '') +
+          '</details>';
+      }
+      return html + '</div>';
+    }
+
+    function renderShotsView(view) {
+      return '<div class="cev-block"><p class="cev-block__title">Evidence screenshots</p><div class="cev-shots">' +
+        (view.screenshots || []).map(function (sh) {
+          var full = sh.url ? (window.APP_CONFIG.API_ORIGIN + sh.url) : null;
+          return '<div class="cev-shot"><div class="cev-shot__frame">' +
+            (full ? '<img src="' + U.escapeHtml(full) + '" alt="' + U.escapeHtml(sh.label) + ' screenshot" loading="lazy">'
+                  : '<span class="cev-shot__empty">Not captured</span>') +
+            '</div><div class="cev-shot__meta"><span>' + U.escapeHtml(sh.label) + '</span>' +
+            (full ? '<a href="' + U.escapeHtml(full) + '" download>Download</a>' : '') + '</div></div>';
+        }).join('') + '</div></div>';
+    }
+
     function renderConsent(consent) {
       var chip = document.getElementById('consentScoreChip');
       var foundationGrid = document.getElementById('consentFoundationCheckGrid');
@@ -1004,8 +1311,17 @@
       var ccpaSection = document.getElementById('consentCcpaSection');
       var ccpaGrid = document.getElementById('consentCcpaCheckGrid');
       var shotWrap = document.getElementById('consentScreenshotWrap');
+      var appSection = document.getElementById('consentApplicabilitySection');
+      var appGrid = document.getElementById('consentApplicabilityGrid');
+      var techSection = document.getElementById('consentTechnicalSection');
+      var techGrid = document.getElementById('consentTechnicalGrid');
+      var dpdpSection = document.getElementById('consentDpdpSection');
+      var dpdpGrid = document.getElementById('consentDpdpCheckGrid');
 
       if (!consent) {
+        if (appSection) appSection.style.display = 'none';
+        if (techSection) techSection.style.display = 'none';
+        if (dpdpSection) dpdpSection.style.display = 'none';
         if (chip) chip.textContent = 'Not scanned';
         if (foundationGrid) foundationGrid.innerHTML = '<p class="text-sm" style="color: var(--text-tertiary);">This audit didn\'t include the consent module.</p>';
         if (runtimeWrap) runtimeWrap.style.display = 'none';
@@ -1018,8 +1334,19 @@
       if (chip) chip.textContent = consent.consentScore + ' / 100';
       setModuleStatus('consentScoreChip', 'consentStatusIcon', consent.consentScore);
 
-      // Foundation checks (always shown at top)
-      if (foundationGrid) {
+      var view = consent.reportView || null;
+      var useView = !!(view && !view.legacy);
+      var dash = document.getElementById('consentEvidenceDashboard');
+      if (dash) {
+        if (useView) { dash.innerHTML = renderConsentDashboard(view); dash.style.display = ''; }
+        else { dash.innerHTML = ''; dash.style.display = 'none'; }
+      }
+
+      // Foundation checks (legacy audits only — the Phase 4 tiles replace them)
+      if (foundationGrid && useView) {
+        foundationGrid.innerHTML = '';
+        foundationGrid.style.display = 'none';
+      } else if (foundationGrid) {
         var foundationItems = [
           { label: 'Cookie banner detected', ok: consent.hasCookieBanner },
           { label: 'Blocks trackers before consent', ok: consent.bannerBlocksScriptsPreConsent }
@@ -1030,14 +1357,19 @@
       // Runtime behavior checks (shown only if tested) — a null verdict
       // means "not tested", never a silent pass.
       if (runtimeWrap) {
-        if (consent.runtimeTested) {
+        if (useView) {
+          // The Phase 4 tiles (Reject works / Accept works / Preferences panel) show these verdicts.
+          runtimeWrap.style.display = 'none';
+        } else if (consent.runtimeTested) {
           runtimeWrap.style.display = '';
           if (runtimeGrid) {
             var rr = consent.runtimeResult || {};
+            // runtime_result isn't an opaque key in api.js, so its keys arrive camelCased.
+            var pick = function (camel, snake) { return rr[camel] !== undefined ? rr[camel] : rr[snake]; };
             var runtimeItems = [
-              Object.assign({ label: 'Reject blocks tracking' }, checkResultFromValue(rr.reject_blocks_tracking)),
-              Object.assign({ label: 'Accept allows tracking' }, checkResultFromValue(rr.accept_allows_tracking)),
-              Object.assign({ label: 'Personalize exposes controls' }, checkResultFromValue(rr.personalize_exposes_controls))
+              Object.assign({ label: 'Reject blocks tracking' }, checkResultFromValue(pick('rejectBlocksTracking', 'reject_blocks_tracking'))),
+              Object.assign({ label: 'Accept allows tracking' }, checkResultFromValue(pick('acceptAllowsTracking', 'accept_allows_tracking'))),
+              Object.assign({ label: 'Personalize exposes controls' }, checkResultFromValue(pick('personalizeExposesControls', 'personalize_exposes_controls')))
             ];
             runtimeGrid.innerHTML = runtimeItems.map(renderCheckItemRow).join('');
             // Set runtime section status based on results
@@ -1050,8 +1382,64 @@
         }
       }
 
+      // Applicability decides which regional assessments are shown. Audits
+      // recorded before applicability existed (empty object) keep the
+      // legacy view: both GDPR and CCPA rendered.
+      var app = consent.applicability || {};
+      var hasApp = !!(app.frameworks && app.frameworks.length);
+      var applies = function (fw) {
+        return !hasApp || (app.applicable_frameworks || []).indexOf(fw) !== -1;
+      };
+
+      if (appSection && appGrid) {
+        if (useView) {
+          appGrid.innerHTML = renderApplicabilityView(view);
+          appSection.style.display = '';
+          setAnalyticsSectionStatus('consentApplicabilityStatusIcon', app.regional_compliance === 'assessed' ? 'good' : 'mid');
+        } else if (hasApp) {
+          appGrid.innerHTML = renderApplicability(app);
+          appSection.style.display = '';
+          setAnalyticsSectionStatus('consentApplicabilityStatusIcon', app.regional_compliance === 'assessed' ? 'good' : 'mid');
+        } else {
+          appSection.style.display = 'none';
+        }
+      }
+
+      var ts = consent.technicalScan || {};
+      if (techSection && techGrid) {
+        if (useView) {
+          techGrid.innerHTML = renderTechnicalView(view);
+          techSection.style.display = '';
+          setAnalyticsSectionStatus('consentTechnicalStatusIcon', technicalBand(ts));
+        } else if (ts.checks) {
+          techGrid.innerHTML = renderTechnicalScan(ts);
+          techSection.style.display = '';
+          setAnalyticsSectionStatus('consentTechnicalStatusIcon', technicalBand(ts));
+        } else {
+          techSection.style.display = 'none';
+        }
+      }
+
+      if (dpdpSection && dpdpGrid) {
+        var dpdpFw = (app.frameworks || []).filter(function (f) { return f.key === 'dpdp' && f.applicable; })[0];
+        var dpdp = dpdpFw && dpdpFw.assessment;
+        if (dpdp && dpdp.checks) {
+          var dpdpItems = (dpdp.order || Object.keys(dpdp.checks)).map(function (k) {
+            return { key: k, label: (dpdp.labels || {})[k] || k, required: k !== 'refusal_blocks_tracking' };
+          });
+          var dpdpStatus = complianceStatus(dpdpItems, dpdp.checks);
+          dpdpGrid.innerHTML = renderComplianceSummary('DPDP', dpdpStatus, dpdpItems, dpdp.checks, dpdp.evidence || {});
+          dpdpSection.style.display = '';
+          setAnalyticsSectionStatus('consentDpdpStatusIcon', dpdpStatus === 'pass' ? 'good' : dpdpStatus === 'fail' ? 'bad' : 'mid');
+        } else {
+          dpdpSection.style.display = 'none';
+        }
+      }
+
       // GDPR compliance details
-      if (gdprGrid && gdprSection) {
+      if (gdprSection && !applies('gdpr')) {
+        gdprSection.style.display = 'none';
+      } else if (gdprGrid && gdprSection) {
         var gdprChecks = consent.gdprChecks || {};
         var gdprEvidence = consent.gdprCheckEvidence || {};
         var gdprStatus = complianceStatus(GDPR_CHECK_ITEMS, gdprChecks);
@@ -1065,7 +1453,9 @@
       }
 
       // CCPA compliance details
-      if (ccpaGrid && ccpaSection) {
+      if (ccpaSection && !applies('ccpa')) {
+        ccpaSection.style.display = 'none';
+      } else if (ccpaGrid && ccpaSection) {
         var ccpaChecks = consent.ccpaChecks || {};
         var ccpaEvidence = consent.ccpaCheckEvidence || {};
         var ccpaStatus = complianceStatus(CCPA_CHECK_ITEMS, ccpaChecks);
@@ -1078,7 +1468,9 @@
         setAnalyticsSectionStatus('consentCcpaStatusIcon', ccpaBand);
       }
 
-      if (shotWrap) {
+      if (shotWrap && useView) {
+        shotWrap.innerHTML = renderShotsView(view);
+      } else if (shotWrap) {
         // Prefer the full runtime evidence set (initial banner, Personalize,
         // after Reject, after Accept — consent.runtime's four capture
         // points, §5) and fall back to the single static banner capture

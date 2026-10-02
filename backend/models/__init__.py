@@ -24,6 +24,7 @@ from models.audit import Audit
 from models.issue import Issue, IssueSeverity, IssueStatus, sync_issues_from_findings
 from models.consent import Consent
 from models.analytics import Analytics
+from models.journey import Journey
 from models.report import Report
 from models.report_email import ReportEmail
 from models.history import History, HistoryEventType, log_event
@@ -41,6 +42,7 @@ __all__ = [
     "sync_issues_from_findings",
     "Consent",
     "Analytics",
+    "Journey",
     "Report",
     "ReportEmail",
     "History",

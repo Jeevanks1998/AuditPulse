@@ -447,13 +447,22 @@ def check_consent_analytics_correlation(
         before is not None and getattr(before, "available", False)
         and after_accept is not None and getattr(after_accept, "available", False)
     ):
+        # "Did the vendor fire at all" — any request to the vendor counts
+        # here (a tag manager container load included), not only confirmed
+        # collection hits, so a GTM container that loaded isn't reported as
+        # "did not fire". `vendor_requests` is consent.runtime's
+        # every-recognized-vendor list; older result objects only had
+        # tracker_requests.
+        def _vendor_reqs(state):
+            return getattr(state, "vendor_requests", None) or state.tracker_requests
+
         before_vendor_keys = {
             _CONSENT_TRACKER_NAME_TO_VENDOR_KEY.get((r.tracker_name or "").lower())
-            for r in before.tracker_requests
+            for r in _vendor_reqs(before)
         }
         accept_vendor_keys = {
             _CONSENT_TRACKER_NAME_TO_VENDOR_KEY.get((r.tracker_name or "").lower())
-            for r in after_accept.tracker_requests
+            for r in _vendor_reqs(after_accept)
         }
         # A detected vendor that never fires even once consent is
         # *accepted* is a real functional gap, not a compliance win —

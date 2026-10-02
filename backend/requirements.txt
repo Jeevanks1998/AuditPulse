@@ -18,6 +18,10 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1  # pinned: passlib 1.7.4's backend self-test breaks on bcrypt>=4.1 (ValueError: password cannot be longer than 72 bytes)
 python-multipart==0.0.9
+# Google Authenticator sign-in (api/auth.py): TOTP codes + QR code (pure
+# Python SVG, no Pillow/system libraries needed).
+pyotp==2.9.0
+segno==1.6.1
 
 # --- Background jobs (audit runs execute async, off the request thread) ---
 celery==5.4.0

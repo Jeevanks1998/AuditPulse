@@ -17,6 +17,7 @@ AUDIT_MODULES = [
     "consent",
     "analytics",
     "performance",
+    "journey",      # Customer Journey Mapping (journey/)
 ]
 
 # Ordered pipeline steps for a running audit job.
@@ -27,6 +28,7 @@ AUDIT_STEPS = [
     {"id": "checkPerformance", "label": "Performance"},
     {"id": "checkConsent", "label": "Cookie consent"},
     {"id": "checkAnalytics", "label": "Analytics"},
+    {"id": "checkJourney", "label": "Customer journey"},
     {"id": "checkReport", "label": "Generating report"},
 ]
 
@@ -46,6 +48,7 @@ MODULE_WEIGHTS = {
     "performance": 0.10,
     "analytics": 0.15,
     "consent": 0.20,
+    "journey": 0.15,
 }
 
 # Fallback weight for any breakdown key not listed in MODULE_WEIGHTS above

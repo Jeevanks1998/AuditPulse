@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><title>Global Co</title></head><body>
+<header><a href="/privacy-notice">Privacy notice</a></header>
+<main><h1>Welcome</h1><p>Insurance for everyone.</p><button onclick="void 0">Continue</button></main>
+<div class="cookie-banner" style="position:fixed;bottom:0;width:100%;background:#eee;padding:12px">
+  <p>This website uses cookies for analytics and advertising.</p>
+  <button id="ess">Accept only strictly necessary cookies</button>
+  <button id="all">Accept all</button>
+  <button id="pers">Personalize</button>
+</div>
+<script>
+  // Tracking fires immediately, before any choice.
+  var i=new Image(); i.src="http://www.google-analytics.com:PORT/g/collect?v=2&tid=G-BAD&en=page_view";
+  document.cookie="_ga=GA1.1.999.111; path=/"; document.cookie="foo_pref=1; path=/";
+  function hide(){ document.querySelector('.cookie-banner').style.display='none'; }
+  document.getElementById('all').onclick=hide;
+  // "Necessary only" closes the banner but keeps tracking — the bug we must catch.
+  document.getElementById('ess').onclick=function(){ hide(); var j=new Image(); j.src="http://www.facebook.com:PORT/tr?id=1&ev=PageView"; document.cookie="_fbp=fb.1.1.1; path=/"; };
+</script>
+</body></html>

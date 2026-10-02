@@ -30,7 +30,7 @@ from typing import Dict, List, Optional
 
 from crawler.parser import ParsedPage
 
-from cookies.categories import UNKNOWN, categorize_cookie, display_name
+from cookies.categories import categorize_cookie, display_name, requires_consent
 from cookies.detector import Cookie, is_third_party
 from cookies.expiry import EXCESSIVE, classify_expiry, describe_lifetime
 
@@ -159,7 +159,9 @@ def build_cookie_summary(cookies: List[Cookie], first_party_hostname: Optional[s
             "expires": classification.lifetime_days if classification.lifetime_days is not None else "session",
         })
 
-        if is_third_party(cookie, first_party_hostname) and cookie.domain and category != UNKNOWN:
+        # Only analytics/marketing cookies are trackers. Third-party essential,
+        # consent-management or unrecognized cookies are evidence, not trackers.
+        if is_third_party(cookie, first_party_hostname) and cookie.domain and requires_consent(category):
             trackers.append(cookie.domain)
 
     return CookieSummary(

@@ -186,7 +186,7 @@ async def run(email: str, password: str, reset: bool) -> None:
         await log_event(db, user_id=user.id, event_type=HistoryEventType.REGISTER, description="Demo account created by seed script.")
         await _seed_website_and_audits(db, user)
 
-    logger.info(f"seed: demo user ready -> email={email!r} password={password!r}")
+    logger.info(f"seed: demo user ready -> email={email!r} (sign in with this email; Google Authenticator setup is shown on first login)")
 
 
 def main() -> None:

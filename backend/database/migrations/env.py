@@ -44,7 +44,9 @@ target_metadata = Base.metadata
 
 # Override alembic.ini's sqlalchemy.url with the app's real setting so
 # the two never drift.
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# "%" is escaped because alembic's config is a ConfigParser: a URL-encoded
+# Supabase password (e.g. p%40ss) would otherwise raise an interpolation error.
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
 
 
 def run_migrations_offline() -> None:
@@ -66,7 +68,42 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def _bootstrap_empty_database(connection: Connection) -> bool:
+    """Brand-new database (e.g. a fresh Supabase project): create every
+    table straight from the models and mark it as up to date.
+
+    The migration chain in versions/ only *alters* tables that the app
+    used to create itself on startup, so running it against an empty
+    database fails ("relation ... does not exist") — and Railway runs
+    `alembic upgrade head` before the app ever starts. The models are the
+    current schema, so create_all + stamp head gives exactly the same
+    result as an existing database after all migrations.
+
+    Only fires when there is no `users` table at all; any existing
+    database goes through the normal migrations below.
+    """
+    from alembic.script import ScriptDirectory
+    from sqlalchemy import inspect
+
+    if inspect(connection).has_table("users"):
+        # inspect() auto-began a transaction. End it, or alembic would run
+        # the migrations inside it and never commit them.
+        connection.rollback()
+        return False
+
+    target_metadata.create_all(connection)
+    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+    with context.begin_transaction():
+        context.get_context().stamp(ScriptDirectory.from_config(config), "heads")
+    # create_all() auto-began the transaction, so alembic won't commit it
+    # for us here — commit explicitly.
+    connection.commit()
+    return True
+
+
 def _do_run_migrations(connection: Connection) -> None:
+    if _bootstrap_empty_database(connection):
+        return
     context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
     with context.begin_transaction():
         context.run_migrations()

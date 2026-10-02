@@ -561,3 +561,134 @@ def _finding(severity: str, title: str, description: str, recommendation: str) -
         "description": description,
         "recommendation": recommendation,
     }
+
+
+# ==========================================================================
+# Shared runtime helpers (reused by journey/ — Customer Journey).
+#
+# journey/ must not grow a second browser implementation, so the pieces it
+# needs live here next to the existing runtime pass:
+#
+#   open_runtime_browser()       the same Chromium launch this module uses
+#   classify_analytics_request() the same vendor classifiers as _classify,
+#                                plus GA4 batched POST bodies (several
+#                                `en=` events per hit) and parameters
+#   DATALAYER_HOOK_JS            init script reporting every dataLayer.push
+#                                (and gtag() call) with a timestamp, across
+#                                navigations, through an exposed binding
+#
+# Nothing in run_analytics_runtime above changes behaviour.
+# ==========================================================================
+
+import contextlib  # noqa: E402
+
+DATALAYER_BINDING = "__auditpulseDataLayer"
+
+DATALAYER_HOOK_JS = r"""
+(() => {
+  const report = (payload) => {
+    try { window.%(binding)s && window.%(binding)s(JSON.stringify(payload)); } catch (e) {}
+  };
+  const wrap = (arr) => {
+    if (!arr || arr.__apWrapped) return arr;
+    const orig = arr.push.bind(arr);
+    arr.push = function (...items) {
+      for (const it of items) {
+        let ev = null, params = {};
+        try {
+          const isArgs = Object.prototype.toString.call(it) === '[object Arguments]' || Array.isArray(it);
+          if (it && typeof it === 'object' && !isArgs) {
+            ev = it.event || null; params = it;
+          } else if (it && isArgs) {                            // gtag('event', name, params) -> arguments object
+            if (it[0] === 'event') { ev = it[1]; params = it[2] || {}; }
+            else { ev = 'gtag:' + it[0]; params = { arg: it[1] }; }
+          }
+        } catch (e) {}
+        let safe = {};
+        try { safe = JSON.parse(JSON.stringify(params, (k, v) => (typeof v === 'function' || (v && v.nodeType)) ? undefined : v)); } catch (e) {}
+        report({ source: 'dataLayer', event: ev, params: safe, ts: Date.now(), url: location.href });
+      }
+      return orig(...items);
+    };
+    arr.__apWrapped = true;
+    return arr;
+  };
+  let current = wrap(window.dataLayer || []);
+  try {
+    Object.defineProperty(window, 'dataLayer', {
+      configurable: true,
+      get() { return current; },
+      set(v) { current = wrap(v); },
+    });
+  } catch (e) { window.dataLayer = current; }
+})();
+""" % {"binding": DATALAYER_BINDING}
+
+# Events every vendor sends on its own for page lifecycle — not evidence that
+# a specific *interaction* was tracked.
+LIFECYCLE_EVENTS = frozenset({
+    "page_view", "pageview", "PageView", "session_start", "first_visit", "user_engagement",
+    "scroll", "container_load", "gtag_script_load", "session_event", "activity",
+    "gtm.js", "gtm.dom", "gtm.load", "gtm.init", "gtm.init_consent", "gtm.scrollDepth",
+    "gtm.timer", "gtm.historyChange", "gtag:config", "gtag:js", "gtag:consent", "gtag:set",
+})
+
+
+@contextlib.asynccontextmanager
+async def open_runtime_browser():
+    """The one Chromium launch used by analytics runtime checks and journey/."""
+    from playwright.async_api import async_playwright
+
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch()
+        try:
+            yield browser
+        finally:
+            await browser.close()
+
+
+def _ga4_body_events(url: str, body: str) -> List[CapturedRequest]:
+    """GA4 batches events in the POST body, one `en=...&ep.x=...` line each."""
+    out: List[CapturedRequest] = []
+    base_qs = parse_qs(urlparse(url).query)
+    for line in (body or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        qs = {**base_qs, **parse_qs(line)}
+        ev = (qs.get("en") or [None])[0]
+        if ev:
+            out.append(CapturedRequest(url=url, phase="", vendor_key="ga4", event_name=ev,
+                                       is_page_view=(ev == "page_view"), identifier=(qs.get("tid") or [None])[0]))
+    return out
+
+
+def event_parameters(url: str, body_line: str = "") -> Dict[str, str]:
+    """Readable event parameters from a vendor hit (GA4 ep./epn., Meta cd[], generic)."""
+    qs = parse_qs(urlparse(url).query)
+    if body_line:
+        qs.update(parse_qs(body_line))
+    params: Dict[str, str] = {}
+    for k, v in qs.items():
+        if k.startswith(("ep.", "epn.")):
+            params[k.split(".", 1)[1]] = v[0]
+        elif k.startswith("cd[") and k.endswith("]"):
+            params[k[3:-1]] = v[0]
+        elif k in ("dl", "dt", "link_url", "link_text", "file_name", "file_extension", "ev", "en"):
+            params[k] = v[0]
+    return params
+
+
+def classify_analytics_request(url: str, post_data: Optional[str] = None) -> List[CapturedRequest]:
+    """
+    Same vendor classification as `_classify`, returning every event the hit
+    carries (a GA4 POST can batch several). Empty list = not an analytics hit.
+    """
+    base = _classify(url)
+    if base is None:
+        return []
+    if base.vendor_key == "ga4" and post_data and "en=" in post_data:
+        batched = _ga4_body_events(url, post_data)
+        if batched:
+            return batched
+    return [base]

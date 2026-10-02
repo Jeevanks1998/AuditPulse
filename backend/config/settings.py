@@ -8,7 +8,7 @@ truth and get validation for free from Pydantic.
 """
 
 from functools import lru_cache
-from typing import List
+from typing import List, Optional
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -81,6 +81,17 @@ class Settings(BaseSettings):
     # screenshot capture above) — off this, both modules still run their
     # full static/markup checks, just without live browser verification.
     CRAWLER_ENABLE_RUNTIME_CHECKS: bool = True
+    # Optional consent-audit region override ("IN", "EU", "UK", "US-CA").
+    # Unset = detect from site signals; undetectable = regional compliance
+    # "not assessed" (consent.region).
+    CONSENT_TARGET_REGION: Optional[str] = None
+
+    # --- Customer Journey (journey/) ---
+    # Safe interaction tests per audit / per page (each one reloads the page
+    # and captures before / highlighted / after screenshots).
+    JOURNEY_MAX_TESTED_INTERACTIONS: int = 40
+    JOURNEY_MAX_TESTS_PER_PAGE: int = 12
+    JOURNEY_ENABLE_INTERACTION_TESTS: bool = True
 
     # --- Reports (reports/report_storage.py) ---
     # Where generated report exports (HTML/JSON) are cached on disk, keyed
@@ -138,7 +149,21 @@ class Settings(BaseSettings):
         (e.g. ${{Postgres.DATABASE_URL}}) points at a service that
         doesn't exist in the project.
         """
-        if not v.strip():
+        v = v.strip()
+        if v:
+            # Supabase's dashboard copies URIs as postgresql://... (or
+            # postgres://...). This app is async and needs the asyncpg
+            # driver, so add it automatically instead of failing with a
+            # confusing "psycopg2 is not async" error.
+            if v.startswith("postgres://"):
+                v = "postgresql+asyncpg://" + v[len("postgres://"):]
+            elif v.startswith("postgresql://"):
+                v = "postgresql+asyncpg://" + v[len("postgresql://"):]
+            # asyncpg takes `ssl=`, not libpq's `sslmode=`.
+            if v.startswith("postgresql+asyncpg://") and "sslmode=" in v:
+                v = v.replace("sslmode=", "ssl=")
+            return v
+        if not v:
             raise ValueError(
                 "DATABASE_URL is set but empty. In Railway: Service -> "
                 "Variables -> DATABASE_URL must contain a real Postgres "

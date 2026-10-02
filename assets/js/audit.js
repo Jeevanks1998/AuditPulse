@@ -49,6 +49,7 @@
     }
 
     function refreshModuleCount() {
+      updateEtaEstimate();
       var enabled = currentModules().length;
       if (moduleCountBadge) moduleCountBadge.textContent = enabled + ' enabled';
       if (summaryModules) summaryModules.textContent = enabled + ' / ' + totalModules;
@@ -73,6 +74,7 @@
       var isFull = !!(depthFull && depthFull.checked);
       var pages = parseInt(maxPagesInput && maxPagesInput.value, 10) || 1;
       var minutes = isFull ? Math.max(1, Math.round(pages / 60)) : 1;
+      if (currentModules().indexOf('journey') !== -1) minutes += isFull ? 4 : 2;  // live click-through of the journey
       if (summaryEta) summaryEta.textContent = '~' + minutes + ' min';
     }
 
@@ -220,7 +222,11 @@
       }
 
       var remainingPercent = 100 - shownPercent;
-      var etaSeconds = Math.max(3, Math.round((remainingPercent / 100) * (config.depth === 'full' ? 90 : 20)));
+      // The Customer Journey module renders and clicks through pages in a real
+      // browser, so it adds noticeably to the run time.
+      var hasJourney = (config.modules || []).indexOf('journey') !== -1;
+      var baseSeconds = (config.depth === 'full' ? 90 : 20) + (hasJourney ? (config.depth === 'full' ? 240 : 120) : 0);
+      var etaSeconds = Math.max(3, Math.round((remainingPercent / 100) * baseSeconds));
       if (etaValue) etaValue.textContent = etaSeconds >= 60 ? Math.ceil(etaSeconds / 60) + ' min' : etaSeconds + ' sec';
     }
   });

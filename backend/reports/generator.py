@@ -29,6 +29,8 @@ from ai.action_plan import ActionPlan, generate_action_plan
 from ai.business_impact import generate_business_impact
 from ai.executive_summary import generate_executive_summary
 from ai.priority import PrioritizedFinding, top_priorities
+from reports.consent_view import build_consent_view
+from reports.journey_view import build_journey_view
 from schemas.report import MODULE_LABELS, ScoreCell
 
 # Same three severities used throughout audit.findings / pdf/charts.py's
@@ -69,6 +71,16 @@ class ReportPayload:
     # below for exactly what each carries.
     cookie_evidence: Optional[dict] = None
     network_evidence: Optional[dict] = None
+
+    # Phase 4: the one consent presentation model (reports.consent_view) —
+    # what the report page, dashboard, PDF, JSON export and evidence ZIP
+    # all show for Consent, so the surfaces can never disagree.
+    consent_view: Optional[dict] = None
+
+    # Customer Journey (journey/): raw JourneyOut dump + its presentation
+    # model (reports.journey_view), None when the module didn't run.
+    journey: Optional[dict] = None
+    journey_view: Optional[dict] = None
 
     # Flattened from ConsentOut's four *_screenshot_url computed fields —
     # see _build_screenshots below.
@@ -165,20 +177,37 @@ def _cookie_evidence(consent: Optional[dict]) -> Optional[dict]:
         "gdpr_compliant": consent.get("gdpr_compliant", False),
         "ccpa_checks": consent.get("ccpa_checks", {}),
         "ccpa_compliant": consent.get("ccpa_compliant", False),
+        "applicability": consent.get("applicability", {}),
+        "detected_region": consent.get("detected_region"),
+        "region_confidence": consent.get("region_confidence"),
+        "region_evidence": consent.get("region_evidence", []),
+        "applicable_frameworks": consent.get("applicable_frameworks", []),
+        "applicability_status": consent.get("applicability_status"),
+        "consent_controls": consent.get("consent_controls", []),
+        "cookies_before_consent": (consent.get("technical_scan") or {}).get("cookies_before_consent", {}),
+        "technical_scan": consent.get("technical_scan", {}),
     }
 
 
-def _network_evidence(analytics: Optional[dict]) -> Optional[dict]:
-    """Raw runtime/vendor network evidence split out of `analytics`, same
-    reasoning as `_cookie_evidence` above."""
-    if not analytics:
+def _network_evidence(analytics: Optional[dict], consent: Optional[dict] = None) -> Optional[dict]:
+    """Raw runtime/vendor network evidence split out of `analytics`, plus —
+    when the consent module ran — Consent's own classified network
+    evidence (CMP / tag manager / analytics / advertising … per consent
+    state). The Analytics modules are not touched; Consent classifies its
+    own captured traffic."""
+    if not analytics and not consent:
         return None
-    return {
-        "vendor_configs": analytics.get("vendor_configs", {}),
-        "trackers_detected": analytics.get("trackers_detected", []),
-        "runtime_tested": analytics.get("runtime_tested", False),
-        "runtime_result": analytics.get("runtime_result"),
-    }
+    out: dict = {}
+    if analytics:
+        out.update({
+            "vendor_configs": analytics.get("vendor_configs", {}),
+            "trackers_detected": analytics.get("trackers_detected", []),
+            "runtime_tested": analytics.get("runtime_tested", False),
+            "runtime_result": analytics.get("runtime_result"),
+        })
+    if consent:
+        out["consent_network"] = (consent.get("technical_scan") or {}).get("network", {})
+    return out
 
 
 async def build_report_payload(
@@ -192,6 +221,7 @@ async def build_report_payload(
     share_url: Optional[str] = None,
     consent: Optional[dict] = None,
     analytics: Optional[dict] = None,
+    journey: Optional[dict] = None,
 ) -> ReportPayload:
     """Assembles the one canonical payload (§8) every export/dashboard
     surface reads from. `findings`/`breakdown`/`consent`/`analytics` are
@@ -217,7 +247,12 @@ async def build_report_payload(
         consent=consent,
         analytics=analytics,
         cookie_evidence=_cookie_evidence(consent),
-        network_evidence=_network_evidence(analytics),
+        network_evidence=_network_evidence(analytics, consent),
+        consent_view=(consent.get("report_view") if consent and consent.get("report_view")
+                      else build_consent_view(consent)),
+        journey=journey,
+        journey_view=(journey.get("report_view") if journey and journey.get("report_view")
+                      else build_journey_view(journey)),
         screenshots=_build_screenshots(consent),
         severity_counts=_severity_counts(findings),
         weakest_module=_weakest_module(score_grid),

@@ -12,7 +12,7 @@ every router that needs it.
 
 import os
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
@@ -91,6 +91,19 @@ class ConsentOut(BaseModel):
     # order. Each value is True/False/None ("not evaluated"). Empty on
     # audits written before this field existed.
     ccpa_checks: Dict[str, Optional[bool]] = Field(default_factory=dict)
+    # Region + applicable frameworks (consent.region). Empty on
+    # audits written before Phase 1 — the frontend then shows its legacy view.
+    applicability: Dict[str, Any] = Field(default_factory=dict)
+    # Framework-neutral technical consent scan (banner, control inventory,
+    # technical checks, classified network/cookie evidence).
+    technical_scan: Dict[str, Any] = Field(default_factory=dict)
+    # Region engine output + consent-control inventory (Phase 2 columns).
+    detected_region: str = "UNKNOWN"
+    region_confidence: str = "low"
+    region_evidence: List[str] = Field(default_factory=list)
+    applicable_frameworks: List[str] = Field(default_factory=list)
+    applicability_status: str = "not_determined"
+    consent_controls: List[dict] = Field(default_factory=list)
     privacy_policy_found: bool
     privacy_policy_url: Optional[str] = None
     cookies_detected: List[dict] = Field(default_factory=list)
@@ -142,6 +155,66 @@ class ConsentOut(BaseModel):
     def accept_screenshot_url(self) -> Optional[str]:
         """Screenshot taken right after the runtime pass clicked Accept (separate clean browser context)."""
         return _screenshot_url(self.accept_screenshot_path)
+
+    @field_validator("applicability", "technical_scan", "gdpr_checks", "gdpr_check_evidence", "ccpa_checks",
+                     mode="before")
+    @classmethod
+    def _none_to_dict(cls, value):
+        return value or {}
+
+    @field_validator("region_evidence", "applicable_frameworks", "consent_controls",
+                     "cookies_detected", "third_party_trackers", mode="before")
+    @classmethod
+    def _none_to_list(cls, value):
+        return value or []
+
+    @field_validator("detected_region", mode="before")
+    @classmethod
+    def _region_default(cls, value):
+        return value or "UNKNOWN"
+
+    @field_validator("region_confidence", mode="before")
+    @classmethod
+    def _confidence_default(cls, value):
+        return value or "low"
+
+    @field_validator("applicability_status", mode="before")
+    @classmethod
+    def _status_default(cls, value):
+        return value or "not_determined"
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def report_view(self) -> Optional[Dict[str, Any]]:
+        """
+        Phase 4: the one consent presentation model (reports.consent_view)
+        that the dashboard, report page, PDF, JSON export and evidence ZIP
+        all render from — tiles, frameworks (assessed / not assessed),
+        control inventory, classified network + cookie evidence, the four
+        screenshot slots and the scan pipeline.
+        """
+        from reports.consent_view import build_consent_view  # local: avoids an import cycle
+
+        data = {
+            "has_cookie_banner": self.has_cookie_banner,
+            "gdpr_checks": self.gdpr_checks,
+            "gdpr_check_evidence": self.gdpr_check_evidence,
+            "ccpa_checks": self.ccpa_checks,
+            "consent_score": self.consent_score,
+            "runtime_result": self.runtime_result,
+            "applicability": self.applicability,
+            "technical_scan": self.technical_scan,
+            "detected_region": self.detected_region,
+            "region_confidence": self.region_confidence,
+            "region_evidence": self.region_evidence,
+            "applicable_frameworks": self.applicable_frameworks,
+            "consent_controls": self.consent_controls,
+            "banner_screenshot_url": self.banner_screenshot_url,
+            "preferences_screenshot_url": self.preferences_screenshot_url,
+            "reject_screenshot_url": self.reject_screenshot_url,
+            "accept_screenshot_url": self.accept_screenshot_url,
+        }
+        return build_consent_view(data)
 
 
 def _screenshot_url(path: Optional[str]) -> Optional[str]:
@@ -198,3 +271,50 @@ class AuditStatsOut(BaseModel):
     critical_issues: int
     overall: int
     breakdown: dict
+
+
+class JourneyOut(BaseModel):
+    """Result of the Customer Journey scan (journey/ — services.audit_service._run_journey_checks)."""
+
+    available: bool = False
+    error: Optional[str] = None
+    scan_id: Optional[str] = None
+    consent_state: Optional[str] = None
+    journey_score: Optional[int] = None
+    health: Dict[str, Any] = Field(default_factory=dict)
+    pages: List[dict] = Field(default_factory=list)
+    interactions: List[dict] = Field(default_factory=list)
+    forms: List[dict] = Field(default_factory=list)
+    downloads: List[dict] = Field(default_factory=list)
+    journey_map: Dict[str, Any] = Field(default_factory=dict)
+    tracking: Dict[str, Any] = Field(default_factory=dict)
+    findings: List[dict] = Field(default_factory=list)
+    limits: Dict[str, Any] = Field(default_factory=dict)
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("health", "journey_map", "tracking", "limits", mode="before")
+    @classmethod
+    def _none_to_dict(cls, value):
+        return value or {}
+
+    @field_validator("pages", "interactions", "forms", "downloads", "findings", mode="before")
+    @classmethod
+    def _none_to_list(cls, value):
+        return value or []
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def report_view(self) -> Optional[Dict[str, Any]]:
+        """The one journey presentation model (reports.journey_view) every surface renders."""
+        from reports.journey_view import build_journey_view  # local: avoids an import cycle
+
+        return build_journey_view({
+            "available": self.available, "error": self.error, "scan_id": self.scan_id,
+            "consent_state": self.consent_state, "health": self.health, "pages": self.pages,
+            "interactions": self.interactions, "forms": self.forms, "downloads": self.downloads,
+            "journey_map": self.journey_map, "tracking": self.tracking, "findings": self.findings,
+            "limits": self.limits, "started_at": self.started_at, "finished_at": self.finished_at,
+        })

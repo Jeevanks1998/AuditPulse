@@ -51,6 +51,26 @@ class Consent(Base):
     # gdpr_checks above has to gdpr_compliant.
     ccpa_checks: Mapped[dict] = mapped_column(JSON, default=dict)
 
+    # Region detection + which frameworks were assessed — see
+    # consent.region. gdpr_checks/ccpa_checks above are only filled
+    # when their framework applies; otherwise that framework is reported
+    # here with status "not_assessed" (never as a failure).
+    applicability: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Framework-neutral technical consent scan: rendered banner, control
+    # inventory (label / detected action / evidence), technical checks and
+    # classified pre-consent network + cookie evidence.
+    technical_scan: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    # Region engine output (consent.region.RegionResult) as first-class
+    # columns, plus the consent-control inventory
+    # ([{"label": "Accept all", "action": "accept_all", ...}, ...]).
+    detected_region: Mapped[str] = mapped_column(String(16), default="UNKNOWN")
+    region_confidence: Mapped[str] = mapped_column(String(16), default="low")
+    region_evidence: Mapped[list] = mapped_column(JSON, default=list)
+    applicable_frameworks: Mapped[list] = mapped_column(JSON, default=list)
+    applicability_status: Mapped[str] = mapped_column(String(32), default="not_determined")
+    consent_controls: Mapped[list] = mapped_column(JSON, default=list)
+
     privacy_policy_found: Mapped[bool] = mapped_column(Boolean, default=False)
     privacy_policy_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 

@@ -36,7 +36,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 # the Score Breakdown / Business Impact / Action Plan / Appendix tables all
 # changed shape (Finding ID columns, grouped rows, metric cards) — see
 # pdf/charts.py, pdf/summary.py, pdf/recommendations.py, pdf/appendix.py.
-PDF_LAYOUT_VERSION = 3
+PDF_LAYOUT_VERSION = 5
 
 # --------------------------------------------------------------------------
 # Brand palette (assets/css/variables.css)

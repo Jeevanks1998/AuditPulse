@@ -1,0 +1,15 @@
+<!doctype html><html lang="en"><head><title>Request a quote</title><link rel="stylesheet" href="/_style.css"><script src="/_common.js"></script></head><body>
+@@HEADER@@
+<main><h1>Request a quote</h1>
+  <form id="quote" action="/quote/submit" method="post">
+    <label for="n">Name</label> <input id="n" name="name" required>
+    <label for="e">Email</label> <input id="e" name="email" type="email" required>
+    <label for="p">Phone</label> <input id="p" name="phone" type="tel">
+    <label for="m">Message</label> <textarea id="m" name="message"></textarea>
+    <input type="hidden" name="source" value="web">
+    <button type="submit" class="btn">Send request</button>
+  </form>
+</main>@@BANNER@@
+<script>var started = false; document.getElementById('quote').addEventListener('input', function () { if (!started) { started = true; ga('form_start', { form_id: 'quote' }); } });
+document.getElementById('quote').addEventListener('submit', function (e) { e.preventDefault(); ga('generate_lead'); });</script>
+</body></html>

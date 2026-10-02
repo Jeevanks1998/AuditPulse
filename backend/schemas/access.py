@@ -42,12 +42,9 @@ class AccessSyncIn(BaseModel):
     role: str = Field(min_length=1, max_length=40)
     active: bool
     auditpulse_access: bool
-    # Optional bcrypt hash of the temp password the portal just issued
-    # (AuditPulse-Access/backend/users.py, on create only). Both sides
-    # hash with plain passlib bcrypt, so this verifies directly against
-    # AuditPulse's own login route — see access_management.py for how
-    # it's used, and why it's only applied when creating the account.
-    password_hash: Optional[str] = None
+    # Set by the portal's "Reset Authenticator" action. Clears this user's
+    # Google Authenticator pairing so their next login shows a new QR code.
+    reset_authenticator: bool = False
 
 
 class AccessRevokeIn(BaseModel):
@@ -62,6 +59,8 @@ class AccessSyncOut(BaseModel):
     permissions: Dict[str, bool]
     is_active: bool
     auditpulse_access: bool
+    mfa_enabled: bool = False
+    auth_setup_required: bool = True
     created: bool  # True if this call created the AuditPulse account
 
     model_config = ConfigDict(from_attributes=True)

@@ -41,7 +41,7 @@ from typing import Dict, List, Optional
 
 from reportlab.lib import colors
 from reportlab.lib.units import mm
-from reportlab.platypus import Flowable, Image, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import CondPageBreak, Flowable, Image, Paragraph, Spacer, Table, TableStyle
 
 from analytics.analytics_score import TRACKER_DISPLAY_NAMES
 from pdf.theme import BORDER, ERROR, STATUS_COLORS, STATUS_LABELS, STYLES, SUCCESS, SURFACE_SUNKEN, TEXT_TERTIARY, esc
@@ -60,6 +60,7 @@ def build_evidence_flowables(payload: ReportPayload) -> List[Flowable]:
     story.extend(_build_analytics_technology_section(payload.analytics))
     story.extend(_build_analytics_section(payload.analytics))
     story.extend(_build_consent_section(payload.consent, payload.screenshots))
+    story.extend(_build_journey_section(getattr(payload, "journey_view", None)))
     return story
 
 
@@ -284,56 +285,146 @@ def _build_bool_table(rows_spec, values: dict, col_widths=(110 * mm, 44 * mm)) -
     return table
 
 
+_STATE_TEXT = {"pass": "PASS", "fail": "FAIL", "not_tested": "NOT TESTED", "info": "INFO", "neutral": "—",
+               "not_assessed": "NOT ASSESSED"}
+
+
+def _grid_table(rows: List[list], col_widths, state_col: Optional[int] = None,
+                states: Optional[List[str]] = None) -> Table:
+    """Header row + striped body; optional colored PASS/FAIL/NOT TESTED column."""
+    cells: List[list] = [[Paragraph(f'<font color="#FFFFFF"><b>{esc(str(h))}</b></font>', STYLES["TableCell"])
+                          for h in rows[0]]]
+    for r_i, row in enumerate(rows[1:]):
+        out = []
+        for c_i, value in enumerate(row):
+            if state_col is not None and states and c_i == state_col:
+                st = states[r_i]
+                text = esc(_STATE_TEXT.get(st, st))
+                if st in ("pass", "fail"):
+                    color = (SUCCESS if st == "pass" else ERROR).hexval()[2:]
+                    out.append(Paragraph(f'<font color="#{color}"><b>{text}</b></font>', STYLES["TableCell"]))
+                else:
+                    out.append(Paragraph(text, STYLES["TableCellMuted"]))
+            else:
+                out.append(Paragraph(esc(str(value)), STYLES["TableCell"]))
+        cells.append(out)
+    table = Table(cells, colWidths=list(col_widths), repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0F172A")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, SURFACE_SUNKEN]),
+        ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    return table
+
+
 def _build_consent_section(consent: Optional[dict], screenshots: List[dict]) -> List[Flowable]:
+    """
+    Consent & Cookie Compliance, rendered from the same presentation model
+    (reports.consent_view) the report page and dashboard use: headline
+    verdicts, regional applicability, framework assessments (or "Not
+    assessed"), banner controls, classified pre-consent network and cookie
+    evidence, the fresh-scan pipeline, and the four evidence screenshots.
+    """
     if not consent:
         return []
+    from reports.consent_view import build_consent_view  # local: pdf/* is imported by reports.*
 
-    story: List[Flowable] = [Paragraph("Consent & Cookie Compliance", STYLES["H1"])]
+    view = consent.get("report_view") or build_consent_view(consent)
+    status = view["status"]
+    # Keep the heading with its first table (no orphaned heading at a page foot).
+    story: List[Flowable] = [CondPageBreak(70 * mm), Paragraph("Consent & Cookie Compliance", STYLES["H1"])]
 
-    story.append(_build_bool_table(_CONSENT_CHECKS, consent))
-    story.append(Spacer(1, 10))
+    # --- headline verdicts ---------------------------------------------------
+    rows = [["Check", "Result", "Status", "Detail"]]
+    states = []
+    for t in view["tiles"]:
+        rows.append([t["label"], t["value"], "", t.get("sub") or ""])
+        states.append(t["state"])
+    story.append(_grid_table(rows, (40 * mm, 34 * mm, 18 * mm, 62 * mm), state_col=2, states=states))
+    story.append(Spacer(1, 8))
 
-    # GDPR is ten separate checks (consent.consent_score.GDPR_CHECK_ORDER),
-    # not one collapsed boolean — this table shows exactly which
-    # requirement(s) fail rather than only a single pass/fail verdict.
-    story.append(Paragraph("GDPR Assessment", STYLES["H2"]))
-    gdpr_checks = consent.get("gdpr_checks") or {}
-    story.append(_build_bool_table(_GDPR_CHECKS, gdpr_checks))
-    story.append(Paragraph(
-        "GDPR compliant overall: " + ("PASS" if consent.get("gdpr_compliant") else "FAIL"),
-        STYLES["BodyMuted"],
-    ))
-    story.append(Spacer(1, 10))
+    # --- regional applicability ------------------------------------------------
+    story.append(Paragraph("Regional Applicability", STYLES["H2"]))
+    conf = status.get("confidence")
+    story.append(Paragraph(esc(
+        f"Region: {status.get('region_label')}" + (f" · Confidence: {conf}" if conf else "")
+        + f" · Framework: {status.get('framework_label')} · Regional compliance: {status.get('regional_compliance_label')}"
+    ), STYLES["Body"]))
+    for ev in (status.get("evidence") or [])[:8]:
+        story.append(Paragraph(esc("• " + ev), STYLES["BodyMuted"]))
+    if status.get("note"):
+        story.append(Paragraph(esc(status["note"]), STYLES["BodyMuted"]))
 
-    # CCPA is likewise six separate checks (consent.consent_score.CCPA_CHECK_ORDER),
-    # not one collapsed boolean.
-    story.append(Paragraph("CCPA Assessment", STYLES["H2"]))
-    ccpa_checks = consent.get("ccpa_checks") or {}
-    story.append(_build_bool_table(_CCPA_CHECKS, ccpa_checks))
-    story.append(Paragraph(
-        "CCPA compliant overall: " + ("PASS" if consent.get("ccpa_compliant") else "FAIL"),
-        STYLES["BodyMuted"],
-    ))
-    story.append(Spacer(1, 10))
+    # --- frameworks ------------------------------------------------------------
+    for fw in view["frameworks"]:
+        if not fw["applicable"]:
+            story.append(Paragraph(esc(f"{fw['label']}: {fw.get('reason') or 'Not assessed'}"),
+                                   STYLES["BodyMuted"]))
+            continue
+        story.append(Paragraph(esc(f"{fw['label']} Assessment — {fw['status_label']}"), STYLES["H2"]))
+        rows = [["Check", "Result"]] + [[c["label"], ""] for c in fw.get("checks", [])]
+        story.append(_grid_table(rows, (114 * mm, 40 * mm), state_col=1,
+                                 states=[c["state"] for c in fw.get("checks", [])]))
+        for f in fw.get("failed", [])[:10]:
+            story.append(Paragraph(esc(f"FAILED {f['label']}: {f.get('reason') or ''}"), STYLES["BodyMuted"]))
+            for item in (f.get("items") or [])[:5]:
+                story.append(Paragraph(esc("    – " + str(item)), STYLES["BodyMuted"]))
+        story.append(Spacer(1, 6))
 
-    if consent.get("runtime_tested"):
-        story.append(_build_bool_table(_RUNTIME_CHECKS, consent.get("runtime_result") or {}))
+    # --- banner controls ---------------------------------------------------------
+    story.append(Paragraph("Banner Controls", STYLES["H2"]))
+    if view["controls"]:
+        rows = [["Displayed text", "Detected action", "Evidence"]]
+        for c in view["controls"][:20]:
+            rows.append([c["label"], c["action"] + (" (2nd layer)" if c.get("layer") == 2 else ""), c["evidence"]])
+        story.append(_grid_table(rows, (58 * mm, 44 * mm, 52 * mm)))
     else:
-        story.append(Paragraph(
-            "Reject / Accept / Personalize runtime checks: NOT TESTED", STYLES["BodyMuted"],
-        ))
-    story.append(Spacer(1, 6))
+        story.append(Paragraph("No controls were found inside a consent banner.", STYLES["BodyMuted"]))
 
+    # --- network ------------------------------------------------------------------
+    before = (view.get("network") or {}).get("before_consent") or []
+    if before:
+        story.append(Paragraph("Network Before Consent (classified)", STYLES["H2"]))
+        rows = [["Category", "Requests", "Classification", "Vendors"]]
+        for r in before:
+            rows.append([r["label"], str(r["count"]), r["note"], ", ".join(r["vendors"][:4])])
+        story.append(_grid_table(rows, (34 * mm, 18 * mm, 60 * mm, 42 * mm)))
+
+    # --- cookies --------------------------------------------------------------------
+    if view.get("cookies"):
+        story.append(Paragraph("Cookies Before Consent", STYLES["H2"]))
+        rows = [["Group", "Count", "Cookies"]]
+        for g in view["cookies"]:
+            rows.append([g["label"], str(g["count"]), "; ".join(g["items"][:6])])
+        story.append(_grid_table(rows, (48 * mm, 16 * mm, 90 * mm)))
+
+    # --- legacy fields still shown --------------------------------------------------
     trackers = consent.get("third_party_trackers") or []
     cookies = consent.get("cookies_detected") or []
+    story.append(Spacer(1, 4))
     story.append(Paragraph(
-        f"{len(cookies)} cookie(s) detected, {len(trackers)} third-party tracker(s) identified.",
+        f"{len(cookies)} cookie(s) set in the initial HTTP response, {len(trackers)} third-party tracking cookie domain(s).",
         STYLES["BodyMuted"],
     ))
-    if trackers:
-        story.append(Paragraph(esc(", ".join(trackers[:12])), STYLES["Caption"]))
-    story.append(Spacer(1, 10))
 
+    # --- scan pipeline --------------------------------------------------------------
+    if view.get("pipeline"):
+        story.append(Paragraph("Scan Pipeline (fresh scan)", STYLES["H2"]))
+        story.append(Paragraph(esc(
+            f"Scan {status.get('scan_id')} · {status.get('fresh_browser_contexts') or 0} fresh browser context(s)"
+            + (f" · started {str(status.get('scanned_at'))[:19].replace('T', ' ')} UTC" if status.get("scanned_at") else "")
+        ), STYLES["BodyMuted"]))
+        rows = [["#", "Step", "Status", "Detail"]]
+        for p in view["pipeline"]:
+            rows.append([str(p.get("step")), p.get("name", ""), p.get("status", ""), p.get("detail", "")])
+        story.append(_grid_table(rows, (8 * mm, 50 * mm, 20 * mm, 76 * mm)))
+
+    story.append(Spacer(1, 10))
     story.extend(_build_consent_evidence(screenshots))
     return story
 
@@ -442,3 +533,142 @@ def _load_evidence_image(shot_url: Optional[str]) -> Optional[Image]:
         return image
     except Exception:  # noqa: BLE001 — a corrupt/unreadable image should never break the PDF
         return None
+
+
+# --------------------------------------------------------------------------
+# Customer Journey (journey/ — reports.journey_view)
+# --------------------------------------------------------------------------
+
+def _journey_image(url: Optional[str], max_w_mm: float = 80, max_h_mm: float = 55) -> Optional[Image]:
+    from reports.journey_view import screenshot_file
+
+    disk = screenshot_file(url)
+    if not disk:
+        return None
+    try:
+        img = Image(disk)
+        scale = min(max_w_mm * mm / img.imageWidth, max_h_mm * mm / img.imageHeight, 1.0)
+        img.drawWidth, img.drawHeight = img.imageWidth * scale, img.imageHeight * scale
+        img.hAlign = "CENTER"
+        return img
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _build_journey_section(view: Optional[dict]) -> List[Flowable]:
+    """CUSTOMER JOURNEY: health, interaction summary, journey map, tracking
+    coverage, gaps, forms, downloads, CTAs, evidence screenshots, recommendations."""
+    if not view:
+        return []
+    story: List[Flowable] = [CondPageBreak(70 * mm), Paragraph("Customer Journey", STYLES["H1"])]
+    if not view.get("available"):
+        story.append(Paragraph(esc("The customer journey scan could not run: " + (view.get("error") or "unknown error")),
+                               STYLES["BodyMuted"]))
+        return story
+
+    score = view.get("score")
+    story.append(Paragraph("Journey Health", STYLES["H2"]))
+    story.append(Paragraph(esc(
+        f"Technical journey health: {score if score is not None else 'not scored'}"
+        + (" / 100" if score is not None else "")
+        + f" · consent: {view.get('consent_state') or 'n/a'}"), STYLES["Body"]))
+    rows = [["Measure", "Value"]] + [[t["label"], str(t["value"])] for t in view.get("tiles") or []]
+    story.append(_grid_table(rows, (100 * mm, 54 * mm)))
+
+    if view.get("by_type"):
+        story.append(Paragraph("Interaction Summary", STYLES["H2"]))
+        rows = [["Interaction type", "Discovered"]] + [[b["type"], str(b["count"])] for b in view["by_type"]]
+        story.append(_grid_table(rows, (100 * mm, 54 * mm)))
+
+    nodes = (view.get("map") or {}).get("nodes") or {}
+    journeys = (view.get("map") or {}).get("journeys") or []
+    if journeys:
+        story.append(Paragraph("Journey Map", STYLES["H2"]))
+        for j in journeys[:15]:
+            parts = []
+            for sid in j.get("steps") or []:
+                n = nodes.get(sid) or {}
+                if n.get("kind") == "page":
+                    parts.append(n.get("path") or "/")
+                else:
+                    if n.get("test_status") == "failed":
+                        mark = "(FAILED)"
+                    elif n.get("test_status") == "skipped":
+                        mark = "(not executed - safety)"
+                    else:
+                        mark = {"tracked": "(tracked)", "duplicate": "(duplicate event)",
+                                "not_tracked": "(NOT TRACKED)"}.get(n.get("tracking_status"), "(not tested)")
+                    parts.append(f"[{n.get('type_label')}] {n.get('label')} {mark}")
+            story.append(Paragraph(esc(f"{j.get('name')}: " + " > ".join(parts)), STYLES["BodyMuted"]))
+
+    cov = (view.get("tracking") or {}).get("coverage_by_type") or []
+    if cov:
+        story.append(Paragraph("Tracking Coverage", STYLES["H2"]))
+        rows = [["Type", "Tested", "Tracked", "Not tracked", "Duplicate"]] + [
+            [c["type"], str(c["tested"]), str(c["tracked"]), str(c["not_tracked"]), str(c["duplicate"])] for c in cov]
+        story.append(_grid_table(rows, (54 * mm, 25 * mm, 25 * mm, 25 * mm, 25 * mm)))
+
+    gaps = view.get("gaps") or []
+    story.append(Paragraph("Tracking Gaps", STYLES["H2"]))
+    if gaps:
+        rows = [["Interaction", "Type", "Page", "Observed"]] + [
+            [g["label"], g["type_label"], g["page_path"], g.get("tracking_note") or "No event"] for g in gaps[:20]]
+        story.append(_grid_table(rows, (48 * mm, 24 * mm, 30 * mm, 52 * mm)))
+    else:
+        story.append(Paragraph("No tracking gaps among the tested conversion interactions.", STYLES["BodyMuted"]))
+
+    forms = [f for f in view.get("forms") or [] if not f.get("is_search")]
+    if forms:
+        story.append(Paragraph("Forms", STYLES["H2"]))
+        rows = [["Form", "Page", "Fields (required)", "Submit", "Validation"]] + [[
+            f.get("heading") or f.get("name") or "Form", (f.get("page_url") or "")[-40:],
+            f"{f.get('visible_fields')} ({f.get('required_fields')})", ", ".join(f.get("submit_controls") or []) or "—",
+            f.get("validation") or ""] for f in forms[:15]]
+        story.append(_grid_table(rows, (32 * mm, 34 * mm, 24 * mm, 26 * mm, 38 * mm)))
+        story.append(Paragraph("Forms are never submitted on production sites; submission tracking is reported as not verifiable.",
+                               STYLES["BodyMuted"]))
+
+    downloads = view.get("downloads") or []
+    if downloads:
+        story.append(Paragraph("Downloads", STYLES["H2"]))
+        rows = [["Download", "Type", "HTTP", "Tracking"]] + [[
+            d.get("label") or "", (d.get("file_type") or "").upper(), str(d.get("http_status") or "—"),
+            {"tracked": "Tracked", "duplicate": "Duplicate", "not_tracked": "Not detected"}.get(d.get("tracking"), "Not tested")]
+            for d in downloads[:20]]
+        story.append(_grid_table(rows, (70 * mm, 20 * mm, 20 * mm, 44 * mm)))
+
+    ctas = view.get("ctas") or []
+    if ctas:
+        story.append(Paragraph("CTAs", STYLES["H2"]))
+        rows = [["CTA", "Page", "Test", "Tracking"]] + [
+            [c["label"], c["page_path"], c["test_label"], c["tracking_label"]] for c in ctas[:20]]
+        story.append(_grid_table(rows, (54 * mm, 34 * mm, 34 * mm, 32 * mm)))
+
+    evidence = [r for r in view.get("evidence") or [] if (r.get("screenshots") or {}).get("highlighted")]
+    if evidence:
+        story.append(CondPageBreak(80 * mm))
+        story.append(Paragraph("Evidence Screenshots", STYLES["H2"]))
+        cells, row = [], []
+        for r in evidence[:8]:
+            img = _journey_image(r["screenshots"]["highlighted"])
+            if img is None:
+                continue
+            cap = Paragraph(esc(f"#{r['index']} {r['type_label']}: {r['label']} — {r['tracking_label']}"), STYLES["Caption"])
+            row.append([img, cap])
+            if len(row) == 2:
+                cells.append(row)
+                row = []
+        if row:
+            cells.append(row + [""] * (2 - len(row)))
+        if cells:
+            t = Table(cells, colWidths=[85 * mm, 85 * mm])
+            t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("BOTTOMPADDING", (0, 0), (-1, -1), 8)]))
+            story.append(t)
+
+    recs = view.get("recommendations") or []
+    if recs:
+        story.append(Paragraph("Recommendations", STYLES["H2"]))
+        for r in recs[:12]:
+            story.append(Paragraph(esc(f"[{(r.get('severity') or '').upper()}] {r.get('title')} — {r.get('recommendation')}"),
+                                   STYLES["BodyMuted"]))
+    return story

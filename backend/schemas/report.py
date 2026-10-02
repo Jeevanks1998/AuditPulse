@@ -14,6 +14,7 @@ MODULE_LABELS = {
     "performance": "Performance",
     "analytics": "Analytics",
     "consent": "Consent",
+    "journey": "Customer Journey",
 }
 
 

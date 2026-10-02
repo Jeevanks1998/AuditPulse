@@ -1,5 +1,19 @@
 /* ==========================================================================
    auth-guard.js
+
+   Protects every page except internal-login.html. A valid session only
+   exists after the full email -> Google Authenticator sign-in: the
+   backend issues the session token from /auth/verify, never from the
+   email step (that returns a short-lived challenge token that is never
+   stored). So the guard checks:
+
+     1. there is a stored session with a token and a user, and
+     2. the server confirms it (/auth/me) and reports the authenticator
+        as configured (mfaEnabled && !authSetupRequired).
+
+   If an admin resets the person's authenticator in the Access Portal,
+   check 2 fails on their next page load and they are sent back to login
+   to scan a new QR code.
    ========================================================================== */
 
 window.AuthGuard = (function () {
@@ -39,9 +53,23 @@ window.AuthGuard = (function () {
     return { blocked: true, onUnauthorized: onUnauthorized };
   }
 
+  function clearStoredSession() {
+    try {
+      var key = (window.APP_CONFIG && window.APP_CONFIG.STORAGE_KEYS && window.APP_CONFIG.STORAGE_KEYS.SESSION) || 'auditpulse:session';
+      window.sessionStorage.removeItem(key);
+    } catch (e) { /* ignore */ }
+  }
+
+  function authenticatorConfigured(user) {
+    // Older sessions (from before the authenticator change) carry a user
+    // object without these fields — treat that as "not configured".
+    return !!(user && user.mfaEnabled && !user.authSetupRequired);
+  }
+
   var session = window.Api.auth.getSession();
 
-  if (!session || !session.token) {
+  if (!session || !session.token || !session.user || !authenticatorConfigured(session.user)) {
+    clearStoredSession();
     goToLogin();
     return { blocked: true, onUnauthorized: onUnauthorized };
   }
@@ -51,7 +79,12 @@ window.AuthGuard = (function () {
   // on this — it only reacts if the check comes back rejected, via the
   // same onUnauthorized() path a 401 from any other call would take.
   if (window.Api.auth.verifySession) {
-    window.Api.auth.verifySession().catch(onUnauthorized);
+    window.Api.auth.verifySession().then(function (user) {
+      if (!authenticatorConfigured(user)) {
+        clearStoredSession();
+        onUnauthorized();
+      }
+    }).catch(onUnauthorized);
   }
 
   return { blocked: false, onUnauthorized: onUnauthorized };

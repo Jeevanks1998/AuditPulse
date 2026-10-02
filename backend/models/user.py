@@ -12,7 +12,7 @@ history events.
 """
 
 from datetime import datetime, timezone
-from typing import Dict, List, TYPE_CHECKING
+from typing import Dict, List, Optional, TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -32,7 +32,11 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120), default="")
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    hashed_password: Mapped[str] = mapped_column(String(255))
+    # Legacy column from the old email + password login. Sign-in is now
+    # email -> Google Authenticator (TOTP) only (see api/auth.py), so
+    # nothing reads or writes this any more. Kept nullable rather than
+    # dropped so existing rows and old backups stay loadable.
+    hashed_password: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     company: Mapped[str] = mapped_column(String(120), default="")
     ai_provider: Mapped[str] = mapped_column(String(60), default="Claude (Anthropic)")
     api_key: Mapped[str] = mapped_column(String(64), unique=True)
@@ -71,6 +75,25 @@ class User(Base):
     schedule_time: Mapped[str] = mapped_column(String(80), default="Mondays, 6:00 AM")
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # ----------------------------------------------------------------
+    # Google Authenticator (TOTP) sign-in — see api/auth.py.
+    #
+    #   New user (created by the Access Portal sync):
+    #       mfa_enabled = False, auth_setup_required = True
+    #   After the first successful authenticator setup at login:
+    #       mfa_enabled = True,  auth_setup_required = False
+    #   Admin clicks "Reset Authenticator" in the Access Portal:
+    #       mfa_enabled = False, auth_setup_required = True, mfa_secret = None
+    #
+    # mfa_secret holds the base32 TOTP secret. During first-time setup it
+    # is written before mfa_enabled flips to True, so a half-finished setup
+    # simply gets a fresh secret on the next login attempt.
+    # ----------------------------------------------------------------
+    mfa_secret: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    auth_setup_required: Mapped[bool] = mapped_column(Boolean, default=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="de-DE"><head><title>Example Shop</title>
+<script src="http://www.googletagmanager.com:PORT/gtm.js?id=GTM-TEST"></script>
+</head><body>
+<nav><a href="/settings">Settings</a> <a href="/privacy-policy">Privacy Policy</a></nav>
+<main>
+  <h1>Checkout</h1>
+  <form onsubmit="return false"><input name="email"><button type="submit">Continue</button></form>
+  <p>Impressum · Example Shop GmbH</p>
+</main>
+<footer><a href="#" class="ot-sdk-show-settings">Cookie Settings</a></footer>
+<script>
+  // OptanonConsent is written by the CMP on load (consent storage, not analytics).
+  document.cookie = "OptanonConsent=isGpcEnabled=0&groups=C0001:1; path=/";
+  function fireGA(){ var i=new Image(); i.src="http://www.google-analytics.com:PORT/g/collect?v=2&tid=G-TEST&en=page_view"; document.cookie="_ga=GA1.1.123.456; path=/"; }
+  setTimeout(function(){
+    var sdk=document.createElement('div'); sdk.id='onetrust-consent-sdk';
+    sdk.innerHTML =
+      '<div id="onetrust-banner-sdk" style="position:fixed;bottom:0;left:0;right:0;background:#fff;padding:16px;border-top:1px solid #ccc">' +
+      '<p>We use cookies to improve your experience. You can accept all cookies, reject them, or manage your preferences.</p>' +
+      '<button id="onetrust-accept-btn-handler">Accept All Cookies</button> ' +
+      '<button id="onetrust-reject-all-handler">Reject All</button> ' +
+      '<button id="onetrust-pc-btn-handler">Cookie Settings</button></div>' +
+      '<div id="onetrust-pc-sdk" style="display:none;position:fixed;top:10%;left:10%;width:60%;background:#fff;border:1px solid #333;padding:16px">' +
+      '<h2>Privacy Preference Center</h2><p>Manage consent preferences for cookies.</p>' +
+      '<label><input type="checkbox" checked disabled> Strictly necessary</label><br>' +
+      '<label><input type="checkbox"> Performance cookies</label><br>' +
+      '<label><input type="checkbox"> Targeting cookies</label><br>' +
+      '<button class="save-preference-btn-handler">Confirm My Choices</button> <button class="ot-pc-refuse-all-handler">Reject All</button></div>';
+    document.body.appendChild(sdk);
+    function close(){ document.getElementById('onetrust-banner-sdk').style.display='none'; document.getElementById('onetrust-pc-sdk').style.display='none'; }
+    document.getElementById('onetrust-accept-btn-handler').onclick=function(){ close(); fireGA(); };
+    document.getElementById('onetrust-reject-all-handler').onclick=close;
+    document.querySelector('.ot-pc-refuse-all-handler').onclick=close;
+    document.getElementById('onetrust-pc-btn-handler').onclick=function(){ document.getElementById('onetrust-banner-sdk').style.display='none'; document.getElementById('onetrust-pc-sdk').style.display='block'; };
+  }, 900);
+</script>
+</body></html>

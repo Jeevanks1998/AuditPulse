@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="assets/css/dashboard.css">
 <link rel="stylesheet" href="assets/css/HEALTH_OVERVIEW_PHASE4.css">
 <link rel="stylesheet" href="assets/css/ANALYTICS_CONSENT_PHASE5.css">
+<link rel="stylesheet" href="assets/css/journey.css">
 <link rel="stylesheet" href="assets/css/RECENT_AUDITS_PHASE6.css">
 <link rel="stylesheet" href="assets/css/responsive.css">
 </head>
@@ -59,6 +60,9 @@
         <li><a class="sidebar__link" href="report.html#consent">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v4M16 4v4M3 10h18"/></svg>
           Consent Banner</a></li>
+        <li><a class="sidebar__link" href="report.html#journey">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M7 6h10M6 8l5 8M18 8l-5 8"/></svg>
+          Customer Journey</a></li>
       </ul>
 
       <div class="sidebar__group-label" style="margin-top:20px;">System</div>
@@ -252,6 +256,16 @@
         </div>
         <span class="health-row__value" id="valConsent">–</span>
       </div>
+      <div class="health-row" data-category="journey" id="journeyHealthRow" style="display:none;">
+        <span class="health-row__icon health-row__icon--analytics" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M7 6h10M6 8l5 8M18 8l-5 8"/></svg>
+        </span>
+        <span class="health-row__label">Journey</span>
+        <div class="health-row__bar">
+          <div class="health-row__fill" id="barJourney" style="width:0%;"></div>
+        </div>
+        <span class="health-row__value" id="valJourney">–</span>
+      </div>
     </div>
   </div>
 </div>
@@ -302,6 +316,18 @@
           <div id="consentHealthBody" class="health-kpi-grid"></div>
           <a href="#" id="consentHealthLink" class="btn btn--ghost btn--sm health-check-link">View evidence →</a>
         </div>
+
+        <div class="card card__pad health-check-card journey-card" id="journeyHealthCard" style="display:none;">
+          <div class="card__head">
+            <div>
+              <h3>Customer Journey</h3>
+              <div class="card__head-sub">From your most recent audit</div>
+            </div>
+            <span class="badge" id="journeyHealthBadge">–</span>
+          </div>
+          <div id="journeyHealthBody"></div>
+          <a href="#" id="journeyHealthLink" class="btn btn--ghost btn--sm health-check-link">View journey map →</a>
+        </div>
       </div>
 
       <!-- Quick actions -->
@@ -346,6 +372,7 @@
 <script src="assets/js/permissions.js"></script>
 <script src="assets/js/charts.js"></script>
 <script src="assets/js/app.js"></script>
+<script src="assets/js/journey-render.js"></script>
 <script src="assets/js/dashboard.js"></script>
 
   <!-- Phase 4 Health Overview: SVG gradient defs for the score ring -->

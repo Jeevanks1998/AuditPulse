@@ -45,11 +45,13 @@ from crawler.robots import DEFAULT_USER_AGENT
 from models.analytics import Analytics
 from models.audit import Audit
 from models.consent import Consent
+from models.journey import Journey
 from models.history import HistoryEventType, log_event
 from models.issue import sync_issues_from_findings
 from models.user import User
 from models.website import Website, get_or_create_website, record_audit_result
 from schemas.audit import AuditCreate, AuditStatsOut
+from reports import report_storage
 from services import ai_service
 
 # Only present in a given audit's real breakdown when the matching module
@@ -193,8 +195,11 @@ async def run_audit_pipeline(audit_id: int) -> None:
         await db.commit()
 
         try:
+            # Fresh fetch every run: no HTTP cache is used and intermediaries
+            # are asked not to serve a cached copy either.
             async with httpx.AsyncClient(
-                follow_redirects=True, timeout=20.0, headers={"User-Agent": DEFAULT_USER_AGENT}
+                follow_redirects=True, timeout=20.0,
+                headers={"User-Agent": DEFAULT_USER_AGENT, "Cache-Control": "no-cache", "Pragma": "no-cache"},
             ) as client:
                 await _advance_step(db, audit, "checkCrawl")
                 response = await client.get(audit.url)
@@ -246,6 +251,14 @@ async def run_audit_pipeline(audit_id: int) -> None:
                     breakdown["analytics"] = analytics_score_val
                     findings += analytics_findings
 
+                journey_row = None
+                if "journey" in (audit.modules or []):
+                    await _advance_step(db, audit, "checkJourney")
+                    journey_row, journey_findings, journey_score = await _run_journey_checks(audit)
+                    if journey_score is not None:
+                        breakdown["journey"] = journey_score
+                    findings += journey_findings
+
                 overall = _compute_overall_score(breakdown)
 
                 if "ai" in (audit.modules or []):
@@ -292,10 +305,24 @@ async def run_audit_pipeline(audit_id: int) -> None:
                 await sync_issues_from_findings(db, audit, findings)
 
             async def _consent() -> None:
+                # Never keep a previous Consent result for this audit (e.g. a
+                # re-run / worker retry): replace it with this scan's row.
+                existing = await db.execute(select(Consent).where(Consent.audit_id == audit_id))
+                for old_row in existing.scalars().all():
+                    await db.delete(old_row)
+                await db.flush()
                 db.add(consent_row)
 
             async def _analytics() -> None:
                 db.add(analytics_row)
+
+            async def _journey() -> None:
+                # A fresh scan replaces any earlier journey result for this audit.
+                existing = await db.execute(select(Journey).where(Journey.audit_id == audit_id))
+                for old_row in existing.scalars().all():
+                    await db.delete(old_row)
+                await db.flush()
+                db.add(journey_row)
 
             async def _website() -> None:
                 website = await db.get(Website, audit_website_id)
@@ -312,11 +339,19 @@ async def run_audit_pipeline(audit_id: int) -> None:
                     meta={"overall_score": overall},
                 )
 
+            async def _report_cache() -> None:
+                # Cached JSON/HTML/PDF exports were built from the previous
+                # results — drop them so downloads reflect this scan.
+                report_storage.invalidate(audit_id)
+
+            await _secondary("report-cache", _report_cache)
             await _secondary("issues", _issues)
             if consent_row is not None:
                 await _secondary("consent", _consent)
             if analytics_row is not None:
                 await _secondary("analytics", _analytics)
+            if journey_row is not None:
+                await _secondary("journey", _journey)
             if audit_website_id:
                 await _secondary("website", _website)
             await _secondary("history", _history)
@@ -430,6 +465,10 @@ async def _run_consent_checks(
         page_cookies = parse_set_cookie_headers(
             response.headers.get_list("set-cookie"), source_url=audit.url
         )
+        # Every consent scan is fresh: new scan id, new browser contexts, new
+        # network capture, banner detection, control inventory, region
+        # detection and screenshots — nothing from a previous scan is reused.
+        scan_id = f"a{audit.id}-{consent_module.new_scan_id()}"
         result = await consent_module.analyze_site(
             audit.url,
             page,
@@ -438,6 +477,17 @@ async def _run_consent_checks(
             enable_live_checks=True,
             capture_screenshot=getattr(settings, "CRAWLER_ENABLE_SCREENSHOTS", False),
             enable_runtime_checks=getattr(settings, "CRAWLER_ENABLE_RUNTIME_CHECKS", True),
+            # Optional override (e.g. "IN", "EU", "US-CA"); unset => region is
+            # detected from site signals, and Unknown => regional compliance
+            # "not assessed" (see consent.region).
+            target_region=getattr(settings, "CONSENT_TARGET_REGION", None) or None,
+            scan_id=scan_id,
+        )
+        logger.info(
+            f"_run_consent_checks: fresh consent scan {scan_id} for {audit.url} — region "
+            f"{result.summary.detected_region} ({result.summary.region_confidence}), frameworks "
+            f"{result.summary.applicable_frameworks or 'not determined'}, "
+            f"{len(result.summary.consent_controls)} control(s)"
         )
         consent = Consent(audit_id=audit.id, **vars(result.summary))
         return consent, result.findings, result.score.overall, result.runtime_result
@@ -445,6 +495,52 @@ async def _run_consent_checks(
         logger.warning(f"_run_consent_checks: consent scan failed for {audit.url}: {exc}")
         consent = Consent(audit_id=audit.id, has_cookie_banner=False, consent_score=0)
         return consent, [], 0, None
+
+
+async def _run_journey_checks(audit: Audit) -> tuple:
+    """
+    Customer Journey scan (journey/): renders the site, discovers every
+    interactive element, classifies it, safely tests the important ones with
+    before / highlighted / after screenshots, validates analytics per
+    interaction, builds the journey map and QA findings. Respects the audit's
+    own depth and max_pages. Fresh browser context every run; nothing from a
+    previous scan is reused.
+
+    Returns (Journey row, findings, journey score or None). Degrades
+    gracefully like the other modules: a failure yields an "unavailable"
+    row, never a failed audit.
+    """
+    import journey as journey_module
+    from consent.runtime import new_scan_id
+
+    scan_id = f"a{audit.id}-{new_scan_id()}"
+    try:
+        result = await journey_module.run_customer_journey(
+            audit.url, max_pages=audit.max_pages or 10, depth=audit.depth or "homepage", scan_id=scan_id,
+        )
+        data = result.as_dict()
+        row = Journey(
+            audit_id=audit.id, available=result.available, error=(result.error or None),
+            scan_id=scan_id, consent_state=(result.consent_state or "")[:120], journey_score=result.score,
+            health=data["health"], pages=data["pages"], interactions=data["interactions"], forms=data["forms"],
+            downloads=data["downloads"], journey_map=data["journey_map"], tracking=data["tracking"],
+            findings=data["findings"], limits=data["limits"], started_at=result.started_at,
+            finished_at=result.finished_at,
+        )
+        logger.info(
+            f"_run_journey_checks: journey scan {scan_id} for {audit.url} — "
+            f"{(result.health.get('counts') or {}).get('interactions_discovered', 0)} interactions, "
+            f"{(result.health.get('counts') or {}).get('interactions_tested', 0)} tested, score {result.score}"
+        )
+        # Findings feed the shared Issues list (strip the heavy evidence blob).
+        findings = [{k: v for k, v in f.items() if k != "journey"} | {
+            "page": (f.get("journey") or {}).get("page"),
+            "interaction": (f.get("journey") or {}).get("interaction"),
+        } for f in result.findings]
+        return row, findings, result.score
+    except Exception as exc:  # noqa: BLE001 — a failed journey scan shouldn't fail the whole audit
+        logger.warning(f"_run_journey_checks: journey scan failed for {audit.url}: {exc}")
+        return Journey(audit_id=audit.id, available=False, error=str(exc)[:500], scan_id=scan_id), [], None
 
 
 async def _run_analytics_checks_site(

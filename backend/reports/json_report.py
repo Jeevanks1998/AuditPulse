@@ -29,6 +29,8 @@ def to_json_report(payload: ReportPayload) -> Dict[str, Any]:
         "severity_counts": payload.severity_counts,
         "weakest_module": weakest.model_dump() if weakest else None,
         "consent": payload.consent,
+        "consent_view": payload.consent_view,
+        "journey_view": payload.journey_view,
         "analytics": payload.analytics,
         "cookie_evidence": payload.cookie_evidence,
         "network_evidence": payload.network_evidence,

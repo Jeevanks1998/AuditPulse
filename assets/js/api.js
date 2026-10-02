@@ -68,7 +68,14 @@ window.Api = (function () {
     // items_label}} maps — same reasoning as gdpr_checks/ccpa_checks above,
     // the checkId keys are consent.consent_score.GDPR_CHECK_ORDER /
     // CCPA_CHECK_ORDER ids that report.js looks up verbatim.
-    gdpr_check_evidence: true, ccpa_check_evidence: true
+    gdpr_check_evidence: true, ccpa_check_evidence: true,
+    // Phase 1 consent evidence: applicability (region + frameworks) and the
+    // technical consent scan (banner, control inventory, network/cookie
+    // evidence). report.js reads their inner keys verbatim (snake_case).
+    applicability: true, technical_scan: true,
+    // Phase 4 consent presentation model (reports.consent_view).
+    // (also Customer Journey's report_view — reports.journey_view)
+    report_view: true
   };
 
   function deepConvertKeys(value, convertKey, opaqueKeys) {
@@ -143,6 +150,8 @@ window.Api = (function () {
   function parseErrorMessage(status, body) {
     if (body && typeof body === 'object') {
       if (typeof body.detail === 'string') return body.detail;
+      // middleware/errors.py wraps every error as { success: false, error: "..." }
+      if (typeof body.error === 'string') return body.error;
       if (Array.isArray(body.detail) && body.detail[0] && body.detail[0].msg) return body.detail[0].msg;
     }
     return 'Request failed (' + status + ').';
@@ -164,7 +173,10 @@ window.Api = (function () {
     }
 
     return fetch(buildUrl(path), fetchOpts).then(function (res) {
-      if (res.status === 401) {
+      // `public: true` (the two sign-in steps) — a 401 there means "wrong
+      // email / expired sign-in attempt", not "your session expired", so
+      // show the server's own message instead of bouncing to login.
+      if (res.status === 401 && !opts.public) {
         handleUnauthorized();
         return Promise.reject(new Error('Your session has expired. Please sign in again.'));
       }
@@ -198,8 +210,17 @@ window.Api = (function () {
   /* -------------------------------- auth -------------------------------- */
 
   var auth = {
-    login: function (email, password) {
-      return post('/auth/login', { email: email, password: password }).then(function (data) {
+    // Step 1 of sign-in: email only. Resolves to
+    //   { step: 'setup'|'verify', challengeToken, email,
+    //     qrCode?, secret?, otpauthUri? }   (qrCode etc. only for 'setup')
+    // No session is stored yet — the challenge token is not a session.
+    login: function (email) {
+      return post('/auth/login', { email: email }, { public: true });
+    },
+
+    // Step 2: the 6-digit Google Authenticator code. Stores the session.
+    verifyCode: function (challengeToken, code) {
+      return post('/auth/verify', { challengeToken: challengeToken, code: code }, { public: true }).then(function (data) {
         setSession({ token: data.token, user: data.user });
         return data.user;
       });
@@ -322,7 +343,8 @@ window.Api = (function () {
     getStats: function () { return get('/audits/stats'); },
     getRecent: function () { return get('/audits/recent'); },
     getConsent: function (auditId) { return get('/audits/' + auditId + '/consent'); },
-    getAnalytics: function (auditId) { return get('/audits/' + auditId + '/analytics'); }
+    getAnalytics: function (auditId) { return get('/audits/' + auditId + '/analytics'); },
+    getJourney: function (auditId) { return get('/audits/' + auditId + '/journey'); }
   };
 
   /* ------------------------------- reports -------------------------------- */

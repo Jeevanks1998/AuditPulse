@@ -34,13 +34,15 @@ Phase 5 update: what the portal pushes for a user is now six fields
   - permissions                not stored — computed from `role` on read
                               (config/permissions.py) and only ever
                               appears in this endpoint's *response*.
-  - password_hash (optional)  <- payload.password_hash — bcrypt hash of
-                              the temp password the portal issued on
-                              create. Applied only when creating the
-                              account (see sync_access() below); this is
-                              what closes the previous gap where a
-                              portal-synced account had no password
-                              anyone actually knew.
+  - reset_authenticator       <- payload.reset_authenticator — set when an
+                              admin clicks "Reset Authenticator" in the
+                              portal. Clears mfa_secret and sets
+                              mfa_enabled = False, auth_setup_required =
+                              True, so the next login shows a new QR code.
+
+No password is synced any more: sign-in is email -> Google Authenticator
+(see api/auth.py). A newly created account starts with
+auth_setup_required = True and sets up its authenticator on first login.
 
 Auth: every route here requires `Authorization: Bearer
 <ACCESS_PORTAL_API_KEY>` (config/settings.py), a shared secret — *not* a
@@ -56,7 +58,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.auth import get_password_hash, generate_api_key
+from api.auth import generate_api_key
 from config.database import get_db
 from config.logging import logger
 from config.permissions import get_permissions
@@ -124,15 +126,12 @@ async def sync_access(payload: AccessSyncIn, db: AsyncSession = Depends(get_db))
             role=payload.role,
             is_active=payload.active,
             auditpulse_access=payload.auditpulse_access,
-            # The portal sends the bcrypt hash of the temp password it
-            # just issued to the new user (both sides use plain passlib
-            # bcrypt, so the hash verifies here as-is) — this is what the
-            # person actually logs in with on /auth/login. Fall back to
-            # an unusable random hash only if an older portal build is
-            # calling this without the field, so the NOT NULL column is
-            # still satisfied and the account is simply unusable until a
-            # real credential exists, rather than the request failing.
-            hashed_password=payload.password_hash or get_password_hash(secrets.token_urlsafe(24)),
+            # No password: the person sets up Google Authenticator the
+            # first time they sign in (api/auth.py).
+            hashed_password=None,
+            mfa_secret=None,
+            mfa_enabled=False,
+            auth_setup_required=True,
             api_key=generate_api_key(),
         )
         db.add(user)
@@ -142,6 +141,17 @@ async def sync_access(payload: AccessSyncIn, db: AsyncSession = Depends(get_db))
         user.role = payload.role
         user.is_active = payload.active
         user.auditpulse_access = payload.auditpulse_access
+
+    if payload.reset_authenticator and not created:
+        user.mfa_secret = None
+        user.mfa_enabled = False
+        user.auth_setup_required = True
+        await log_event(
+            db,
+            user.id,
+            HistoryEventType.AUTHENTICATOR_RESET,
+            description="Access Portal admin reset the Google Authenticator",
+        )
 
     await log_event(
         db,
@@ -164,6 +174,7 @@ async def sync_access(payload: AccessSyncIn, db: AsyncSession = Depends(get_db))
     logger.info(
         f"Access Portal sync: {user.email} -> role={user.role}, active={user.is_active}, "
         f"auditpulse_access={user.auditpulse_access}"
+        + (", authenticator reset" if payload.reset_authenticator else "")
     )
     return AccessSyncOut(
         id=user.id,
@@ -173,6 +184,8 @@ async def sync_access(payload: AccessSyncIn, db: AsyncSession = Depends(get_db))
         permissions=get_permissions(user.role),
         is_active=user.is_active,
         auditpulse_access=user.auditpulse_access,
+        mfa_enabled=user.mfa_enabled,
+        auth_setup_required=user.auth_setup_required,
         created=created,
     )
 

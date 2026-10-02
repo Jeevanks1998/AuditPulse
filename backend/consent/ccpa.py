@@ -1,32 +1,26 @@
 """
 consent/ccpa.py
 
-CCPA/CPRA-specific detections that don't fit any existing consent/*
-module:
+Technical CCPA/CPRA *signals* only:
 
-  - a "Your Privacy Choices" / California-privacy-rights link — the
-    CPRA-recognized opt-out entry point, distinct from GDPR's
-    manage-preferences control that consent/preferences.py already
-    looks for.
-  - whether the page's own JS actually reads the Global Privacy
-    Control (GPC) browser signal — CPRA requires businesses that
-    sell/share personal information to treat GPC as a valid opt-out
-    request, so a banner/link alone isn't enough; the page has to
-    *listen* for navigator.globalPrivacyControl.
+  - a "Your Privacy Choices" / California-privacy-rights link
+  - a "Do Not Sell or Share My Personal Information" link
+  - whether the page's own JS reads the Global Privacy Control (GPC)
+    signal (navigator.globalPrivacyControl)
 
-Both are static markup/script checks, same technique as
-consent/consent_mode.py (script-text regex) and consent/preferences.py
-(anchor-text regex) — no live browser needed for either. This module
-only detects; consent.consent_score.build_ccpa_assessment turns these
-detections (plus consent_score.detect_privacy_policy /
-detect_ccpa_link and consent.preferences' result) into the CCPA
-check breakdown, mirroring build_gdpr_assessment.
+This module never decides whether CCPA applies. The architecture is:
+
+    ccpa.py           →  technical CCPA signals      (detect_ccpa_signals)
+    region.py         →  CCPA applicability          (California candidate?)
+    consent_score.py  →  CCPA assessment             (only when applicable)
+
+All checks are static markup/script reads — no live browser needed.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Optional
 
 from crawler.parser import ParsedPage
@@ -73,3 +67,41 @@ def detect_gpc_handling(page: ParsedPage) -> bool:
         if body and _GPC_JS_RE.search(body):
             return True
     return False
+
+
+_DO_NOT_SELL_RE = re.compile(r"do not sell (or share )?my (personal )?information", re.IGNORECASE)
+
+
+def detect_do_not_sell_link(page: ParsedPage) -> bool:
+    """A "Do Not Sell (or Share) My Personal Information" link anywhere on the page."""
+    for tag in page.anchor_tags:
+        if _DO_NOT_SELL_RE.search(tag.get_text(strip=True) or ""):
+            return True
+    return False
+
+
+@dataclass
+class CcpaSignals:
+    """Every technical CCPA signal for one page. Says nothing about applicability."""
+    privacy_choices: CcpaLinkDetection
+    do_not_sell_link: bool = False
+    gpc_handling: bool = False
+
+    @property
+    def any_signal(self) -> bool:
+        return self.privacy_choices.found or self.do_not_sell_link or self.gpc_handling
+
+    def as_dict(self) -> dict:
+        return {
+            "privacy_choices_link": asdict(self.privacy_choices),
+            "do_not_sell_link": self.do_not_sell_link,
+            "gpc_handling": self.gpc_handling,
+        }
+
+
+def detect_ccpa_signals(page: ParsedPage) -> CcpaSignals:
+    return CcpaSignals(
+        privacy_choices=detect_privacy_choices_link(page),
+        do_not_sell_link=detect_do_not_sell_link(page),
+        gpc_handling=detect_gpc_handling(page),
+    )

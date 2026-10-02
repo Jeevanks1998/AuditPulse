@@ -32,9 +32,11 @@ consume them — same contract as seo/ and analytics/.
                     verdict can be backed by what the controls really
                     do rather than only what fires before either is
                     clicked. See consent/runtime.py.
-    ccpa          — CCPA/CPRA-specific static detections: a "Your
-                    Privacy Choices" link and Global Privacy Control
-                    (GPC) signal handling in the page's own JS
+    ccpa          — CCPA/CPRA technical signals only ("Your Privacy
+                    Choices", "Do Not Sell or Share", GPC handling) —
+                    never decides whether CCPA applies
+    region        — the region engine: region, confidence, evidence,
+                    applicable_frameworks, applicability_status
     consent_score — turns any list of these findings into a weighted
                     0-100 score (score_consent); builds the ten-check
                     GDPR breakdown (build_gdpr_assessment /
@@ -70,7 +72,8 @@ doesn't currently expose them):
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from crawler.parser import ParsedPage
@@ -78,11 +81,15 @@ from crawler.parser import ParsedPage
 from consent.banner import BannerDetection, check_banner, detect_banner
 from consent.behavior import BehaviorResult, check_behavior, evaluate_behavior
 from consent.buttons import ButtonsDetection, check_buttons, detect_buttons
-from consent.ccpa import CcpaLinkDetection, detect_gpc_handling, detect_privacy_choices_link
+from consent.ccpa import (
+    CcpaLinkDetection, CcpaSignals, detect_ccpa_signals, detect_gpc_handling, detect_privacy_choices_link,
+)
 from consent.consent_mode import ConsentModeDetection, check_consent_mode, detect_consent_mode
 from consent.consent_score import (
     CCPA_CHECK_LABELS,
     CCPA_CHECK_ORDER,
+    DPDP_CHECK_LABELS,
+    DPDP_CHECK_ORDER,
     GDPR_CHECK_LABELS,
     GDPR_CHECK_ORDER,
     CcpaAssessment,
@@ -93,14 +100,21 @@ from consent.consent_score import (
     GdprCheck,
     build_ccpa_assessment,
     build_consent_summary,
+    build_dpdp_assessment,
     build_gdpr_assessment,
+    effective_buttons,
     resolve_banner_detection,
     score_consent,
 )
 from consent.cookies import analyze_cookies
 from consent.network import PreConsentNetworkResult, capture_pre_consent_requests, check_pre_consent_network
-from consent.preferences import PreferencesDetection, check_preferences, detect_preferences_link
-from consent.runtime import ConsentRuntimeResult, check_runtime_consent, run_consent_runtime
+from consent.preferences import (
+    PreferencesDetection, check_preferences, detect_preferences_link, verify_preferences_runtime,
+)
+from consent.region import (
+    Applicability, RegionResult, detect_region, determine_applicability, refine_region,
+)
+from consent.runtime import ConsentRuntimeResult, check_runtime_consent, new_scan_id, run_consent_runtime
 from consent.screenshots import capture_banner_screenshot
 from cookies.detector import Cookie
 from cookies.storage import CookieAuditResult
@@ -109,15 +123,18 @@ __all__ = [
     "check_banner", "check_buttons", "check_consent_mode", "check_preferences",
     "check_behavior", "check_pre_consent_network", "check_runtime_consent",
     "detect_banner", "detect_buttons", "detect_consent_mode", "detect_preferences_link",
+    "verify_preferences_runtime",
     "evaluate_behavior", "capture_pre_consent_requests", "capture_banner_screenshot",
-    "run_consent_runtime",
+    "run_consent_runtime", "new_scan_id",
     "BannerDetection", "ButtonsDetection", "ConsentModeDetection", "PreferencesDetection",
     "BehaviorResult", "PreConsentNetworkResult", "ConsentRuntimeResult",
     "score_consent", "ConsentScoreResult", "ConsentSummary", "build_consent_summary",
     "GdprAssessment", "GdprCheck", "build_gdpr_assessment", "GDPR_CHECK_ORDER", "GDPR_CHECK_LABELS",
     "CcpaAssessment", "CcpaCheck", "build_ccpa_assessment", "CCPA_CHECK_ORDER", "CCPA_CHECK_LABELS",
-    "CcpaLinkDetection", "detect_privacy_choices_link", "detect_gpc_handling",
+    "CcpaLinkDetection", "CcpaSignals", "detect_ccpa_signals", "detect_privacy_choices_link", "detect_gpc_handling",
     "analyze_cookies",
+    "RegionResult", "detect_region", "refine_region", "Applicability", "determine_applicability",
+    "DPDP_CHECK_ORDER", "DPDP_CHECK_LABELS", "build_dpdp_assessment", "effective_buttons",
     "run_page_checks", "analyze_site", "ConsentAuditResult",
 ]
 
@@ -129,14 +146,10 @@ def run_page_checks(
     analytics_detected: bool = False,
 ) -> List[dict]:
     """
-    Every static (non-Playwright) check in this package, run once for
-    one already-fetched, already-parsed page. `cookies` should be that
-    page's parsed Set-Cookie headers (cookies.detector.Cookie), if
-    available — omit it to skip the cookie-specific findings.
-
-    Uses an unverified `behavior` verdict (declared Consent Mode
-    default only, no live network data) — see `analyze_site` for the
-    verified version.
+    Every static (non-Playwright) check in this package, run once for one
+    already-fetched, already-parsed page. Uses an unverified `behavior`
+    verdict (declared Consent Mode default only) — see `analyze_site` for
+    the live, verified pipeline.
     """
     banner = detect_banner(page)
     buttons = detect_buttons(page)
@@ -145,7 +158,7 @@ def run_page_checks(
 
     findings: List[dict] = []
     findings += check_banner(page)
-    findings += check_buttons(page, banner_detected=banner.detected)
+    findings += check_buttons(page, banner_detected=banner.detected, detection=buttons)
     findings += check_consent_mode(page, analytics_detected=analytics_detected)
     findings += check_preferences(page, banner_detected=banner.detected)
     findings += check_behavior(behavior, page.url)
@@ -170,6 +183,9 @@ class ConsentAuditResult:
     network_result: Optional[PreConsentNetworkResult] = None
     banner_screenshot_path: Optional[str] = None
     runtime_result: Optional[ConsentRuntimeResult] = None
+    region: Optional[RegionResult] = None
+    scan_id: Optional[str] = None
+    pipeline: List[dict] = field(default_factory=list)
 
 
 async def analyze_site(
@@ -181,63 +197,140 @@ async def analyze_site(
     enable_live_checks: bool = True,
     capture_screenshot: bool = False,
     enable_runtime_checks: bool = False,
+    target_region: Optional[str] = None,
+    scan_id: Optional[str] = None,
 ) -> ConsentAuditResult:
     """
-    Full pipeline for one site: every static check plus, when
-    `enable_live_checks` is True and Playwright is available, the live
-    pre-consent network capture that lets `behavior`'s verdict be
-    verified rather than merely declared. Falls back to the static-only
-    picture automatically when Playwright isn't usable — see
-    consent.network.capture_pre_consent_requests' own degrade path.
+    The consent pipeline — a fresh, dynamic scan every call (nothing from a
+    previous scan is read or reused):
 
-    `enable_runtime_checks=True` additionally runs consent.runtime's
-    full click-through flow (Accept/Reject/Personalize + before/after
-    cookie and network comparison). Off by default here since it opens
-    two extra browser contexts and is noticeably slower than the rest
-    of this pipeline — callers that want the full evidence picture
-    (services.audit_service, the evidence-package export) should pass
-    it explicitly.
+         1. Detect region
+         2. Detect banner
+         3. Detect actual controls
+         4. Capture pre-consent network            (fresh browser context)
+         5. Capture pre-consent cookies
+         6. Run runtime                            (fresh context per leg)
+         7. Capture Accept/Reject/Preferences states
+         8. Determine applicable framework
+         9. Build applicable assessment
+        10. Build evidence
+        11. Build screenshots
+
+    Live steps degrade gracefully when Playwright is unavailable — they're
+    reported as "not tested", never as a pass.
     """
+    scan_id = scan_id or new_scan_id()
+    started = datetime.now(timezone.utc)
+    pipeline: List[dict] = []
+
+    def step(n: int, name: str, status: str, detail: str = "") -> None:
+        pipeline.append({"step": n, "name": name, "status": status, "detail": detail})
+
+    # 1. Region ---------------------------------------------------------------
+    region = detect_region(url, page, target_region)
+    step(1, "Detect region", "done", f"{region.region_label} ({region.confidence} confidence)")
+
+    # 2. Banner (static markup; the runtime re-detects it in the rendered page)
     banner = detect_banner(page)
+    step(2, "Detect banner", "done",
+         ("static markup: " + (banner.cmp_name or "generic banner")) if banner.detected
+         else "not in static HTML (checked again in the live browser)")
+
+    # 3. Actual controls (banner-scoped, static) -------------------------------
     buttons = detect_buttons(page)
     consent_mode = detect_consent_mode(page)
     preferences = detect_preferences_link(page)
+    ccpa_signals = detect_ccpa_signals(page)
+    step(3, "Detect actual controls", "done",
+         f"{len(buttons.controls)} control(s) in static banner markup" if buttons.container_found
+         else "no banner controls in static HTML")
 
+    # 4. Pre-consent network (fresh context) ----------------------------------
     network_result: Optional[PreConsentNetworkResult] = None
     if enable_live_checks:
         network_result = await capture_pre_consent_requests(url)
+        step(4, "Capture pre-consent network", "done" if network_result.available else "not_tested",
+             f"{len(network_result.requests)} request(s), {len(network_result.tracker_requests)} tracking"
+             if network_result.available else (network_result.error or ""))
+    else:
+        step(4, "Capture pre-consent network", "skipped")
 
     behavior = evaluate_behavior(consent_mode=consent_mode, network=network_result)
 
-    findings: List[dict] = []
-    banner_findings = check_banner(page)
-    findings += banner_findings
-    findings += check_buttons(page, banner_detected=banner.detected)
-    findings += check_consent_mode(page, analytics_detected=analytics_detected)
-    findings += check_preferences(page, banner_detected=banner.detected)
-    findings += check_behavior(behavior, page.url)
-    if network_result is not None:
-        findings += check_pre_consent_network(network_result)
-
+    # 5. Pre-consent cookies (server Set-Cookie; the runtime adds the browser jar)
     cookie_result = analyze_cookies(
         cookies or [], page=page, first_party_hostname=first_party_hostname,
         blocks_scripts_pre_consent=behavior.blocks_scripts_pre_consent if behavior.verified else None,
     )
-    findings += cookie_result.findings
+    step(5, "Capture pre-consent cookies", "done", f"{len(cookies or [])} Set-Cookie header cookie(s)")
 
+    # 6–7. Runtime + Accept/Reject/Preferences states --------------------------
     runtime_result: Optional[ConsentRuntimeResult] = None
     if enable_runtime_checks:
-        runtime_result = await run_consent_runtime(url)
-        findings += check_runtime_consent(runtime_result, url)
-        # The static "no banner" finding only reflects the raw HTML. If the
-        # live browser saw the banner's Accept/Reject controls, that finding
-        # is contradicted by direct evidence — drop it so the findings list
-        # and score agree with the GDPR consent_banner check and
-        # summary.has_cookie_banner (see resolve_banner_detection).
+        runtime_result = await run_consent_runtime(url, scan_id=scan_id)
+        step(6, "Run runtime", "done" if runtime_result.available else "not_tested",
+             f"{runtime_result.fresh_contexts} fresh browser context(s); banner "
+             + ("detected" if runtime_result.banner_detected else "not detected")
+             if runtime_result.available else (runtime_result.error or ""))
+        states = []
+        for label, cap in (("before consent", runtime_result.before_consent),
+                           ("after reject", runtime_result.after_reject),
+                           ("after accept", runtime_result.after_accept)):
+            states.append(f"{label}: " + ("captured" if cap.available else f"not tested ({cap.error})"))
+        step(7, "Capture Accept/Reject/Preferences states", "done", "; ".join(states)
+             + ("; preferences panel " + ("verified" if runtime_result.personalize_exposes_controls else "not verified")
+                if runtime_result.manage_clicked else ""))
+        preferences = verify_preferences_runtime(preferences, runtime_result)
+    else:
+        step(6, "Run runtime", "skipped")
+        step(7, "Capture Accept/Reject/Preferences states", "skipped")
+
+    # 8. Applicable framework (+ CMP regional configuration seen at runtime) ----
+    region = refine_region(region, runtime_result)
+    step(8, "Determine applicable framework", "done",
+         ", ".join(region.applicable_frameworks) if region.applicable_frameworks
+         else "not determined — regional compliance not assessed")
+
+    # 10 (findings) — built before scoring so step 9's score reflects them ------
+    findings: List[dict] = []
+    banner_findings = check_banner(page)
+    findings += banner_findings
+    static_button_findings = check_buttons(page, banner_detected=banner.detected, detection=buttons)
+    findings += static_button_findings
+    findings += check_consent_mode(page, analytics_detected=analytics_detected)
+    findings += check_preferences(page, banner_detected=banner.detected
+                                  or bool(runtime_result and runtime_result.banner_detected),
+                                  detection=preferences)
+    findings += check_behavior(behavior, page.url)
+    if network_result is not None:
+        findings += check_pre_consent_network(network_result)
+    findings += cookie_result.findings
+
+    if runtime_result is not None:
+        findings += check_runtime_consent(
+            runtime_result, url,
+            include_pre_consent=not (network_result is not None and network_result.available),
+        )
+        # The static "no banner" finding only reflects raw HTML; the rendered
+        # banner contradicts it.
         if banner_findings and resolve_banner_detection(banner.detected, runtime_result)[0]:
             findings = [f for f in findings if f not in banner_findings]
+        # The rendered banner's control inventory is the single source of truth.
+        if runtime_result.available and runtime_result.banner_detected:
+            findings = [f for f in findings if f not in static_button_findings]
+            findings += check_buttons(page, banner_detected=True, detection=runtime_result.buttons_detection())
 
+    # 9. Applicable assessment(s) ---------------------------------------------
     score = score_consent(findings)
+    scan_meta = {
+        "scan_id": scan_id,
+        "started_at": started.isoformat(),
+        "fresh": True,
+        "fresh_browser_contexts": (runtime_result.fresh_contexts if runtime_result else 0)
+                                  + (1 if network_result is not None and network_result.available else 0),
+        "legs": list(runtime_result.leg_log) if runtime_result else [],
+        "pipeline": pipeline,
+    }
     summary = build_consent_summary(
         page=page,
         banner_detected=banner.detected,
@@ -249,26 +342,30 @@ async def analyze_site(
         score_result=score,
         runtime_result=runtime_result,
         network_result=network_result,
+        region=region,
+        ccpa_signals=ccpa_signals,
+        scan_meta=scan_meta,
     )
+    step(9, "Build applicable assessment", "done",
+         ", ".join(region.applicable_frameworks) or "technical consent scan only")
+    step(10, "Build evidence", "done", f"{len(findings)} finding(s), {len(summary.consent_controls)} control(s)")
 
+    # 11. Screenshots (this scan's own files) ---------------------------------
     banner_screenshot_path = None
-    if capture_screenshot and enable_live_checks:
-        banner_screenshot_path = await capture_banner_screenshot(url, filename_hint=url)
     if runtime_result is not None and runtime_result.initial_banner_screenshot:
-        # runtime's own screenshot (taken mid-flow, same banner) is at least as good —
-        # prefer it so we don't pay for two separate navigations when both are enabled.
-        banner_screenshot_path = banner_screenshot_path or runtime_result.initial_banner_screenshot
+        banner_screenshot_path = runtime_result.initial_banner_screenshot
+    elif capture_screenshot and enable_live_checks:
+        banner_screenshot_path = await capture_banner_screenshot(url, filename_hint=url, scan_id=scan_id)
 
-    # Screenshots are only known *after* build_consent_summary ran above, so
-    # they're set directly on the already-built summary here rather than
-    # threaded through that call — this way a caller can still do a single
-    # `Consent(audit_id=..., **vars(result.summary))` and get every field,
-    # screenshots included, without a separate kwarg.
     summary.banner_screenshot_path = banner_screenshot_path
     if runtime_result is not None:
         summary.preferences_screenshot_path = runtime_result.preferences_screenshot
         summary.reject_screenshot_path = runtime_result.reject_screenshot
         summary.accept_screenshot_path = runtime_result.accept_screenshot
+    shots = [p for p in (summary.banner_screenshot_path, summary.preferences_screenshot_path,
+                         summary.reject_screenshot_path, summary.accept_screenshot_path) if p]
+    step(11, "Build screenshots", "done" if shots else "not_tested", f"{len(shots)} screenshot(s)")
+    scan_meta["finished_at"] = datetime.now(timezone.utc).isoformat()
 
     return ConsentAuditResult(
         findings=findings,
@@ -278,4 +375,7 @@ async def analyze_site(
         network_result=network_result,
         banner_screenshot_path=banner_screenshot_path,
         runtime_result=runtime_result,
+        region=region,
+        scan_id=scan_id,
+        pipeline=pipeline,
     )

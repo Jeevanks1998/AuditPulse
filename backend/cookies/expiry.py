@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from cookies.categories import ANALYTICS, ESSENTIAL, FUNCTIONAL, MARKETING
+from cookies.categories import ANALYTICS, CONSENT_MANAGEMENT, ESSENTIAL, FUNCTIONAL, MARKETING
 
 SESSION = "session"
 SHORT = "short"        # <= 1 day
@@ -33,6 +33,8 @@ _CATEGORY_MAX_DAYS = {
     FUNCTIONAL: 365,
     ANALYTICS: 395,
     MARKETING: 90,
+    # CNIL: a stored consent choice should be re-asked after ~13 months.
+    CONSENT_MANAGEMENT: 395,
 }
 _DEFAULT_MAX_DAYS = 365
 

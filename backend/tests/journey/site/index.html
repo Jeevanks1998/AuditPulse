@@ -1,0 +1,39 @@
+<!doctype html><html lang="en"><head><title>Journey Shop — Home</title><link rel="stylesheet" href="/_style.css"><script src="/_common.js"></script></head><body>
+@@HEADER@@
+<main>
+  <section><h1>Industrial pumps</h1>
+    <a class="btn" href="/quote">Request a quote</a>
+    <a class="btn" href="/missing-offer">See the offer</a>
+    <button class="btn" type="button" id="buy" onclick="alert('never')">Buy now</button>
+  </section>
+  <section><h2>Newsletter</h2>
+    <button class="btn" type="button" aria-haspopup="dialog" id="nl-open">Join our newsletter list</button>
+    <div class="modal" role="dialog" aria-modal="true" id="nl" style="display:none"><p>Monthly news</p><button type="button" id="nl-close">Close</button></div>
+  </section>
+  <section><h2>FAQ</h2>
+    <button type="button" aria-expanded="false" aria-controls="faq1" id="faq-btn">How fast is delivery?</button>
+    <div id="faq1" hidden>Within 3 days.</div>
+  </section>
+  <section><h2>Specs</h2>
+    <div role="tablist"><button role="tab" aria-selected="true" id="t1">Overview</button><button role="tab" aria-selected="false" id="t2">Dimensions</button></div>
+  </section>
+  <section><h2>Watch</h2><video src="/media/intro.mp4" controls width="320" height="180"></video></section>
+  <section id="dyn"></section>
+  <section><h2>Talk to us</h2>
+    <a href="tel:+15551234567" id="tel">+1 555 123 4567</a> · <a href="mailto:sales@journey-shop.com">sales@journey-shop.com</a>
+    · <a href="/cart?add-to-cart=12">Add pump to cart</a>
+  </section>
+</main>
+<footer><a href="/resources">Brochures</a> · <a href="https://external.example.org/partner">Partner site</a></footer>
+@@BANNER@@
+<script>
+  document.getElementById('nl-open').onclick = function () { document.getElementById('nl').style.display = 'block'; track('newsletter_open'); };
+  document.getElementById('nl-close').onclick = function () { document.getElementById('nl').style.display = 'none'; };
+  document.getElementById('faq-btn').onclick = function () { var o = this.getAttribute('aria-expanded') === 'true'; this.setAttribute('aria-expanded', String(!o)); document.getElementById('faq1').hidden = o; };
+  document.getElementById('t2').onclick = function () { this.setAttribute('aria-selected','true'); document.getElementById('t1').setAttribute('aria-selected','false'); };
+  document.getElementById('tel').addEventListener('click', function () { track('phone_click', { number: '+15551234567' }); });
+  // Rendered by JavaScript after load (not in the server HTML).
+  var a = document.createElement('a'); a.className = 'btn'; a.href = '/services/product'; a.textContent = 'Explore the X200 pump';
+  document.getElementById('dyn').appendChild(a);
+</script>
+</body></html>

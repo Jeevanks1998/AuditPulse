@@ -44,6 +44,8 @@ class HistoryEventType(str, Enum):
     API_KEY_REGENERATED = "api_key_regenerated"
     ACCESS_SYNCED = "access_synced"  # role/access pushed from the Access Portal
     ACCESS_REVOKED = "access_revoked"  # access pulled by the Access Portal
+    AUTHENTICATOR_SETUP = "authenticator_setup"  # first Google Authenticator pairing at login
+    AUTHENTICATOR_RESET = "authenticator_reset"  # admin reset from the Access Portal
 
 
 class History(Base):

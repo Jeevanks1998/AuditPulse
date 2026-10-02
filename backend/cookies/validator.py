@@ -94,6 +94,11 @@ def validate_cookies(cookies: List[Cookie], first_party_hostname: Optional[str] 
 
 def _looks_like_session_identifier(name: str) -> bool:
     lowered = name.lower()
+    # CSRF/XSRF double-submit tokens (XSRF-TOKEN, csrftoken, _csrf…) are
+    # *meant* to be readable by JavaScript — the client echoes them back in a
+    # header — so a missing HttpOnly there is expected, not a vulnerability.
+    if "csrf" in lowered or "xsrf" in lowered or "requestverificationtoken" in lowered:
+        return False
     return any(token in lowered for token in ("session", "sessid", "auth", "token", "login"))
 
 

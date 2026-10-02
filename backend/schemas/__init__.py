@@ -19,7 +19,7 @@ from schemas.audit import AuditCreate, AuditOut, AuditProgressOut, AuditStatsOut
 from schemas.dashboard import DashboardOut
 from schemas.history import ActivityEventOut, ActivityPageOut, HistoryPageOut
 from schemas.report import Finding, MODULE_LABELS, ReportOut, ScoreCell, ShareOut
-from schemas.user import TokenOut, UserLogin, UserOut, UserRegister
+from schemas.user import LoginStepOut, TokenOut, TotpVerifyIn, UserLogin, UserOut, UserRegister
 
 __all__ = [
     "AccessHealthOut",
@@ -42,6 +42,8 @@ __all__ = [
     "ShareOut",
     "TokenOut",
     "UserLogin",
+    "LoginStepOut",
+    "TotpVerifyIn",
     "UserOut",
     "UserRegister",
 ]

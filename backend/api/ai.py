@@ -9,6 +9,7 @@ requests and shapes responses only; every actual call into ai/ goes
 through services.ai_service.
 """
 
+import dataclasses
 from typing import List
 
 from fastapi import APIRouter, Depends
@@ -46,7 +47,10 @@ async def priorities(
     current_user: User = Depends(get_current_user),
 ):
     ranked = await ai_service.get_priorities(audit_id, db, current_user)
-    return PrioritiesOut(audit_id=audit_id, priorities=ranked)
+    # ai.priority returns PrioritizedFinding dataclasses; Pydantic v2 won't
+    # coerce a dataclass into PriorityItemOut, which made this endpoint 500.
+    items = [dataclasses.asdict(r) if dataclasses.is_dataclass(r) else r for r in ranked]
+    return PrioritiesOut(audit_id=audit_id, priorities=items)
 
 
 @router.get("/{audit_id}/business-impact", response_model=BusinessImpactOut)

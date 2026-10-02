@@ -86,6 +86,15 @@ async def _get_analytics_dict(audit_id: int, db: AsyncSession) -> Optional[dict]
     return AnalyticsOut.model_validate(row).model_dump() if row else None
 
 
+async def _get_journey_dict(audit_id: int, db: AsyncSession) -> Optional[dict]:
+    from models.journey import Journey
+    from schemas.audit import JourneyOut
+
+    result = await db.execute(select(Journey).where(Journey.audit_id == audit_id))
+    row = result.scalar_one_or_none()
+    return JourneyOut.model_validate(row).model_dump() if row else None
+
+
 async def get_report(audit_id: int, db: AsyncSession, user: User) -> ReportOut:
     """
     Fetches the completed audit + its shaped report payload, bumping the
@@ -149,6 +158,7 @@ async def _build_full_payload(audit_id: int, db: AsyncSession, user: User):
 
     consent = await _get_consent_dict(audit_id, db)
     analytics = await _get_analytics_dict(audit_id, db)
+    journey = await _get_journey_dict(audit_id, db)
 
     return await build_report_payload(
         audit_id=audit.id,
@@ -160,6 +170,7 @@ async def _build_full_payload(audit_id: int, db: AsyncSession, user: User):
         share_url=share_url,
         consent=consent,
         analytics=analytics,
+        journey=journey,
     )
 
 

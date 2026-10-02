@@ -156,6 +156,12 @@
         setBar('barPerformance', 'valPerformance', stats.breakdown.performance || 0);
         setBar('barAnalytics', 'valAnalytics', stats.breakdown.analytics || 0);
         setBar('barConsent', 'valConsent', stats.breakdown.consent || 0);
+        // Customer Journey only appears when the latest audit ran that module.
+        var journeyRow = document.getElementById('journeyHealthRow');
+        if (journeyRow && stats.breakdown.journey != null) {
+          journeyRow.style.display = '';
+          setBar('barJourney', 'valJourney', stats.breakdown.journey || 0);
+        }
     }
 
     // KPI cards, trend badges, and the health ring all fall back to "–" /
@@ -339,7 +345,8 @@
       Promise.all([
         window.Api.audits.getConsent(latest.id).catch(function () { return null; }),
         window.Api.audits.getAnalytics(latest.id).catch(function () { return null; }),
-        window.Api.reports.get(latest.id).catch(function () { return null; })
+        window.Api.reports.get(latest.id).catch(function () { return null; }),
+        window.Api.audits.getJourney(latest.id).catch(function () { return null; })
       ]).then(function (results) {
         var analyticsFindings = ((results[2] && results[2].findings) || []).filter(function (f) {
           return f.module === 'analytics';
@@ -347,6 +354,7 @@
         var shownAny = false;
         shownAny = renderAnalyticsHealthCard(results[1], link, analyticsFindings) || shownAny;
         shownAny = renderConsentHealthCard(results[0], link) || shownAny;
+        if (window.JourneyRender) shownAny = window.JourneyRender.renderDashboardCard(results[3], link) || shownAny;
         if (shownAny) grid.style.display = '';
       });
     }
@@ -570,7 +578,20 @@
       var linkEl = document.getElementById('consentHealthLink');
       if (!card || !consent) return false;
 
-      var coreOk = !!consent.hasCookieBanner && !!consent.gdprCompliant && !!consent.ccpaCompliant;
+      // Only frameworks that apply to the detected region are judged (Phase 2
+      // consent.region). Audits recorded before applicability existed keep
+      // the legacy GDPR + CCPA view.
+      var app = consent.applicability || {};
+      var hasApp = !!(app.frameworks && app.frameworks.length);
+      var applicable = hasApp ? (app.applicable_frameworks || []) : ['gdpr', 'ccpa'];
+      var applies = function (fw) { return applicable.indexOf(fw) !== -1; };
+      var dpdpFw = (app.frameworks || []).filter(function (f) { return f.key === 'dpdp' && f.applicable; })[0];
+      var dpdpOk = !!(dpdpFw && dpdpFw.assessment && dpdpFw.assessment.status === 'pass');
+
+      var coreOk = !!consent.hasCookieBanner &&
+        (!applies('gdpr') || !!consent.gdprCompliant) &&
+        (!applies('ccpa') || !!consent.ccpaCompliant) &&
+        (!applies('dpdp') || dpdpOk);
       var badge = badgeFor(coreOk, true);
       badgeEl.className = 'badge ' + badge.cls;
       badgeEl.textContent = badge.label;
@@ -586,24 +607,43 @@
         kpiTile(
           ICON_SHIELD,
           'GDPR',
-          consent.gdprCompliant ? 'Passed' : 'Failed',
+          !applies('gdpr') ? 'Not assessed' : (consent.gdprCompliant ? 'Passed' : 'Failed'),
           '',
-          consent.gdprCompliant ? 'good' : 'bad'
+          !applies('gdpr') ? 'neutral' : (consent.gdprCompliant ? 'good' : 'bad')
         ),
         kpiTile(
           ICON_SHIELD,
           'CCPA',
-          consent.ccpaCompliant ? 'Passed' : 'Failed',
+          !applies('ccpa') ? 'Not assessed' : (consent.ccpaCompliant ? 'Passed' : 'Failed'),
           '',
-          consent.ccpaCompliant ? 'good' : 'bad'
+          !applies('ccpa') ? 'neutral' : (consent.ccpaCompliant ? 'good' : 'bad')
         )
       ];
+      if (hasApp) {
+        tiles.unshift(kpiTile(
+          ICON_SHIELD,
+          'Region',
+          app.region_label || 'Unknown',
+          (app.confidence ? app.confidence + ' confidence' : ''),
+          app.regional_compliance === 'assessed' ? 'neutral' : 'warning'
+        ));
+      }
+      if (applies('dpdp')) {
+        tiles.push(kpiTile(ICON_SHIELD, 'DPDP', dpdpOk ? 'Passed' : 'Failed', '', dpdpOk ? 'good' : 'bad'));
+      }
 
       var complianceHtml = '<div class="health-compliance-block">' +
-        '<div class="health-compliance-checklist">' + renderCheckListRows(GDPR_CHECK_ITEMS, consent.gdprChecks || {}) + '</div>' +
-        renderComplianceRow('GDPR', consent.gdprCompliant, GDPR_CHECK_ITEMS, consent.gdprChecks || {}) +
-        '<div class="health-compliance-checklist">' + renderCheckListRows(CCPA_CHECK_ITEMS, consent.ccpaChecks || {}) + '</div>' +
-        renderComplianceRow('CCPA', consent.ccpaCompliant, CCPA_CHECK_ITEMS, consent.ccpaChecks || {}) +
+        (applies('gdpr')
+          ? '<div class="health-compliance-checklist">' + renderCheckListRows(GDPR_CHECK_ITEMS, consent.gdprChecks || {}) + '</div>' +
+            renderComplianceRow('GDPR', consent.gdprCompliant, GDPR_CHECK_ITEMS, consent.gdprChecks || {})
+          : '') +
+        (applies('ccpa')
+          ? '<div class="health-compliance-checklist">' + renderCheckListRows(CCPA_CHECK_ITEMS, consent.ccpaChecks || {}) + '</div>' +
+            renderComplianceRow('CCPA', consent.ccpaCompliant, CCPA_CHECK_ITEMS, consent.ccpaChecks || {})
+          : '') +
+        (hasApp && app.regional_compliance !== 'assessed'
+          ? '<div class="health-runtime-note">Regional compliance: Not assessed — the site\'s region could not be established, so only the technical consent scan was run.</div>'
+          : '') +
       '</div>';
 
       // Real runtime-verified enforcement (does Reject actually block
@@ -613,12 +653,15 @@
       var runtimeHtml = '';
       if (consent.runtimeTested) {
         var rr = consent.runtimeResult || {};
-        var rejectKnown = rr.reject_blocks_tracking !== null && rr.reject_blocks_tracking !== undefined;
-        var acceptKnown = rr.accept_allows_tracking !== null && rr.accept_allows_tracking !== undefined;
+        // runtime_result keys arrive camelCased from api.js.
+        var rejectV = rr.rejectBlocksTracking !== undefined ? rr.rejectBlocksTracking : rr.reject_blocks_tracking;
+        var acceptV = rr.acceptAllowsTracking !== undefined ? rr.acceptAllowsTracking : rr.accept_allows_tracking;
+        var rejectKnown = rejectV !== null && rejectV !== undefined;
+        var acceptKnown = acceptV !== null && acceptV !== undefined;
         runtimeHtml = '<div class="health-runtime-note">Runtime-verified: Reject ' +
-          (rejectKnown ? (rr.reject_blocks_tracking ? 'blocks tracking' : 'does not block tracking') : 'not verified') +
+          (rejectKnown ? (rejectV ? 'blocks tracking' : 'does not block tracking') : 'not verified') +
           ' · Accept ' +
-          (acceptKnown ? (rr.accept_allows_tracking ? 'allows tracking' : 'does not allow tracking') : 'not verified') +
+          (acceptKnown ? (acceptV ? 'allows tracking' : 'does not allow tracking') : 'not verified') +
           '</div>';
       }
 

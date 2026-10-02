@@ -61,4 +61,15 @@ def load_pdf(audit_id: int) -> Optional[bytes]:
     return _manager().read_bytes(_pdf_filename(audit_id))
 
 
-__all__ = ["save_json", "load_json", "save_html", "load_html", "save_pdf", "load_pdf"]
+def invalidate(audit_id: int) -> None:
+    """Drops every cached export for this audit so the next download is built
+    from the latest scan (called whenever an audit's results are (re)written)."""
+    manager = _manager()
+    for name in (f"{audit_id}.json", f"{audit_id}.html", _pdf_filename(audit_id)):
+        try:
+            manager.delete(name)
+        except Exception:  # noqa: BLE001 — a missing/locked cache file must never fail an audit
+            pass
+
+
+__all__ = ["save_json", "load_json", "save_html", "load_html", "save_pdf", "load_pdf", "invalidate"]

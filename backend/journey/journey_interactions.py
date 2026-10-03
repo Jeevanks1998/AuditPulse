@@ -131,9 +131,10 @@ class Interaction:
     attributes: Dict[str, str]
     form_id: Optional[str] = None
     signature: str = ""
+    consent_control: bool = False         # inside a cookie banner: the Consent module tests these
     # filled by the tester
     tested: bool = False
-    status: str = "not_tested"            # success | failed | skipped | not_tested
+    status: str = "not_tested"            # success | failed | skipped | not_tested | consent_control
     outcome: Optional[str] = None
     observed: str = ""
     final_url: Optional[str] = None
@@ -331,11 +332,15 @@ def build_interactions(elements: List[DiscoveredElement], forms: List[Discovered
             selector=el.selector, visible=el.visible, dynamic=el.dynamic, landmark=el.landmark,
             position=el.position, aria=el.aria, attributes=el.attributes, form_id=el.form_id,
             signature=f"{c.kind}|{el.signature}",
+            consent_control=bool(el.in_consent),
+            status="consent_control" if el.in_consent else "not_tested",
+            observed=CONSENT_CONTROL_NOTE if el.in_consent else "",
+            tracking={"status": "not_applicable", "note": "Cookie-banner control — see the Consent module."} if el.in_consent else {},
         ))
     # One "Form" interaction per discovered form (focus test, never submitted).
     for f in forms:
-        if not f.visible or not f.fields:
-            continue
+        if not f.visible or not f.fields or f.in_consent:
+            continue                      # consent-banner preference forms belong to the Consent module
         is_search = f.role == "search" or any((x.get("type") == "search" or (x.get("name") or "").lower()
                                                in _SEARCH_FIELD_NAMES) for x in f.fields)
         if is_search:
@@ -361,7 +366,19 @@ def build_interactions(elements: List[DiscoveredElement], forms: List[Discovered
     return out
 
 
+CONSENT_CONTROL_NOTE = ("Cookie-banner control. Not clicked during the journey (it would change consent "
+                        "mid-scan); the Consent module tests the banner's buttons.")
+
+# Test order inside the high-importance group: forms first, then the other
+# conversion actions, then plain CTAs. Previously everything was ordered by
+# position on the page, so forms lower down were the first to be cut off by
+# the per-audit test limit / time budget.
+_TEST_PRIORITY = {FORM: 0, SIGNUP: 1, FORM_START: 1, PURCHASE: 2, APPOINTMENT: 2, DOWNLOAD: 3}
+
+
 def _worth_testing(it: Interaction) -> bool:
+    if it.consent_control:
+        return False
     if it.importance < 2 and it.classification == OTHER:
         return False
     if it.pattern == PATTERN_TAB and (it.aria or {}).get("aria-selected") == "true":
@@ -384,7 +401,8 @@ def select_for_testing(interactions: List[Interaction], max_total: int, max_per_
     """
     pool = [i for i in interactions if i.duplicate_of is None and i.visible and _worth_testing(i)]
     pool.sort(key=lambda i: (i.external, i.position.get("y", 0)))
-    high = [i for i in pool if i.importance >= 3]
+    high = sorted((i for i in pool if i.importance >= 3),
+                  key=lambda i: (_TEST_PRIORITY.get(i.classification, 4), i.external, i.position.get("y", 0)))
     firsts, rest, seen_kinds = [], [], set()
     for it in pool:
         if it.importance >= 3:
@@ -450,8 +468,8 @@ async def _reset_to(tc: TestContext, page_url: str, prefix: str) -> None:
     # Always reload: every interaction starts from the page's initial state.
     from config.browser import goto_page
 
-    await goto_page(tc.page, page_url)
-    await tc.page.wait_for_timeout(900)
+    await goto_page(tc.page, page_url, load_wait_ms=3_000)
+    await tc.page.wait_for_timeout(600)
     await tc.page.evaluate(DISCOVER_JS, {"maxElements": 400, "idPrefix": prefix})
 
 

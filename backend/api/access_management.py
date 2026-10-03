@@ -55,7 +55,7 @@ import secrets
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import generate_api_key
@@ -67,6 +67,9 @@ from models.history import HistoryEventType, log_event
 from models.user import User
 from schemas.access import (
     AccessHealthOut,
+    AccessStatusIn,
+    AccessStatusOut,
+    AccessUserStatus,
     AccessRevokeIn,
     AccessRevokeOut,
     AccessSyncIn,
@@ -217,3 +220,30 @@ async def revoke_access(payload: AccessRevokeIn, db: AsyncSession = Depends(get_
 
     logger.info(f"Access Portal revoke: {user.email} -> access off")
     return AccessRevokeOut(email=user.email, found=True, is_active=False, auditpulse_access=False)
+
+
+@router.post("/status", response_model=AccessStatusOut, dependencies=[Depends(verify_portal_key)])
+async def access_status(payload: AccessStatusIn, db: AsyncSession = Depends(get_db)):
+    """AuditPulse sign-in status for a list of emails, for the portal's
+    Users page. The portal and AuditPulse keep separate authenticators, so
+    the portal can't know on its own whether someone has finished their
+    AuditPulse Google Authenticator setup. Read-only; POST only so the
+    email addresses are never put in a URL.
+    """
+    emails = sorted({e.lower() for e in payload.emails})
+    found = {}
+    if emails:
+        result = await db.execute(select(User).where(func.lower(User.email).in_(emails)))
+        for u in result.scalars().all():
+            found[u.email.lower()] = u
+    users = {}
+    for email in emails:
+        u = found.get(email)
+        users[email] = AccessUserStatus(
+            exists=u is not None,
+            is_active=bool(u and u.is_active),
+            auditpulse_access=bool(u and u.auditpulse_access),
+            mfa_enabled=bool(u and u.mfa_enabled),
+            auth_setup_required=bool(u.auth_setup_required) if u else True,
+        )
+    return AccessStatusOut(users=users)

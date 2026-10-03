@@ -30,7 +30,7 @@ auditpulse.py's sync_user()/revoke_user()) must be updated to send
 that's a change to the sibling repo, not this one.
 """
 
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -71,6 +71,23 @@ class AccessRevokeOut(BaseModel):
     found: bool
     is_active: bool
     auditpulse_access: bool
+
+
+class AccessStatusIn(BaseModel):
+    """Emails the portal wants AuditPulse sign-in status for (max 500)."""
+    emails: List[EmailStr] = Field(default_factory=list, max_length=500)
+
+
+class AccessUserStatus(BaseModel):
+    exists: bool
+    is_active: bool = False
+    auditpulse_access: bool = False
+    mfa_enabled: bool = False
+    auth_setup_required: bool = True
+
+
+class AccessStatusOut(BaseModel):
+    users: Dict[str, AccessUserStatus]
 
 
 class AccessHealthOut(BaseModel):

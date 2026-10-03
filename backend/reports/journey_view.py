@@ -61,7 +61,8 @@ def _tracking_label(status: Optional[str]) -> str:
 
 def _test_label(status: Optional[str]) -> str:
     return {"success": "Successfully tested", "failed": "Failed", "skipped": "Not executed (safety)",
-            "not_tested": "Discovered (not tested)", "same_as_first": "Same as first occurrence"}.get(status or "", status or "")
+            "not_tested": "Discovered (not tested)", "same_as_first": "Same as first occurrence",
+            "consent_control": "Consent control (tested in Consent)"}.get(status or "", status or "")
 
 
 def _interaction_row(i: dict) -> dict:

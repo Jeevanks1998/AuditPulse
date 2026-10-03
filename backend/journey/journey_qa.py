@@ -106,6 +106,7 @@ def compute_health(interactions: List[Interaction], pages_count: int, forms_coun
         "tracking_gaps": len(gaps),
         "evidence_captured": len(evidence),
         "skipped_for_safety": len([i for i in unique if i.status == "skipped"]),
+        "consent_controls": len([i for i in unique if i.status == "consent_control"]),
         "forms": forms_count,
         "downloads": len([i for i in unique if i.classification == DOWNLOAD]),
         "ctas": len([i for i in unique if i.classification == CTA]),
@@ -121,7 +122,8 @@ def compute_health(interactions: List[Interaction], pages_count: int, forms_coun
     else:
         success_rate = len(successful) / len(tested)
         coverage = (len(conv_tracked) / len(conv_tested)) if conv_tested else 1.0
-        evidence_rate = min(1.0, len([i for i in tested if (i.screenshots or {}).get("before")]) / len(tested))
+        evidence_rate = min(1.0, len([i for i in tested if (i.screenshots or {}).get("highlighted")
+                                      or (i.screenshots or {}).get("before")]) / len(tested))
         score = round(100 * (0.35 * success_rate + 0.45 * coverage + 0.20 * evidence_rate))
         rates = {"success_rate": round(success_rate, 3), "conversion_tracking_coverage": round(coverage, 3),
                  "evidence_rate": round(evidence_rate, 3)}

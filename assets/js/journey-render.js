@@ -16,7 +16,8 @@
   var TEST_CHIP = {
     success: ['success', 'Successfully tested'], failed: ['failed', 'Failed'],
     skipped: ['skipped', 'Not executed (safety)'], not_tested: ['', 'Discovered'],
-    same_as_first: ['', 'Same as first occurrence']
+    same_as_first: ['', 'Same as first occurrence'],
+    consent_control: ['', 'Consent control']
   };
 
   function origin() { return (window.APP_CONFIG && window.APP_CONFIG.API_ORIGIN) || ''; }

@@ -96,7 +96,7 @@ class Settings(BaseSettings):
     # budget (what wasn't reached is reported as "not tested"), and the
     # whole module is cancelled after HARD_TIMEOUT whatever happens.
     JOURNEY_SCAN_BUDGET_S: int = 180
-    JOURNEY_TEST_BUDGET_S: int = 180
+    JOURNEY_TEST_BUDGET_S: int = 240
     JOURNEY_HARD_TIMEOUT_S: int = 480
     MODULE_HARD_TIMEOUT_S: int = 300   # consent / analytics step safety net
     JOURNEY_ENABLE_INTERACTION_TESTS: bool = True

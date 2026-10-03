@@ -159,6 +159,21 @@ DISCOVER_JS = r"""
     return id;
   };
 
+  // Cookie / consent banners (CMPs). Their buttons are tested by the Consent
+  // module; clicking them here would change consent mid-journey.
+  const CMP_SEL = [
+    '#onetrust-consent-sdk', '#onetrust-banner-sdk', '#onetrust-pc-sdk', '.ot-sdk-container', '.optanon-alert-box-wrapper',
+    '#CybotCookiebotDialog', '#didomi-host', '.didomi-popup-container', '#usercentrics-root', '#uc-banner',
+    '.qc-cmp2-container', '#qc-cmp2-ui', '#truste-consent-track', '#consent_blackbar', '.truste_box_overlay',
+    '#axeptio_overlay', '#tarteaucitronRoot', '.osano-cm-window', '#cmpbox', '#cmpwrapper', '.cc-window',
+    '#cookie-law-info-bar', '#cookiescript_injected', '#iubenda-cs-banner', '#termly-code-snippet-support',
+    '#sp_message_container', '[id^="sp_message_container"]', '.fc-consent-root', '#gdpr-consent-tool-wrapper',
+    '[id*="cookie-banner" i]', '[class*="cookie-banner" i]', '[id*="cookie-consent" i]', '[class*="cookie-consent" i]',
+    '[id*="consent-banner" i]', '[class*="consent-banner" i]', '[id*="cookie-notice" i]', '[class*="cookie-notice" i]',
+    '[role=dialog][aria-label*="cookie" i]', '[role=dialog][aria-label*="consent" i]', '[role=dialog][aria-label*="privacy" i]',
+  ].join(',');
+  const inConsent = (el) => { try { return !!el.closest(CMP_SEL); } catch (e) { return false; } };
+
   const seen = new Set();
   const out = [];
   const nodes = [...document.querySelectorAll(CANDIDATES)];
@@ -188,6 +203,7 @@ DISCOVER_JS = r"""
       selector: cssPath(el), visible: isVisible(el), landmark: landmark(el), heading: headingContext(el),
       form_id: formEl ? tag(formEl) : null, style: styleSignals(el), signature: signature(el),
       in_dialog: !!el.closest('[role=dialog], dialog, [aria-modal=true]'),
+      in_consent: inConsent(el),
     });
   }
 
@@ -215,7 +231,7 @@ DISCOVER_JS = r"""
       visible: isVisible(f), landmark: landmark(f), heading: headingContext(f), role: f.getAttribute('role'),
       selector: cssPath(f), fields, submits,
       tracking_hints: trackingAttrs.concat(/dataLayer|gtag|ga\(|_paq|utag|analytics/i.test(onsubmit) ? ['onsubmit'] : []),
-      signature: signature(f),
+      signature: signature(f), in_consent: inConsent(f),
     };
   });
   return { elements: out, forms, title: document.title, lang: document.documentElement.lang || null,
@@ -245,6 +261,7 @@ class DiscoveredElement:
     style: Dict[str, object] = field(default_factory=dict)
     signature: str = ""
     in_dialog: bool = False
+    in_consent: bool = False   # inside a cookie / consent banner (tested by the Consent module)
     dynamic: bool = False      # not present in the server-delivered HTML
 
     @property
@@ -270,6 +287,7 @@ class DiscoveredForm:
     submits: List[dict] = field(default_factory=list)
     tracking_hints: List[str] = field(default_factory=list)
     signature: str = ""
+    in_consent: bool = False
     dynamic: bool = False
 
 

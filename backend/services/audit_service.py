@@ -256,6 +256,7 @@ async def run_audit_pipeline(audit_id: int) -> None:
                 if "journey" in (audit.modules or []):
                     await _advance_step(db, audit, "checkJourney")
                     journey_row, journey_findings, journey_score = await _run_journey_checks(audit)
+                    _backfill_analytics_from_journey(analytics_row, journey_row)
                     if journey_score is not None:
                         breakdown["journey"] = journey_score
                     findings += journey_findings
@@ -514,6 +515,56 @@ async def _run_consent_checks(
         logger.warning(f"_run_consent_checks: consent scan failed for {audit.url}: {exc}")
         consent = Consent(audit_id=audit.id, has_cookie_banner=False, consent_score=0)
         return consent, [], 0, None
+
+
+def _backfill_analytics_from_journey(analytics_row, journey_row) -> None:
+    """When the Analytics module's own live browser check could not run
+    (runtime_available False), use what the Customer Journey's browser pass
+    actually observed: it loads every scanned page in a real browser with
+    consent accepted and records each analytics hit with the same vendor
+    classifier. A detected vendor seen there gets Page View = passed; one
+    never seen on any page stays absent (the report shows it as Failed).
+    Scroll / Click stay "not tested" — the journey doesn't run those.
+    Clearly marked source="journey" so the report can say where it came from.
+    """
+    try:
+        if analytics_row is None or journey_row is None or getattr(analytics_row, "runtime_available", False):
+            return
+        if not getattr(journey_row, "available", False):
+            return
+        seen = {v.get("vendor"): v for v in ((journey_row.tracking or {}).get("vendors") or [])
+                if v.get("vendor") and v.get("vendor") != "dataLayer" and (v.get("hits") or 0) > 0}
+        detected = list((analytics_row.vendor_configs or {}).keys())
+        if not detected:
+            return
+        from analytics.runtime import VENDOR_LABELS as RT_LABELS
+        vendors = {}
+        for key in detected:
+            hit = seen.get(key)
+            if not hit:
+                continue
+            events = sorted((hit.get("events") or {}).keys())
+            vendors[key] = {
+                "vendor_key": key, "vendor_name": RT_LABELS.get(key, key),
+                "page_view_status": "passed", "scroll_status": "not_tested", "click_status": "not_tested",
+                "custom_event_status": "not_applicable", "duplicate_page_view": False,
+                "captured_request_count": int(hit.get("hits") or 0), "events_observed": events[:20],
+                "source": "journey",
+            }
+        prev = dict(analytics_row.runtime_result or {})
+        pages = len(journey_row.pages or [])
+        prev.update({
+            "available": True, "vendors": vendors, "source": "journey",
+            "analytics_runtime_error": prev.get("error"),
+            "note": (f"Taken from the Customer Journey browser pass ({pages} page(s), consent accepted): "
+                     "the Analytics module's own live check could not run."),
+        })
+        analytics_row.runtime_result = prev
+        analytics_row.runtime_available = True
+        analytics_row.runtime_tested = bool(vendors)
+        logger.info(f"analytics: runtime evidence back-filled from journey — {sorted(vendors)} seen of {detected}")
+    except Exception as exc:  # noqa: BLE001 — an optional enrichment never breaks the audit
+        logger.warning(f"analytics: could not back-fill runtime from journey: {exc}")
 
 
 async def _run_journey_checks(audit: Audit) -> tuple:

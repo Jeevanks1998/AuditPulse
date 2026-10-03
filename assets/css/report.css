@@ -949,3 +949,20 @@ button.rp-mod:focus-visible { outline: 2px solid var(--color-primary); outline-o
 [data-theme="dark"] .rp-count--critical, [data-theme="dark"] .rp-sev--critical, [data-theme="dark"] .rp-tab__score[data-band="bad"] { background: rgba(239, 68, 68, 0.16); }
 [data-theme="dark"] .rp-count--warning, [data-theme="dark"] .rp-sev--warning, [data-theme="dark"] .rp-tab__score[data-band="mid"] { background: rgba(245, 158, 11, 0.16); color: var(--color-warning); }
 [data-theme="dark"] .rp-tab__score[data-band="good"] { background: rgba(16, 185, 129, 0.16); }
+
+/* Evidence image that no longer exists on the server */
+.rp-noshot {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; min-height: 96px; height: 100%; padding: var(--sp-3);
+  background: var(--surface-sunken); color: var(--text-tertiary);
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-sm);
+  font-size: var(--fs-xs); text-align: center;
+}
+.rp-noshot svg { width: 22px; height: 22px; }
+a.is-missing { cursor: default; }
+.rp-note {
+  margin-bottom: var(--sp-3); padding: var(--sp-3) var(--sp-4);
+  background: var(--color-warning-soft); color: #92400E; border-radius: var(--radius-md);
+  font-size: var(--fs-xs); line-height: 1.5;
+}
+[data-theme="dark"] .rp-note { background: rgba(245, 158, 11, 0.14); color: var(--color-warning); }

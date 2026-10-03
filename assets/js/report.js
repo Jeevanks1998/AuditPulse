@@ -307,6 +307,41 @@
       });
     }
 
+    // Evidence screenshots live on the API server's disk. Files from audits
+    // run before the server was redeployed (or before persistent storage
+    // was attached) are gone, and a broken image with its alt text spilling
+    // out looked like a bug. Swap any image that fails to load for a clear
+    // placeholder, and stop its link from opening a "Not Found" page.
+    var missingShots = 0;
+    document.addEventListener('error', function (e) {
+      var img = e.target;
+      if (!img || img.tagName !== 'IMG' || img.dataset.apMissing || !img.closest('.content')) return;
+      img.dataset.apMissing = '1';
+      missingShots += 1;
+      var ph = document.createElement('span');
+      ph.className = 'rp-noshot';
+      ph.title = 'This screenshot is no longer stored on the server. Re-run the audit to capture it again.';
+      ph.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 17-5-5-9 7"/><path d="M3 3l18 18"/></svg>' +
+        '<span>Screenshot not available</span>';
+      img.replaceWith(ph);
+      var link = ph.closest('a');
+      if (link) { link.removeAttribute('href'); link.classList.add('is-missing'); }
+      var dl = ph.parentElement && ph.parentElement.parentElement &&
+        ph.parentElement.parentElement.querySelector('a[download]');
+      if (dl && dl !== link) dl.style.display = 'none';
+      if (missingShots === 1) {
+        var group = document.getElementById('moduleDetails');
+        if (group && !document.getElementById('missingShotsNote')) {
+          var note = document.createElement('div');
+          note.id = 'missingShotsNote';
+          note.className = 'rp-note';
+          note.textContent = 'Some evidence screenshots for this audit are no longer stored on the server (they are cleared when the server is redeployed). Re-run the audit to capture them again.';
+          group.parentNode.insertBefore(note, group);
+        }
+      }
+    }, true);
+
     // Wired unconditionally (before the auditId guard below) so the
     // module accordions — sidebar deep-links, print-all-open — still
     // work even if there's no report to load yet.
@@ -1507,7 +1542,7 @@
     var VENDOR_LABELS = {
       ga4: 'Google Analytics 4', gtm: 'Google Tag Manager', adobe: 'Adobe Analytics',
       piano: 'Piano Analytics', clarity: 'Microsoft Clarity', hotjar: 'Hotjar',
-      meta_pixel: 'Meta Pixel', linkedin: 'LinkedIn Insight Tag', tiktok: 'TikTok Pixel', tagcommander: 'TagCommander'
+      meta_pixel: 'Meta Pixel', metaPixel: 'Meta Pixel', linkedin: 'LinkedIn Insight Tag', tiktok: 'TikTok Pixel', tagcommander: 'TagCommander'
     };
 
     function analyticsStatusBadge(status) {
@@ -1656,18 +1691,37 @@
                 var v = runtimeVendors[k];
                 var runtimeCol = !analytics.runtimeAvailable
                   ? '<span style="color: var(--text-tertiary);">Not tested</span>'
-                  : (v ? analyticsStatusBadge(v.page_view_status) : '<span style="color: var(--danger, #dc2626);">Failed</span>');
+                  : (v ? analyticsStatusBadge(sk(v, 'page_view_status')) : '<span style="color: var(--danger, #dc2626);">Failed</span>');
                 return '<tr style="border-top:1px solid var(--border, #e5e7eb);">' +
                   '<td style="padding:6px 10px;">' + U.escapeHtml(VENDOR_LABELS[k] || k) + '</td>' +
                   '<td style="padding:6px 10px;">' + statusIcon('pass') + '</td>' +
                   '<td style="padding:6px 10px;">' + runtimeCol + '</td>' +
-                  '<td style="padding:6px 10px;">' + (v ? analyticsStatusBadge(v.page_view_status) : '<span style="color: var(--text-tertiary);">Not tested</span>') + '</td>' +
-                  '<td style="padding:6px 10px;">' + (v ? analyticsStatusBadge(v.scroll_status) : '<span style="color: var(--text-tertiary);">Not tested</span>') + '</td>' +
-                  '<td style="padding:6px 10px;">' + (v ? analyticsStatusBadge(v.click_status) : '<span style="color: var(--text-tertiary);">Not tested</span>') + '</td>' +
+                  '<td style="padding:6px 10px;">' + (v ? analyticsStatusBadge(sk(v, 'page_view_status')) : '<span style="color: var(--text-tertiary);">Not tested</span>') + '</td>' +
+                  '<td style="padding:6px 10px;">' + (v ? analyticsStatusBadge(sk(v, 'scroll_status')) : '<span style="color: var(--text-tertiary);">Not tested</span>') + '</td>' +
+                  '<td style="padding:6px 10px;">' + (v ? analyticsStatusBadge(sk(v, 'click_status')) : '<span style="color: var(--text-tertiary);">Not tested</span>') + '</td>' +
                 '</tr>';
               }).join('') +
               '</tbody></table></div>';
         }
+      }
+
+      // Say *why* the live check didn't run instead of a silent row of
+      // "Not tested" (the error is saved with the audit's runtime result).
+      if (vendorTable && !analytics.runtimeAvailable && detectedKeys.length) {
+        var rtErr = (analytics.runtimeResult && analytics.runtimeResult.error) || '';
+        vendorTable.insertAdjacentHTML('beforeend',
+          '<p class="rp-note" style="margin:10px 0 0;">The live browser check (Page View / Scroll / Click) could not run for this audit' +
+          (rtErr ? ': <code style="font-size:0.95em;">' + U.escapeHtml(String(rtErr).slice(0, 300)) + '</code>' : '.') +
+          ' Re-run the audit to try again.</p>');
+      }
+
+      if (vendorTable && analytics.runtimeAvailable && analytics.runtimeResult && analytics.runtimeResult.source === 'journey') {
+        var jErr = analytics.runtimeResult.analyticsRuntimeError || analytics.runtimeResult.analytics_runtime_error || '';
+        vendorTable.insertAdjacentHTML('beforeend',
+          '<p class="rp-note" style="margin:10px 0 0;">Page View results here come from the Customer Journey\'s browser pass ' +
+          '(every scanned page loaded with consent accepted), because the Analytics module\'s own live check could not run' +
+          (jErr ? ' (<code style="font-size:0.95em;">' + U.escapeHtml(String(jErr).slice(0, 200)) + '</code>)' : '') +
+          '. Scroll and Click were not tested.</p>');
       }
 
       // Detection & Runtime status — mid when runtime validation wasn't
@@ -1678,7 +1732,7 @@
         setAnalyticsSectionStatus('analyticsDetectionStatusIcon', detectedKeys.length ? 'mid' : 'bad');
       } else {
         var firedCount = detectedKeys.filter(function (k) {
-          return runtimeVendors[k] && runtimeVendors[k].page_view_status === 'passed';
+          return runtimeVendors[k] && sk(runtimeVendors[k], 'page_view_status') === 'passed';
         }).length;
         var detectionBand = !detectedKeys.length ? 'bad'
           : (firedCount === detectedKeys.length ? 'good' : (firedCount > 0 ? 'mid' : 'bad'));
@@ -1699,7 +1753,7 @@
         } else if (!runtimeKeys.length) {
           setAnalyticsSectionStatus('analyticsEventStatusIcon', 'bad');
         } else {
-          var hasDuplicatePv = runtimeKeys.some(function (k) { return runtimeVendors[k].duplicate_page_view; });
+          var hasDuplicatePv = runtimeKeys.some(function (k) { return sk(runtimeVendors[k], 'duplicate_page_view'); });
           setAnalyticsSectionStatus('analyticsEventStatusIcon', hasDuplicatePv ? 'mid' : 'good');
         }
 
@@ -1719,11 +1773,11 @@
               runtimeKeys.map(function (k) {
                 var v = runtimeVendors[k];
                 return '<tr style="border-top:1px solid var(--border, #e5e7eb);">' +
-                  '<td style="padding:6px 10px;">' + U.escapeHtml(v.vendor_name || VENDOR_LABELS[k] || k) + '</td>' +
-                  '<td style="padding:6px 10px;">' + analyticsStatusBadge(v.custom_event_status) + '</td>' +
-                  '<td style="padding:6px 10px;">' + (v.duplicate_page_view ? '<span style="color: var(--danger, #dc2626);">Yes</span>' : 'No') + '</td>' +
-                  '<td style="padding:6px 10px;">' + (v.captured_request_count || 0) + '</td>' +
-                  '<td style="padding:6px 10px;">' + U.escapeHtml((v.event_names || []).join(', ') || '—') + '</td>' +
+                  '<td style="padding:6px 10px;">' + U.escapeHtml(sk(v, 'vendor_name') || VENDOR_LABELS[k] || k) + '</td>' +
+                  '<td style="padding:6px 10px;">' + analyticsStatusBadge(sk(v, 'custom_event_status')) + '</td>' +
+                  '<td style="padding:6px 10px;">' + (sk(v, 'duplicate_page_view') ? '<span style="color: var(--danger, #dc2626);">Yes</span>' : 'No') + '</td>' +
+                  '<td style="padding:6px 10px;">' + (sk(v, 'captured_request_count') || 0) + '</td>' +
+                  '<td style="padding:6px 10px;">' + U.escapeHtml((sk(v, 'event_names') || []).join(', ') || '—') + '</td>' +
                 '</tr>';
               }).join('') +
               '</tbody></table></div>';

@@ -211,14 +211,30 @@ def _tiktok_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedReq
     return CapturedRequest(url=url, phase="", vendor_key="tiktok", event_name="page_view", is_page_view=True)
 
 
+def _tagcommander_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedRequest]:
+    """TagCommander (Commanders Act) container: cdn.tagcommander.com/<site>/tc_<Name>_<n>.js
+    or a *.commander1.com host. Like GTM, its own signal is the container
+    loading; the tags it fires show up under their own vendors."""
+    p = urlparse(url)
+    host = (p.hostname or "").lower()
+    if not (host.endswith("tagcommander.com") or host.endswith("commander1.com")):
+        return None
+    if not p.path.endswith(".js"):
+        return None
+    m = re.search(r"tc_([A-Za-z0-9]+)_\d+\.js$", p.path)
+    return CapturedRequest(url=url, phase="", vendor_key="tagcommander", event_name="container_load",
+                           is_page_view=True, identifier=m.group(1) if m else None)
+
+
 _CLASSIFIERS = [
-    _ga4_classify, _gtm_classify, _gtag_classify, _adobe_classify, _piano_classify,
+    _ga4_classify, _gtm_classify, _gtag_classify, _tagcommander_classify, _adobe_classify, _piano_classify,
     _clarity_classify, _hotjar_classify, _meta_classify, _linkedin_classify, _tiktok_classify,
 ]
 
 VENDOR_LABELS = {
     "ga4": "Google Analytics 4",
     "gtm": "Google Tag Manager",
+    "tagcommander": "TagCommander",
     "adobe": "Adobe Analytics",
     "piano": "Piano Analytics",
     "clarity": "Microsoft Clarity",
@@ -282,6 +298,11 @@ class AnalyticsRuntimeResult:
     # Small JS-global evidence read from the rendered page (dataLayer,
     # tag-manager objects). Kept tiny: this whole dataclass is stored as JSON.
     page_globals: Dict[str, object] = field(default_factory=dict)
+    # Every analytics / advertising / tag-manager service seen loading in the
+    # live browser (any vendor in consent.network's catalog, not only the
+    # ones with a dedicated validator above). List of
+    # {vendor, category, requests, collection_requests, hosts, phases}.
+    observed_tags: List[dict] = field(default_factory=list)
 
 
 # Read after load. Only booleans/counts — never page content.
@@ -348,12 +369,33 @@ async def _run_analytics_runtime_once(url: str) -> AnalyticsRuntimeResult:
 
     captured: List[CapturedRequest] = []
     phase = {"current": "load"}
+    observed: Dict[str, dict] = {}
+    site_host = urlparse(url).hostname or ""
 
     def _on_request(request):
         match = _classify(request.url)
         if match is not None:
             match.phase = phase["current"]
             captured.append(match)
+        _observe(request)
+
+    def _observe(request):
+        try:
+            from consent.network import ADVERTISING, ANALYTICS, COLLECTION, TAG_MANAGER, classify_request
+            nr = classify_request(request.url, request.resource_type, site_host)
+        except Exception:  # noqa: BLE001 — evidence collection must never break the pass
+            return
+        if nr.category not in (ANALYTICS, ADVERTISING, TAG_MANAGER) or not nr.vendor:
+            return
+        o = observed.setdefault(nr.vendor, {"vendor": nr.vendor, "category": nr.category, "requests": 0,
+                                            "collection_requests": 0, "hosts": [], "phases": []})
+        o["requests"] += 1
+        if nr.activity == COLLECTION:
+            o["collection_requests"] += 1
+        if nr.domain and nr.domain not in o["hosts"] and len(o["hosts"]) < 4:
+            o["hosts"].append(nr.domain)
+        if phase["current"] not in o["phases"]:
+            o["phases"].append(phase["current"])
 
     # available only flips True once the page has actually loaded — Page
     # View, Scroll, and Click are all meaningless without a loaded page, so
@@ -438,6 +480,9 @@ async def _run_analytics_runtime_once(url: str) -> AnalyticsRuntimeResult:
     result.vendors = _build_vendor_results(
         captured, scroll_tested=result.scroll_tested, click_tested=result.click_tested,
     )
+    order = {"TAG_MANAGER": 0, "ANALYTICS": 1, "ADVERTISING": 2}
+    result.observed_tags = sorted(observed.values(),
+                                  key=lambda o: (order.get(o["category"], 9), -o["requests"]))[:40]
     return result
 
 
@@ -498,7 +543,7 @@ def _build_vendor_results(
         # "not applicable" rather than a misleading "failed" for this vendor.
         # Any tag GTM fires *inside* the container shows up under that tag's
         # own vendor key (e.g. ga4) instead.
-        if vendor_key == "gtm":
+        if vendor_key in ("gtm", "tagcommander"):
             scroll_status = NOT_APPLICABLE
             click_status = NOT_APPLICABLE
         else:

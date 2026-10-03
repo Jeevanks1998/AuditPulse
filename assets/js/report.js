@@ -1784,8 +1784,43 @@
         }
       }
 
+      // Every analytics / advertising / tag-manager service seen loading in
+      // the live browser check — not only the vendors with a dedicated
+      // validator (a TagCommander or Tealium container usually loads the
+      // real analytics tools, which the static scan can't see).
+      var observedTags = (analytics.runtimeResult && (analytics.runtimeResult.observedTags || analytics.runtimeResult.observed_tags)) || [];
+      if (vendorTable && observedTags.length) {
+        var CAT = { TAG_MANAGER: 'Tag manager', ANALYTICS: 'Analytics', ADVERTISING: 'Advertising' };
+        var PH = { load: 'page load', scroll: 'scroll', click: 'click' };
+        vendorTable.insertAdjacentHTML('beforeend',
+          '<p class="text-sm" style="margin:16px 0 6px; font-weight:600;">Vendors seen in the live browser check</p>' +
+          '<p class="text-sm" style="margin:0 0 8px; color: var(--text-tertiary);">Every analytics, advertising and tag-manager service that loaded or sent data while the page was opened (consent accepted), scrolled and clicked.</p>' +
+          '<div style="overflow-x:auto;"><table class="text-sm" style="width:100%; border-collapse:collapse;">' +
+            '<thead><tr style="text-align:left; color: var(--text-tertiary);">' +
+              '<th style="padding:6px 10px;">Vendor</th><th style="padding:6px 10px;">Type</th>' +
+              '<th style="padding:6px 10px;">Requests</th><th style="padding:6px 10px;">Data sent</th>' +
+              '<th style="padding:6px 10px;">Seen on</th><th style="padding:6px 10px;">Domain</th>' +
+            '</tr></thead><tbody>' +
+            observedTags.map(function (o) {
+              var sent = sk(o, 'collection_requests') || 0;
+              return '<tr style="border-top:1px solid var(--border, #e5e7eb);">' +
+                '<td style="padding:6px 10px; font-weight:600;">' + U.escapeHtml(o.vendor === 'Commanders Act' ? 'TagCommander (Commanders Act)' : o.vendor) + '</td>' +
+                '<td style="padding:6px 10px;">' + U.escapeHtml(CAT[o.category] || o.category || '') + '</td>' +
+                '<td style="padding:6px 10px;">' + (o.requests || 0) + '</td>' +
+                '<td style="padding:6px 10px;">' + (sent ? '<span style="color: var(--success, #16a34a);">Yes (' + sent + ')</span>' : '<span style="color: var(--text-tertiary);">Loaded only</span>') + '</td>' +
+                '<td style="padding:6px 10px;">' + U.escapeHtml((o.phases || []).map(function (p) { return PH[p] || p; }).join(', ')) + '</td>' +
+                '<td style="padding:6px 10px; color: var(--text-tertiary);">' + U.escapeHtml((o.hosts || []).join(', ')) + '</td>' +
+              '</tr>';
+            }).join('') +
+          '</tbody></table></div>');
+      }
+
       if (detail) {
-        var trackers = analytics.trackersDetected || [];
+        var trackers = (analytics.trackersDetected || []).slice();
+        observedTags.forEach(function (o) {
+          var name = o.vendor === 'Commanders Act' ? 'TagCommander' : o.vendor;
+          if (trackers.map(function (t) { return t.toLowerCase(); }).indexOf(name.toLowerCase()) === -1) trackers.push(name);
+        });
         detail.textContent = trackers.length
           ? 'Detected: ' + trackers.join(', ') + '.'
           : 'No analytics trackers detected on this page.';

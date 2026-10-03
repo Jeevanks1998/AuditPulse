@@ -273,7 +273,8 @@ def get_attachment_choices() -> dict:
 
 
 async def send_report_to_poc(
-    audit_id: int, request: EmailSendRequest, db: AsyncSession, user: User
+    audit_id: int, request: EmailSendRequest, db: AsyncSession, user: User,
+    body_intro: Optional[str] = None,
 ) -> EmailSendResult:
     """
     Sends the report to the requested recipients (§9.1) and records the
@@ -293,6 +294,12 @@ async def send_report_to_poc(
             save_pdf(audit_id, pdf_bytes)
 
     subject = request.subject or ""
+    if body_intro and not request.body:
+        # Scheduled delivery: the schedule's own note on top of the standard
+        # report summary, rather than replacing it.
+        request = request.model_copy(update={
+            "body": body_intro.strip() + "\n\n" + build_body(payload, poc_name="there")
+        })
     outcome = await send_report_email(
         payload=payload,
         audit_id=audit_id,

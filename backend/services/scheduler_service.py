@@ -75,6 +75,14 @@ class Schedule(Base):
     # module docstring) — the eventual Celery beat worker should check it.
     schedule_period: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=None)
 
+    # Email the report automatically after every run that completes:
+    # {"enabled": bool, "to": [...], "cc": [...], "attachments": [keys from
+    # emailer.attachments.ATTACHMENT_CHOICES], "subject": str|None,
+    # "message": str|None} plus the outcome of the latest delivery
+    # ("last_status", "last_sent_at", "last_error", "last_audit_id") —
+    # see services/scheduled_email.py.
+    email_delivery: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=None)
+
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     next_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -89,6 +97,25 @@ class Schedule(Base):
 def compute_next_run(frequency: str, from_time: Optional[datetime] = None) -> datetime:
     base = from_time or datetime.now(timezone.utc)
     return base + timedelta(days=FREQUENCY_DAYS.get(frequency, 7))
+
+
+_DELIVERY_STATE_KEYS = ("last_status", "last_sent_at", "last_error", "last_audit_id")
+
+
+def _delivery_config(delivery, previous: Optional[dict] = None) -> Optional[dict]:
+    """Normalise the modal's email settings for storage, keeping the last
+    delivery result from `previous` so editing recipients doesn't wipe
+    the "Last email" status shown in the table."""
+    if delivery is None:
+        return None
+    data = delivery.model_dump() if hasattr(delivery, "model_dump") else dict(delivery)
+    data["to"] = [str(a) for a in data.get("to") or []]
+    data["cc"] = [str(a) for a in data.get("cc") or []]
+    for key in _DELIVERY_STATE_KEYS:
+        data.pop(key, None)
+        if previous and previous.get(key) is not None:
+            data[key] = previous[key]
+    return data
 
 
 async def get_owned_schedule(schedule_id: int, db: AsyncSession, user: User) -> Schedule:
@@ -121,6 +148,7 @@ async def create_schedule(db: AsyncSession, user: User, payload) -> Schedule:
         modules=payload.modules,
         schedule=payload.schedule,
         schedule_period=payload.schedule_period,
+        email_delivery=_delivery_config(payload.email_delivery),
         next_run_at=compute_next_run(payload.frequency),
     )
     db.add(schedule)
@@ -141,6 +169,10 @@ async def create_schedule(db: AsyncSession, user: User, payload) -> Schedule:
 async def update_schedule(schedule_id: int, db: AsyncSession, user: User, payload) -> Schedule:
     schedule = await get_owned_schedule(schedule_id, db, user)
     updates = payload.model_dump(exclude_unset=True)
+    if "email_delivery" in updates:
+        updates["email_delivery"] = _delivery_config(
+            payload.email_delivery, previous=schedule.email_delivery
+        )
     for field, value in updates.items():
         setattr(schedule, field, value)
     if "frequency" in updates:
@@ -182,6 +214,7 @@ async def run_schedule_now(schedule_id: int, db: AsyncSession, user: User) -> Au
         DEFAULT_RUN_NOW_MAX_PAGES,
         schedule.modules,
     )
+    audit.schedule_id = schedule.id
     db.add(audit)
 
     schedule.last_run_at = datetime.now(timezone.utc)

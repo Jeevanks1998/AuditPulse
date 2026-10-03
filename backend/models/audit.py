@@ -51,6 +51,11 @@ class Audit(Base):
     # None = detect it from the site (consent/region.py). Set it for global
     # .com sites, where automatic detection usually can't tell.
     target_region: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    # The recurring schedule that fired this audit (None for one-off audits).
+    # When it completes, services.scheduled_email emails the report to the
+    # schedule's recipients. Plain integer, no FK: deleting a schedule must
+    # never touch audit history.
+    schedule_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
 
     status: Mapped[str] = mapped_column(String(20), default="queued")  # queued|running|completed|failed
     current_step: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)

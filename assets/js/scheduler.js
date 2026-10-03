@@ -78,7 +78,7 @@
     /* ------------------------------ data ------------------------------ */
 
     function load() {
-      tableBody.innerHTML = '<tr><td colspan="7" class="text-tertiary">Loading schedules…</td></tr>';
+      tableBody.innerHTML = '<tr><td colspan="8" class="text-tertiary">Loading schedules…</td></tr>';
       return window.Api.scheduler.list()
         .then(function (list) {
           allSchedules = list || [];
@@ -139,6 +139,7 @@
           '<td class="text-tertiary">' + U.escapeHtml(s.timeLabel || '—') + '</td>' +
           '<td class="text-tertiary">' + shortDate(s.nextRunAt) + '</td>' +
           '<td class="text-tertiary">' + shortDate(s.lastRunAt) + '</td>' +
+          '<td>' + emailCell(s.emailDelivery) + '</td>' +
           '<td>' + statusHtml + '</td>' +
           '<td>' +
             '<div class="action-menu">' +
@@ -162,6 +163,27 @@
           '</td>' +
         '</tr>'
       );
+    }
+
+    // "Email" column: who gets the report and how the last send went.
+    function emailCell(d) {
+      if (!d || !d.enabled || !(d.to && d.to.length)) return '<span class="text-tertiary">Off</span>';
+      var n = d.to.length + (d.cc ? d.cc.length : 0);
+      var who = d.to[0] + (n > 1 ? ' +' + (n - 1) : '');
+      var last = '';
+      if (d.lastStatus === 'sent') {
+        last = '<span class="sched-mail__last sched-mail__last--ok">Sent ' + shortDate(d.lastSentAt) + '</span>';
+      } else if (d.lastStatus === 'failed') {
+        last = '<span class="sched-mail__last sched-mail__last--bad" title="' + U.escapeHtml(d.lastError || 'Email could not be sent') + '">Last send failed</span>';
+      } else {
+        last = '<span class="sched-mail__last">After next run</span>';
+      }
+      return '<div class="sched-mail" title="' + U.escapeHtml(d.to.concat(d.cc || []).join(', ')) + '">' +
+        '<span class="sched-mail__who">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>' +
+          U.escapeHtml(who) +
+        '</span>' + last +
+      '</div>';
     }
 
     function shortDate(iso) {
@@ -274,7 +296,16 @@
       var isEdit = !!existing;
 
       // Sensible defaults, or carry over an existing schedule's config if present.
-      var cfg = (existing && existing.config) || {};
+      var cfg = {};
+      if (existing) {
+        var rec = existing.schedule || existing.config || {};
+        var per = existing.schedulePeriod || {};
+        Object.keys(rec).forEach(function (k) { cfg[k] = rec[k]; });
+        if (per.startDate) cfg.startDate = per.startDate;
+        if (per.endDate) cfg.endDate = per.endDate;
+        if (per.neverExpires !== undefined && per.neverExpires !== null) cfg.neverExpires = per.neverExpires;
+      }
+      var mail = (existing && existing.emailDelivery) || {};
       var state = {
         frequency: (existing && existing.frequency) || 'Weekly',
         time: cfg.time || '09:00 AM',
@@ -287,7 +318,13 @@
         startDate: cfg.startDate || todayIso(),
         endDate: cfg.endDate || isoPlusYear(cfg.startDate || todayIso()),
         neverExpires: cfg.neverExpires !== undefined ? cfg.neverExpires : true,
-        modules: (existing && existing.modules && existing.modules.length) ? existing.modules : MODULES.map(function (m) { return m.id; })
+        modules: (existing && existing.modules && existing.modules.length) ? existing.modules : MODULES.map(function (m) { return m.id; }),
+        mailEnabled: !!mail.enabled,
+        mailTo: (mail.to || []).slice(),
+        mailCc: (mail.cc || []).slice(),
+        mailAttachments: (mail.attachments && mail.attachments.length) ? mail.attachments.slice() : ['pdf'],
+        mailSubject: mail.subject || '',
+        mailMessage: mail.message || ''
       };
       if (FREQUENCIES.indexOf(state.frequency) === -1) state.frequency = 'Weekly';
 
@@ -334,6 +371,42 @@
                     m.label +
                   '</label>';
                 }).join('') +
+              '</div>' +
+            '</div>' +
+
+            '<div class="sched-email' + (state.mailEnabled ? ' is-on' : '') + '">' +
+              '<label class="sched-email__head">' +
+                '<span class="sched-email__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg></span>' +
+                '<span class="sched-email__text">' +
+                  '<span class="sched-email__title">Email the report after each run</span>' +
+                  '<span class="sched-email__hint">When a scheduled audit finishes, AuditPulse sends the reports you pick to these people automatically.</span>' +
+                '</span>' +
+                '<span class="toggle"><input type="checkbox" id="scheduleMailEnabled"' + (state.mailEnabled ? ' checked' : '') + '><span class="toggle__track"></span></span>' +
+              '</label>' +
+              '<div class="sched-email__body">' +
+                '<div class="form-field">' +
+                  '<label for="scheduleMailToInput">Send to</label>' +
+                  '<div class="email-chips" data-chips="to"><input type="email" id="scheduleMailToInput" placeholder="name@company.com — press Enter to add" autocomplete="off"></div>' +
+                  '<div class="field__error" data-chips-error="to"></div>' +
+                '</div>' +
+                '<div class="form-field">' +
+                  '<label for="scheduleMailCcInput">CC <span class="text-tertiary" style="font-weight:400;">(optional)</span></label>' +
+                  '<div class="email-chips" data-chips="cc"><input type="email" id="scheduleMailCcInput" placeholder="Add CC email" autocomplete="off"></div>' +
+                  '<div class="field__error" data-chips-error="cc"></div>' +
+                '</div>' +
+                '<div class="form-field">' +
+                  '<label>Reports to send</label>' +
+                  '<div class="report-pick" data-report-pick><span class="text-tertiary">Loading report types…</span></div>' +
+                  '<div class="field__error" data-report-pick-error></div>' +
+                '</div>' +
+                '<div class="form-field">' +
+                  '<label for="scheduleMailSubject">Subject <span class="text-tertiary" style="font-weight:400;">(optional)</span></label>' +
+                  '<input type="text" id="scheduleMailSubject" maxlength="200" placeholder="AuditPulse | Website Audit Report – site | date" value="' + U.escapeHtml(state.mailSubject) + '">' +
+                '</div>' +
+                '<div class="form-field">' +
+                  '<label for="scheduleMailMessage">Note to recipients <span class="text-tertiary" style="font-weight:400;">(optional)</span></label>' +
+                  '<textarea id="scheduleMailMessage" rows="3" maxlength="5000" placeholder="Shown above the standard report summary in the email.">' + U.escapeHtml(state.mailMessage) + '</textarea>' +
+                '</div>' +
               '</div>' +
             '</div>' +
 
@@ -513,6 +586,79 @@
         if (endInput.disabled) endInput.classList.remove('is-invalid');
       });
 
+      /* ---- email delivery ---- */
+      var mailBox = overlay.querySelector('.sched-email');
+      var mailToggle = overlay.querySelector('#scheduleMailEnabled');
+      mailToggle.addEventListener('change', function () {
+        state.mailEnabled = mailToggle.checked;
+        mailBox.classList.toggle('is-on', state.mailEnabled);
+        if (state.mailEnabled && !state.mailTo.length) {
+          setTimeout(function () { overlay.querySelector('#scheduleMailToInput').focus(); }, 50);
+        }
+      });
+
+      function setupChips(kind, list) {
+        var box = overlay.querySelector('[data-chips="' + kind + '"]');
+        var input = box.querySelector('input');
+        var err = overlay.querySelector('[data-chips-error="' + kind + '"]');
+        function showError(msg) { err.textContent = msg || ''; err.classList.toggle('is-visible', !!msg); }
+        function draw() {
+          U.qsa('.email-chip', box).forEach(function (c) { c.parentNode.removeChild(c); });
+          list.forEach(function (addr, i) {
+            var chip = document.createElement('span');
+            chip.className = 'email-chip';
+            chip.innerHTML = '<span>' + U.escapeHtml(addr) + '</span>' +
+              '<button type="button" aria-label="Remove ' + U.escapeHtml(addr) + '" data-i="' + i + '">&times;</button>';
+            box.insertBefore(chip, input);
+          });
+        }
+        function commit() {
+          var parts = input.value.split(/[\s,;]+/).map(function (p) { return p.trim(); }).filter(Boolean);
+          if (!parts.length) return true;
+          var bad = [];
+          parts.forEach(function (p) {
+            if (!V.isValidEmail(p)) { bad.push(p); return; }
+            if (list.map(function (x) { return x.toLowerCase(); }).indexOf(p.toLowerCase()) === -1) list.push(p);
+          });
+          input.value = bad.join(', ');
+          showError(bad.length ? 'Not a valid email: ' + bad.join(', ') : '');
+          draw();
+          return !bad.length;
+        }
+        input.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ',' || e.key === ';') { e.preventDefault(); commit(); }
+          else if (e.key === 'Backspace' && !input.value && list.length) { list.pop(); draw(); }
+        });
+        input.addEventListener('blur', commit);
+        input.addEventListener('paste', function () { setTimeout(commit, 0); });
+        box.addEventListener('click', function (e) {
+          var rm = e.target.closest('button[data-i]');
+          if (rm) { list.splice(Number(rm.getAttribute('data-i')), 1); draw(); return; }
+          input.focus();
+        });
+        draw();
+        return { commit: commit, showError: showError };
+      }
+      var toChips = setupChips('to', state.mailTo);
+      var ccChips = setupChips('cc', state.mailCc);
+
+      var pickHost = overlay.querySelector('[data-report-pick]');
+      var FALLBACK_CHOICES = {
+        pdf: 'Audit Report PDF', consent_screenshots: 'Consent screenshots', analytics_runtime: 'Analytics runtime evidence',
+        cookie_evidence: 'Cookie evidence', network_evidence: 'Network evidence', evidence_zip: 'Complete ZIP evidence package'
+      };
+      function drawReportPick(choices) {
+        pickHost.innerHTML = Object.keys(choices).map(function (key) {
+          return '<label class="report-pick__opt">' +
+            '<input type="checkbox" name="scheduleMailReport" value="' + U.escapeHtml(key) + '"' + (state.mailAttachments.indexOf(key) !== -1 ? ' checked' : '') + '>' +
+            '<span>' + U.escapeHtml(choices[key]) + '</span></label>';
+        }).join('');
+      }
+      var choicesReq = (window.Api.reports && window.Api.reports.getAttachmentChoices)
+        ? window.Api.reports.getAttachmentChoices() : Promise.reject();
+      choicesReq.then(function (c) { drawReportPick(c && Object.keys(c).length ? c : FALLBACK_CHOICES); })
+        .catch(function () { drawReportPick(FALLBACK_CHOICES); });
+
       startInput.addEventListener('change', function () { state.startDate = startInput.value; });
       endInput.addEventListener('change', function () { state.endDate = endInput.value; });
 
@@ -541,6 +687,34 @@
         }
         endInput.classList.remove('is-invalid');
 
+        var toOk = toChips.commit();
+        var ccOk = ccChips.commit();
+        var reportKeys = Array.prototype.map.call(
+          overlay.querySelectorAll('input[name="scheduleMailReport"]:checked'), function (el) { return el.value; });
+        var pickErr = overlay.querySelector('[data-report-pick-error]');
+        pickErr.classList.remove('is-visible');
+        if (state.mailEnabled) {
+          if (!toOk || !ccOk) return;
+          if (!state.mailTo.length) {
+            toChips.showError('Add at least one email address, or switch off “Email the report”.');
+            overlay.querySelector('#scheduleMailToInput').focus();
+            return;
+          }
+          if (pickHost.querySelector('input') && !reportKeys.length) {
+            pickErr.textContent = 'Pick at least one report to send.';
+            pickErr.classList.add('is-visible');
+            return;
+          }
+        }
+        var emailDelivery = {
+          enabled: state.mailEnabled,
+          to: state.mailTo.slice(),
+          cc: state.mailCc.slice(),
+          attachments: reportKeys.length ? reportKeys : state.mailAttachments,
+          subject: overlay.querySelector('#scheduleMailSubject').value.trim() || null,
+          message: overlay.querySelector('#scheduleMailMessage').value.trim() || null
+        };
+
         var depthInput = overlay.querySelector('input[name="scheduleDepth"]:checked');
         var moduleInputs = overlay.querySelectorAll('input[name="scheduleModule"]:checked');
         var modules = Array.prototype.map.call(moduleInputs, function (el) { return el.value; });
@@ -566,18 +740,24 @@
             startDate: startInput.value,
             endDate: state.neverExpires ? null : endInput.value,
             neverExpires: state.neverExpires
-          }
+          },
+          emailDelivery: emailDelivery
         };
 
         var request = isEdit
           ? window.Api.scheduler.update(existing.id, {
               frequency: config.frequency, timeLabel: config.timeLabel, depth: config.depth, modules: config.modules,
-              schedule: config.schedule, schedulePeriod: config.schedulePeriod
+              schedule: config.schedule, schedulePeriod: config.schedulePeriod,
+              emailDelivery: config.emailDelivery
             })
           : window.Api.scheduler.create(config);
 
         request.then(function () {
-          window.Notifications.success(isEdit ? 'Schedule updated' : 'Schedule created', U.hostnameOf(config.url));
+          var host = U.hostnameOf(config.url || (existing && existing.url) || '');
+          window.Notifications.success(isEdit ? 'Schedule updated' : 'Schedule created',
+            emailDelivery.enabled
+              ? host + ' — the report will be emailed to ' + emailDelivery.to.length + (emailDelivery.to.length === 1 ? ' person' : ' people') + ' after each run.'
+              : host);
           close();
           load();
         }).catch(function (err) {

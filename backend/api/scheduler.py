@@ -16,13 +16,14 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import User
 from config.database import get_db
 from config.permissions import require_module
 from schemas.audit import AuditOut
+from emailer.attachments import ATTACHMENT_CHOICES
 from services import audit_service, scheduler_service
 
 router = APIRouter()
@@ -37,6 +38,48 @@ router = APIRouter()
 # --------------------------------------------------------------------------
 # Schemas
 # --------------------------------------------------------------------------
+class ScheduleEmailDelivery(BaseModel):
+    """Who gets the report after every completed run, and what's attached.
+
+    `attachments` are keys of emailer.attachments.ATTACHMENT_CHOICES (the
+    same checkboxes as the report's "Send to POC" dialog)."""
+
+    enabled: bool = False
+    to: List[EmailStr] = Field(default_factory=list, max_length=25)
+    cc: List[EmailStr] = Field(default_factory=list, max_length=25)
+    attachments: List[str] = Field(default_factory=lambda: ["pdf"])
+    subject: Optional[str] = Field(default=None, max_length=200)
+    message: Optional[str] = Field(default=None, max_length=5000)
+
+    @field_validator("attachments")
+    @classmethod
+    def _known_attachments(cls, v: List[str]) -> List[str]:
+        unknown = [k for k in v if k not in ATTACHMENT_CHOICES]
+        if unknown:
+            raise ValueError(f"Unknown report type(s): {', '.join(unknown)}")
+        return list(dict.fromkeys(v)) or ["pdf"]
+
+    @field_validator("to")
+    @classmethod
+    def _recipients_when_enabled(cls, v, info):
+        if info.data.get("enabled") and not v:
+            raise ValueError("Add at least one recipient email, or turn off email delivery.")
+        return v
+
+
+class ScheduleEmailDeliveryOut(BaseModel):
+    enabled: bool = False
+    to: List[str] = Field(default_factory=list)
+    cc: List[str] = Field(default_factory=list)
+    attachments: List[str] = Field(default_factory=list)
+    subject: Optional[str] = None
+    message: Optional[str] = None
+    last_status: Optional[str] = None  # "sent" | "failed"
+    last_sent_at: Optional[str] = None
+    last_error: Optional[str] = None
+    last_audit_id: Optional[int] = None
+
+
 class ScheduleCreate(BaseModel):
     url: str
     frequency: str = Field(default="Weekly", pattern="^(Daily|Weekly|Monthly|Yearly)$")
@@ -48,6 +91,7 @@ class ScheduleCreate(BaseModel):
     # Both are free-form dicts — see scheduler_service.Schedule for why.
     schedule: Optional[dict] = None
     schedule_period: Optional[dict] = None
+    email_delivery: Optional[ScheduleEmailDelivery] = None
 
 
 class ScheduleUpdate(BaseModel):
@@ -58,6 +102,7 @@ class ScheduleUpdate(BaseModel):
     is_active: Optional[bool] = None
     schedule: Optional[dict] = None
     schedule_period: Optional[dict] = None
+    email_delivery: Optional[ScheduleEmailDelivery] = None
 
 
 class ScheduleOut(BaseModel):
@@ -69,6 +114,7 @@ class ScheduleOut(BaseModel):
     modules: List[str]
     schedule: Optional[dict] = None
     schedule_period: Optional[dict] = None
+    email_delivery: Optional[ScheduleEmailDeliveryOut] = None
     is_active: bool
     last_run_at: Optional[datetime] = None
     next_run_at: Optional[datetime] = None

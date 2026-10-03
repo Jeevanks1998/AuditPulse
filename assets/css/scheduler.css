@@ -141,3 +141,46 @@
 
 .schedule-empty { text-align: center; padding: var(--sp-8) 0; color: var(--text-tertiary); }
 .schedule-empty p { margin-bottom: var(--sp-3); }
+
+/* ---- Email the report after each run (schedule modal) ---- */
+.schedule-modal .modal-dialog { max-width: 540px; }
+.sched-email { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out); }
+.sched-email.is-on { border-color: color-mix(in srgb, var(--color-primary) 40%, var(--border)); background: color-mix(in srgb, var(--color-primary) 3%, var(--surface)); }
+.sched-email__head { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; cursor: pointer; }
+.sched-email__icon { width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; background: var(--color-primary-soft); color: var(--color-primary); }
+.sched-email__icon svg { width: 17px; height: 17px; }
+.sched-email__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sched-email__title { font-weight: 700; font-size: var(--fs-sm); color: var(--text-primary); }
+.sched-email__hint { font-size: var(--fs-xs); color: var(--text-tertiary); line-height: 1.45; }
+.sched-email__head .toggle { margin-top: 6px; }
+.sched-email__body { display: none; padding: 0 16px 16px; border-top: 1px solid var(--border); }
+.sched-email.is-on .sched-email__body { display: flex; flex-direction: column; gap: var(--sp-4); padding-top: var(--sp-4); }
+.sched-email textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 10px; font: inherit; font-size: var(--fs-sm); resize: vertical; background: var(--surface); color: var(--text-primary); outline: none; }
+.sched-email textarea:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-soft); }
+
+.email-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; min-height: 44px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); cursor: text; }
+.email-chips:focus-within { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-soft); }
+.form-field .email-chips input { flex: 1; width: auto; min-width: 180px; border: none !important; box-shadow: none !important; padding: 4px 2px; background: transparent; outline: none; font-size: var(--fs-sm); }
+.email-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 3px 4px 3px 10px; border-radius: 999px; background: var(--color-primary-soft); color: var(--color-primary); font-size: var(--fs-xs); font-weight: 600; }
+.email-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.email-chip button { width: 18px; height: 18px; border: none; border-radius: 50%; background: transparent; color: inherit; font-size: 14px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.email-chip button:hover { background: color-mix(in srgb, var(--color-primary) 18%, transparent); }
+
+.report-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.report-pick__opt { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 10px; font-size: var(--fs-sm); cursor: pointer; background: var(--surface); }
+.report-pick__opt:hover { border-color: var(--border-strong); }
+.report-pick__opt:has(input:checked) { border-color: var(--color-primary); background: var(--color-primary-soft); }
+.form-field .report-pick__opt input { width: 16px; height: 16px; padding: 0; flex-shrink: 0; accent-color: var(--color-primary); box-shadow: none; }
+
+/* Email column in the schedules table */
+.sched-mail { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sched-mail__who { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: 600; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sched-mail__who svg { width: 14px; height: 14px; flex-shrink: 0; color: var(--color-primary); }
+.sched-mail__last { font-size: var(--fs-xs); color: var(--text-tertiary); }
+.sched-mail__last--ok { color: var(--color-success-text, #027A48); }
+.sched-mail__last--bad { color: var(--color-error-text, #B42318); cursor: help; }
+
+@media (max-width: 560px) {
+  .report-pick { grid-template-columns: 1fr; }
+  .form-field .email-chips input { min-width: 120px; }
+}

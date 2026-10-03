@@ -374,6 +374,12 @@ async def run_audit_pipeline(audit_id: int) -> None:
                 await db.rollback()
                 logger.exception(f"Audit {audit_id}: could not mark as completed")
 
+            # Scheduled audit with email delivery on: send the chosen reports
+            # to the schedule's recipients. Best-effort, never fails the audit.
+            from services.scheduled_email import deliver_scheduled_report
+
+            await deliver_scheduled_report(audit_id)
+
         except Exception as exc:  # noqa: BLE001 — persist failure, don't crash the worker
             logger.exception(f"Audit {audit_id} failed: {exc}")
 

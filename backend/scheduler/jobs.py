@@ -61,6 +61,7 @@ async def _check_due_schedules_async() -> dict:
                 DEFAULT_RUN_NOW_MAX_PAGES,
                 schedule.modules,
             )
+            audit.schedule_id = schedule.id
             db.add(audit)
             await db.flush()
 

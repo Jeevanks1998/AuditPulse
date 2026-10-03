@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="assets/css/animations.css">
 <link rel="stylesheet" href="assets/css/settings.css">
 <link rel="stylesheet" href="assets/css/responsive.css">
+<link rel="stylesheet" href="assets/css/theme.css">
 </head>
 <body>
 
@@ -125,7 +126,7 @@
 
           <section class="settings-section card card__pad" id="profile">
             <div class="settings-section__head">
-              <h3>Profile</h3>
+              <h3 data-icon="user" data-icon-tone="primary">Profile</h3>
               <p class="text-tertiary">How you appear in AuditPulse and on emailed reports.</p>
             </div>
             <div class="form-grid">
@@ -146,7 +147,7 @@
 
           <section class="settings-section card card__pad" id="ai">
             <div class="settings-section__head">
-              <h3>AI Provider</h3>
+              <h3 data-icon="sparkles" data-icon-tone="consent">AI Provider</h3>
               <p class="text-tertiary">Powers executive summaries, priorities, business impact and action plans.</p>
             </div>
             <div class="form-field">
@@ -160,7 +161,7 @@
 
           <section class="settings-section card card__pad" id="notifications">
             <div class="settings-section__head">
-              <h3>Notifications</h3>
+              <h3 data-icon="bell" data-icon-tone="warning">Notifications</h3>
               <p class="text-tertiary">Choose which emails AuditPulse sends you.</p>
             </div>
             <div class="settings-toggle-row">
@@ -188,7 +189,7 @@
 
           <section class="settings-section card card__pad" id="appearance">
             <div class="settings-section__head">
-              <h3>Appearance</h3>
+              <h3 data-icon="palette" data-icon-tone="analytics">Appearance</h3>
               <p class="text-tertiary">Theme and language.</p>
             </div>
             <div class="form-field" style="margin-bottom: var(--sp-5);">
@@ -216,7 +217,7 @@
 
           <section class="settings-section card card__pad" id="schedule">
             <div class="settings-section__head">
-              <h3>Default Schedule</h3>
+              <h3 data-icon="clock" data-icon-tone="journey">Default Schedule</h3>
               <p class="text-tertiary">Pre-filled whenever you set up a recurring audit.</p>
             </div>
             <div class="form-grid">
@@ -238,7 +239,7 @@
 
           <section class="settings-section card card__pad" id="api">
             <div class="settings-section__head">
-              <h3>API Access</h3>
+              <h3 data-icon="key" data-icon-tone="neutral">API Access</h3>
               <p class="text-tertiary">Use this key to call the AuditPulse API. Treat it like a password.</p>
             </div>
             <div class="api-key-row">
@@ -256,7 +257,7 @@
 
           <section class="settings-section card card__pad" id="data">
             <div class="settings-section__head">
-              <h3>Your Data</h3>
+              <h3 data-icon="download" data-icon-tone="success">Your Data</h3>
               <p class="text-tertiary">Download your settings and every audit as a JSON file.</p>
             </div>
             <button type="button" class="btn btn--secondary" id="settingsExportBtn">Export data (JSON)</button>
@@ -282,6 +283,7 @@
 <script src="assets/js/api.js"></script>
 <script src="assets/js/authguard.js"></script>
 <script src="assets/js/permissions.js"></script>
+<script src="assets/js/icons.js"></script>
 <script src="assets/js/app.js"></script>
 <script src="assets/js/settings.js"></script>
 

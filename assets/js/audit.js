@@ -153,19 +153,42 @@
       if (progressSection) progressSection.style.display = '';
       if (checkList) checkList.style.display = '';
       if (taskEta) taskEta.style.display = '';
-      if (progressHeading) progressHeading.textContent = 'Analyzing ' + U.hostnameOf(config.url);
+      if (progressHeading) progressHeading.textContent = 'Auditing ' + U.hostnameOf(config.url);
+      var hostEl = document.getElementById('progressHost');
+      if (hostEl) hostEl.textContent = U.hostnameOf(config.url);
       if (progressStatusText) progressStatusText.textContent = 'Starting…';
       resetChecklist();
+      // Only show steps for the modules this audit actually runs.
+      var STEP_MODULE = { checkConsent: 'consent', checkAnalytics: 'analytics', checkJourney: 'journey' };
+      Object.keys(STEP_MODULE).forEach(function (id) {
+        var row = document.getElementById(id);
+        if (row) row.classList.toggle('is-skipped', (config.modules || []).indexOf(STEP_MODULE[id]) === -1);
+      });
+      document.body.style.overflow = 'hidden';
 
       var startedAt = Date.now();
+      var elapsedEl = document.getElementById('runElapsed');
+      var elapsedTimer = setInterval(function () {
+        var s = Math.floor((Date.now() - startedAt) / 1000);
+        if (elapsedEl) elapsedEl.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+      }, 1000);
+      function stopRunUi(hide) {
+        clearInterval(elapsedTimer);
+        if (hide) {
+          if (progressSection) progressSection.style.display = 'none';
+          document.body.style.overflow = '';
+        }
+      }
 
       window.Api.audits.run(config, function (progress) {
         updateProgressUi(progress, config);
       }).then(function (report) {
-        if (progressStatusText) progressStatusText.textContent = 'Audit complete — redirecting to report…';
+        stopRunUi(false);
+        if (progressStatusText) progressStatusText.textContent = 'Audit complete — opening the report…';
         window.Notifications.success('Audit complete', U.hostnameOf(config.url) + ' scored ' + report.overall + '/100.');
         setTimeout(function () { window.location.href = 'report.html?id=' + encodeURIComponent(report.id); }, 900);
       }).catch(function (err) {
+        stopRunUi(true);
         window.Loader.setButtonLoading(startBtn, false);
         window.Notifications.error('Audit failed', err.message || 'Something went wrong while auditing this site.');
       });
@@ -212,6 +235,15 @@
 
       U.setRingProgress(progressRingCircle, shownPercent);
       if (progressPercentLabel) progressPercentLabel.textContent = shownPercent;
+      // Steps before the current one have finished: tick them off (the API
+      // only reports the step that is running now).
+      var ids = CFG.AUDIT_STEPS.map(function (s) { return s.id; });
+      var at = ids.indexOf(progress.stepId);
+      ids.forEach(function (id, i) {
+        var row = document.getElementById(id);
+        if (!row || row.classList.contains('check-item--pass')) return;
+        if (isComplete || (at !== -1 && i < at)) setStepState(id, 'pass', 'done');
+      });
       setStepState(progress.stepId, progress.status, progress.elapsedLabel);
 
       var stepMeta = CFG.AUDIT_STEPS.filter(function (s) { return s.id === progress.stepId; })[0];

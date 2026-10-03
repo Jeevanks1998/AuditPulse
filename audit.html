@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="assets/css/animations.css">
 <link rel="stylesheet" href="assets/css/audit.css">
 <link rel="stylesheet" href="assets/css/responsive.css">
+<link rel="stylesheet" href="assets/css/theme.css">
 <style>
   .url-input-wrap.is-invalid { border-color: var(--color-error) !important; box-shadow: 0 0 0 3px var(--color-error-soft) !important; }
   .url-error { font-size: 12px; color: var(--color-error); margin-top: 6px; display:none; }
@@ -125,7 +126,7 @@
         <!-- Left: form -->
         <div>
           <div class="card card__pad" style="margin-bottom: var(--sp-5);">
-            <div class="card__head"><h3>Website URL</h3></div>
+            <div class="card__head"><h3 data-icon="globe" data-icon-tone="primary">Website URL</h3></div>
             <div class="url-input-wrap">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20Z"/></svg>
               <input type="url" id="auditUrlInput" placeholder="https://example.com">
@@ -134,7 +135,7 @@
           </div>
 
           <div class="card card__pad" style="margin-bottom: var(--sp-5);">
-            <div class="card__head"><h3>Analyze Depth</h3></div>
+            <div class="card__head"><h3 data-icon="layers" data-icon-tone="primary">Analyze Depth</h3></div>
             <div class="depth-select">
               <label class="depth-option">
                 <input type="radio" name="depth" id="depthHomepage" value="homepage" checked>
@@ -170,7 +171,7 @@
 
           <div class="card card__pad">
             <div class="card__head">
-              <h3>Audit Modules</h3>
+              <h3 data-icon="grid" data-icon-tone="primary">Audit Modules</h3>
               <span class="badge badge--neutral" id="moduleCountBadge">6 enabled</span>
             </div>
             <div class="module-list" id="moduleList">
@@ -221,7 +222,7 @@
         <!-- Right: summary + live preview -->
         <div>
           <div class="card card__pad summary-card">
-            <div class="card__head"><h3>Audit Summary</h3></div>
+            <div class="card__head"><h3 data-icon="clipboard" data-icon-tone="success">Audit Summary</h3></div>
             <div class="summary-list">
               <div class="summary-list__row"><span>Target</span><span class="mono" id="summaryTarget">example.com</span></div>
               <div class="summary-list__row"><span>Depth</span><span id="summaryDepth">Homepage</span></div>
@@ -236,49 +237,78 @@
 
             <hr class="divider">
 
-            <div class="progress-hero scan-line" id="progressSection" style="display:none;">
-              <div class="vring vring--md" data-band="mid" id="progressRing">
-                <svg width="96" height="96" viewBox="0 0 96 96">
-                  <circle class="vring__track" cx="48" cy="48" r="38" stroke-width="8"/>
-                  <circle class="vring__value" id="progressRingCircle" cx="48" cy="48" r="38" stroke-width="8" stroke-dasharray="239" stroke-dashoffset="239"/>
-                </svg>
-                <div class="vring__label"><span id="progressPercentLabel">0</span><small>%</small></div>
-              </div>
-              <h3 id="progressHeading">Analyzing example.com</h3>
-              <p><span class="live-dot" style="display:inline-block; margin-right:6px;"></span><span id="progressStatusText">Starting…</span></p>
-            </div>
+            <!-- ============ AUDIT IN PROGRESS ============
+                 Full-screen panel shown while the audit runs. audit.js drives
+                 the same ids as before (ring, heading, status, step rows, ETA). -->
+            <div class="run-overlay" id="progressSection" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="progressHeading">
+              <div class="run-panel">
+                <div class="run-stage">
+                  <div class="run-browser" aria-hidden="true">
+                    <div class="run-browser__bar"><i></i><i></i><i></i><span class="run-browser__url" id="progressHost">example.com</span></div>
+                    <div class="run-browser__page">
+                      <div class="run-skel">
+                        <div class="run-skel__col"><span class="lg"></span><span></span><span class="w80"></span><span class="w60"></span><span class="btn"></span></div>
+                        <div class="run-skel__img"></div>
+                      </div>
+                      <div class="run-beam"></div>
+                      <svg class="run-pulse" viewBox="0 0 600 56" preserveAspectRatio="none"><path d="M0 34 H170 L188 34 L200 10 L214 50 L228 4 L242 42 L254 34 H380 L392 34 L402 20 L412 40 L420 34 H600"/></svg>
+                    </div>
+                  </div>
+                  <div class="run-ring">
+                    <div class="vring vring--md" data-band="mid" id="progressRing">
+                      <svg width="84" height="84" viewBox="0 0 96 96">
+                        <circle class="vring__track" cx="48" cy="48" r="38" stroke-width="8"/>
+                        <circle class="vring__value" id="progressRingCircle" cx="48" cy="48" r="38" stroke-width="8" stroke-dasharray="239" stroke-dashoffset="239"/>
+                      </svg>
+                      <div class="vring__label"><span id="progressPercentLabel">0</span><small>%</small></div>
+                    </div>
+                  </div>
+                </div>
 
-            <div class="check-list" id="checkList" style="display:none;">
-              <div class="check-item check-item--pending" id="checkCrawl">
-                <span class="check-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg></span>
-                <span class="check-item__label">Crawling website</span>
-                <span class="check-item__time" id="checkCrawlTime">pending</span>
-              </div>
-              <div class="check-item check-item--pending" id="checkConsent">
-                <span class="check-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg></span>
-                <span class="check-item__label">Cookie consent</span>
-                <span class="check-item__time" id="checkConsentTime">pending</span>
-              </div>
-              <div class="check-item check-item--pending" id="checkAnalytics">
-                <span class="check-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg></span>
-                <span class="check-item__label">Analytics</span>
-                <span class="check-item__time" id="checkAnalyticsTime">pending</span>
-              </div>
-              <div class="check-item check-item--pending" id="checkJourney">
-                <span class="check-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg></span>
-                <span class="check-item__label">Customer journey</span>
-                <span class="check-item__time" id="checkJourneyTime">pending</span>
-              </div>
-              <div class="check-item check-item--pending" id="checkReport">
-                <span class="check-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg></span>
-                <span class="check-item__label">Generating report</span>
-                <span class="check-item__time" id="checkReportTime">pending</span>
-              </div>
-            </div>
+                <div class="run-head">
+                  <h3 id="progressHeading">Auditing example.com</h3>
+                  <p class="run-status"><span class="live-dot"></span><span id="progressStatusText">Starting…</span></p>
+                </div>
 
-            <div class="task-eta" id="taskEta" style="display:none;">
-              <span class="task-eta__label">Estimated time left</span>
-              <span class="task-eta__value" id="etaValue">2 min</span>
+                <ol class="run-steps check-list" id="checkList" aria-label="Audit steps">
+                  <li class="check-item check-item--pending" id="checkCrawl" data-step="crawl">
+                    <span class="run-step__glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></span>
+                    <span class="check-item__label">Open the website<small>Fetch the page and follow its links</small></span>
+                    <span class="check-item__time" id="checkCrawlTime">pending</span>
+                    <span class="check-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg></span>
+                  </li>
+                  <li class="check-item check-item--pending" id="checkConsent" data-step="consent">
+                    <span class="run-step__glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></span>
+                    <span class="check-item__label">Cookie consent<small>Banner, buttons and what loads before consent</small></span>
+                    <span class="check-item__time" id="checkConsentTime">pending</span>
+                    <span class="check-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg></span>
+                  </li>
+                  <li class="check-item check-item--pending" id="checkAnalytics" data-step="analytics">
+                    <span class="run-step__glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 15 4-6 4 3 5-8"/></svg></span>
+                    <span class="check-item__label">Analytics<small>Tags, data layer and live page-view checks</small></span>
+                    <span class="check-item__time" id="checkAnalyticsTime">pending</span>
+                    <span class="check-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg></span>
+                  </li>
+                  <li class="check-item check-item--pending" id="checkJourney" data-step="journey">
+                    <span class="run-step__glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg></span>
+                    <span class="check-item__label">Customer journey<small>Click through CTAs, forms and downloads</small></span>
+                    <span class="check-item__time" id="checkJourneyTime">pending</span>
+                    <span class="check-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg></span>
+                  </li>
+                  <li class="check-item check-item--pending" id="checkReport" data-step="report">
+                    <span class="run-step__glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg></span>
+                    <span class="check-item__label">Build the report<small>Score, findings and fixes</small></span>
+                    <span class="check-item__time" id="checkReportTime">pending</span>
+                    <span class="check-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg></span>
+                  </li>
+                </ol>
+
+                <div class="run-foot task-eta" id="taskEta" style="display:none;">
+                  <span>Elapsed <b id="runElapsed">0:00</b></span>
+                  <span><span class="task-eta__label">About </span><span class="task-eta__value" id="etaValue">—</span><span class="task-eta__label"> left</span></span>
+                </div>
+                <p class="run-note">You can leave this page. The audit keeps running on the server and appears in History when it finishes.</p>
+              </div>
             </div>
           </div>
         </div>
@@ -298,6 +328,7 @@
 <script src="assets/js/api.js"></script>
 <script src="assets/js/authguard.js"></script>
 <script src="assets/js/permissions.js"></script>
+<script src="assets/js/icons.js"></script>
 <script src="assets/js/app.js"></script>
 <script src="assets/js/audit.js"></script>
 

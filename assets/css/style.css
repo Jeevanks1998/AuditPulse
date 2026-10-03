@@ -2,7 +2,7 @@
    Global base + shared components
    ========================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap');
+/* Fonts are loaded once, by theme.css (Source Sans 3 + JetBrains Mono for code). */
 
 *, *::before, *::after { box-sizing: border-box; }
 

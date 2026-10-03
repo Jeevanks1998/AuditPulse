@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="assets/css/ANALYTICS_CONSENT_PHASE5.css">
 <link rel="stylesheet" href="assets/css/journey.css">
 <link rel="stylesheet" href="assets/css/responsive.css">
+<link rel="stylesheet" href="assets/css/theme.css">
 </head>
 <body>
 
@@ -182,7 +183,7 @@
       <section class="card rp-issues animate-in" id="issues" aria-labelledby="issuesTitle">
         <div class="rp-issues__head">
           <div>
-            <h2 class="rp-h2" id="issuesTitle">Issues to fix</h2>
+            <h2 data-icon="alert" data-icon-tone="warning" class="rp-h2" id="issuesTitle">Issues to fix</h2>
             <p class="rp-muted" id="issuesSubhead">Loading…</p>
           </div>
           <div class="rp-issues__tools">
@@ -201,7 +202,7 @@
       <!-- ============ MODULE DETAILS ============ -->
       <section class="module-section animate-in" id="details">
         <div class="rp-details-head">
-          <h2 class="rp-h2">Module details</h2>
+          <h2 data-icon="layers" data-icon-tone="primary" class="rp-h2">Module details</h2>
           <div class="rp-tabs" id="moduleTabs" role="tablist" aria-label="Module details">
             <button class="rp-tab" type="button" role="tab" data-tab="consent" aria-selected="false">Consent <span class="rp-tab__score" id="tabScore-consent">–</span></button>
             <button class="rp-tab" type="button" role="tab" data-tab="analytics" aria-selected="false">Analytics <span class="rp-tab__score" id="tabScore-analytics">–</span></button>
@@ -452,7 +453,7 @@
       <div class="card card__pad animate-in email-reports" id="email-reports">
         <div class="card__head">
           <div>
-            <h3>Email Reports</h3>
+            <h3 data-icon="mail" data-icon-tone="primary">Email Reports</h3>
             <p class="text-sm text-tertiary" style="margin:4px 0 0;">Send this report and its evidence to the client POC, and review what has already gone out.</p>
           </div>
           <button class="btn btn--primary" type="button" id="emailComposeBtn">
@@ -505,6 +506,7 @@
      toggle, mobile sidebar). Every other authenticated page loads this;
      it was missing here, which is why Logout and the profile chip did
      nothing on this page. -->
+<script src="assets/js/icons.js"></script>
 <script src="assets/js/app.js"></script>
 <!-- Defines window.EmailComposer, which report.js's Email Reports card and
      email-reports.html both open. Must load before report.js. -->

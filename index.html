@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="assets/css/login.css">
 <link rel="stylesheet" href="assets/css/dashboard.css">
 <link rel="stylesheet" href="assets/css/responsive.css">
+<link rel="stylesheet" href="assets/css/theme.css">
 <style>
   /* ---------------------------------------------------------------------
      Home page only. Enterprise-internal styling: navy + blue, restrained
@@ -144,7 +145,7 @@
   .home-capabilities__head h2 { font-size: var(--fs-2xl); letter-spacing: -0.01em; max-width: 480px; }
   .home-capabilities__head p { font-size: var(--fs-base); color: var(--text-secondary); line-height: 1.6; max-width: 340px; text-align: right; }
 
-  .home-capabilities__grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--sp-4); }
+  .home-capabilities__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-4); }
   .home-cap-card {
     border: 1px solid var(--border); border-radius: var(--radius-md);
     background: var(--surface); padding: var(--sp-5); box-shadow: var(--shadow-sm);
@@ -293,13 +294,8 @@
 
           <div class="home-preview__stats">
             <div class="home-preview__stat">
-              <div class="home-preview__stat-label">Journey</div>
-              <div class="home-preview__stat-value">88</div>
-              <div class="home-preview__stat-status">● Good</div>
-            </div>
-            <div class="home-preview__stat">
-              <div class="home-preview__stat-label">Accessibility</div>
-              <div class="home-preview__stat-value">91</div>
+              <div class="home-preview__stat-label">Consent</div>
+              <div class="home-preview__stat-value">96</div>
               <div class="home-preview__stat-status">● Good</div>
             </div>
             <div class="home-preview__stat">
@@ -308,9 +304,14 @@
               <div class="home-preview__stat-status">● Good</div>
             </div>
             <div class="home-preview__stat">
-              <div class="home-preview__stat-label">Security</div>
-              <div class="home-preview__stat-value">90</div>
+              <div class="home-preview__stat-label">Journey</div>
+              <div class="home-preview__stat-value">88</div>
               <div class="home-preview__stat-status">● Good</div>
+            </div>
+            <div class="home-preview__stat">
+              <div class="home-preview__stat-label">Issues</div>
+              <div class="home-preview__stat-value">3</div>
+              <div class="home-preview__stat-status">● To fix</div>
             </div>
           </div>
 
@@ -322,53 +323,45 @@
       </div>
     </div>
 
-    <div class="home-tagline"><span></span>Better websites<br>Stronger teams</div>
   </section>
 
   <section class="home-capabilities" id="capabilities">
     <div class="home-capabilities__head">
       <div>
         <div class="home-capabilities__eyebrow">Core Audit Capabilities</div>
-        <h2>One platform. Multiple digital health signals.</h2>
+        <h2>Three checks that tell you if your tracking can be trusted.</h2>
       </div>
-      <p>Comprehensive insights to help your team maintain high-performing and compliant websites.</p>
+      <p>Every audit opens the site in a real browser, so results reflect what visitors and their browsers actually do.</p>
     </div>
 
     <div class="home-capabilities__grid">
       <div class="home-cap-card">
-        <div class="home-cap-card__icon" style="background: var(--color-primary-soft);">
-          <svg viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>
+        <div class="home-cap-card__icon" style="background: var(--mod-consent-soft);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--mod-consent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
         </div>
-        <h3>Customer Journey</h3>
-        <p>Map how visitors move through the site and test that key interactions work and are tracked.</p>
+        <h3>Cookie consent</h3>
+        <p>Checks the banner, its buttons and what loads before and after a visitor chooses — against GDPR, CCPA or DPDP.</p>
       </div>
       <div class="home-cap-card">
-        <div class="home-cap-card__icon" style="background: var(--color-success-soft);">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#067A55" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="4" r="2"/><path d="M19 7 12 9 5 7M12 9v5M8 21l4-7 4 7M8 14l-3 2M16 14l3 2"/></svg>
-        </div>
-        <h3>Accessibility</h3>
-        <p>Identify accessibility barriers and compliance concerns.</p>
-      </div>
-      <div class="home-cap-card">
-        <div class="home-cap-card__icon" style="background: #EDE9FE;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#7C3AED" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="12" width="4" height="8" rx="1"/><rect x="10" y="7" width="4" height="13" rx="1"/><rect x="16" y="3" width="4" height="17" rx="1"/></svg>
+        <div class="home-cap-card__icon" style="background: var(--mod-analytics-soft);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--mod-analytics)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 15 4-6 4 3 5-8"/></svg>
         </div>
         <h3>Analytics</h3>
-        <p>Validate tracking implementation and data flow.</p>
+        <p>Finds every analytics and tag-manager vendor and confirms page views, scrolls and clicks really send data.</p>
       </div>
       <div class="home-cap-card">
-        <div class="home-cap-card__icon" style="background: #FFEDD5;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#C2410C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>
+        <div class="home-cap-card__icon" style="background: var(--mod-journey-soft);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--mod-journey)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>
         </div>
-        <h3>Consent</h3>
-        <p>Review consent configuration and implementation.</p>
+        <h3>Customer journey</h3>
+        <p>Clicks through CTAs, forms and downloads like a visitor and flags anything broken or not tracked.</p>
       </div>
       <div class="home-cap-card">
-        <div class="home-cap-card__icon" style="background: var(--color-error-soft);">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#B91C1C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V6l-8-4Z"/></svg>
+        <div class="home-cap-card__icon" style="background: var(--mod-report-soft);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--mod-report)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>
         </div>
-        <h3>Security</h3>
-        <p>Check essential security controls and headers.</p>
+        <h3>Reports & evidence</h3>
+        <p>One list of issues to fix, with screenshots, a PDF and an email to the client in a click.</p>
       </div>
     </div>
   </section>

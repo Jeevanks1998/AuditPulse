@@ -53,8 +53,8 @@
   --sidebar-hover: rgba(255, 255, 255, 0.06);
 
   /* ---- Typography ---- */
-  --font-display: 'Sora', 'Segoe UI', sans-serif;
-  --font-body: 'Inter', 'Segoe UI', sans-serif;
+  --font-display: 'Source Sans 3', 'Source Sans Pro', 'Segoe UI', sans-serif;
+  --font-body: 'Source Sans 3', 'Source Sans Pro', 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
 
   --fs-2xs: 0.6875rem;

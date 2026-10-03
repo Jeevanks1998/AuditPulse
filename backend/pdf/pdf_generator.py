@@ -2,20 +2,20 @@
 pdf/pdf_generator.py
 
 The single entry point for this package: turns a
-reports.generator.ReportPayload into a complete PDF, as raw bytes, by
-assembling the flowables from every other module in this package in a
-fixed order — cover -> executive summary/top priorities -> score charts
--> page preview -> business impact/action plan -> full findings
-appendix. This is the piece services.report_service.export_report_pdf's
-docstring calls out as still missing; report_service is expected to call
-`generate_pdf_report` and cache the resulting bytes the same way it
-already caches JSON/HTML (reports/report_storage.py).
+reports.generator.ReportPayload into a complete PDF (bytes).
 
-Each section module already degrades gracefully on missing input (no
-executive summary, no action plan, no screenshot, etc. all just render
-nothing) — this module doesn't re-check any of that, it only supplies
-the page chrome (margins, running header/footer, page numbers) that no
-individual section owns.
+Layout (v6), written for someone who has never seen the tool:
+
+  1. Cover            — site, date, overall score, module scores,
+                        how many issues to fix now / soon, summary
+  2. Start here       — the top 5 things to fix, what was checked,
+                        how to read the labels
+  3. Consent, Analytics, Customer Journey — the evidence per module
+  4. Appendix         — full lists of affected places, pages, scan IDs
+
+The raw findings are grouped by pdf.issues; nothing here re-derives
+scores. Screenshots are re-encoded as small JPEGs (pdf.components
+.load_image) so a report stays a few MB instead of 15+.
 """
 
 from __future__ import annotations
@@ -26,175 +26,108 @@ from typing import List, Optional
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen.canvas import Canvas
-from reportlab.platypus import (
-    BaseDocTemplate,
-    Flowable,
-    Frame,
-    NextPageTemplate,
-    PageBreak,
-    PageTemplate,
-    Paragraph,
-    Spacer,
-    Table,
-    TableStyle,
-)
+from reportlab.platypus import BaseDocTemplate, CondPageBreak, Flowable, Frame, NextPageTemplate, PageBreak, PageTemplate
 
 from pdf.appendix import build_appendix_flowables
-from pdf.charts import build_charts_flowables, build_severity_distribution_flowables
-from pdf.cover import build_cover_flowables
-from pdf.evidence import build_evidence_flowables
-from pdf.recommendations import build_recommendations_flowables
-from pdf.screenshots import build_screenshot_flowables
-from pdf.summary import build_critical_findings_flowables, build_summary_flowables
-from pdf.theme import BORDER, PAGE_MARGIN_MM, PDF_LAYOUT_VERSION, STYLES, esc
+from pdf.components import hostname
+from pdf.cover import BAND_HEIGHT, build_cover_flowables, draw_cover_band, draw_cover_footer
+from pdf.issues import group_findings
+from pdf.modules import build_analytics_section, build_consent_section, build_journey_section
+from pdf.overview import TOP_N, build_overview_flowables
+from pdf.theme import BORDER, FONT_BODY, FONT_SEMIBOLD, PAGE_MARGIN_MM, PDF_LAYOUT_VERSION, TEXT_PRIMARY, TEXT_TERTIARY
 from reports.generator import ReportPayload
 
-_COVER_TEMPLATE = "cover"
-_CONTENT_TEMPLATE = "content"
+_COVER = "cover"
+_CONTENT = "content"
+# Section order follows the module order on the web report.
+_MODULE_SECTIONS = (("consent", build_consent_section),
+                    ("analytics", build_analytics_section),
+                    ("journey", build_journey_section))
 
 
 def generate_pdf_report(payload: ReportPayload, screenshot_path: Optional[str] = None) -> bytes:
     """Renders `payload` to a complete PDF and returns it as bytes.
 
-    `screenshot_path` is optional and best-effort — see pdf/screenshots.py;
-    pass whatever path the caller already has (or None) and this function
-    handles the rest, it never raises over a missing/unreadable image.
-    """
+    `screenshot_path` is accepted for backwards compatibility and ignored:
+    the redesigned report shows the consent/journey evidence screenshots
+    instead of a separate homepage preview."""
     buffer = BytesIO()
-    doc = _build_doc_template(buffer, payload)
+    doc = _doc(buffer, payload)
 
-    # cover.py's flowables always end in a PageBreak (its contract, see its
-    # docstring) — NextPageTemplate has to land *before* that break, since a
-    # PageBreak starts its new page with whatever template is already
-    # queued at the moment it's processed, not one set immediately after.
-    cover_flowables = build_cover_flowables(payload)
-    story = []
-    story.extend(cover_flowables[:-1])
-    story.append(NextPageTemplate(_CONTENT_TEMPLATE))
-    story.append(cover_flowables[-1])
+    scores = {c.module: int(c.score) for c in payload.score_grid}
+    issues = group_findings(payload.findings or [], scores)
 
-    # Phase 2 (Professional Content Structure): the section list now follows
-    # the target report structure's order (docx §2) — Executive Summary is
-    # followed by its own Score & Module Scores, Severity Distribution
-    # and Critical Findings sections rather than one undifferentiated
-    # "Score Breakdown" block, so each gets its own Table of Contents entry.
-    sections = [
-        ("Executive Summary", build_summary_flowables(payload)),
-        ("Overall Score & Module Scores", build_charts_flowables(payload)),
-        ("Finding Severity Distribution", build_severity_distribution_flowables(payload)),
-        ("Critical Findings", build_critical_findings_flowables(payload)),
-        ("Page Preview", build_screenshot_flowables(screenshot_path, payload.url)),
-        ("Business Impact & Action Plan", build_recommendations_flowables(payload)),
-        ("Analytics & Consent Evidence", build_evidence_flowables(payload)),
-        ("Appendix: All Findings", build_appendix_flowables(payload)),
-    ]
+    appendix = build_appendix_flowables(payload, issues[:TOP_N], shown_items=0)
+    story: List[Flowable] = []
+    cover = build_cover_flowables(payload, issues, has_appendix=bool(appendix))
+    story += cover[:-1]
+    story.append(NextPageTemplate(_CONTENT))
+    story.append(cover[-1])
 
-    # A generated section index (§3.2) built from whichever of the above
-    # sections actually rendered flowables for this payload — never a
-    # static list, and never page numbers, since ReportLab paginates the
-    # tables/screenshots below dynamically and a hard-coded number would
-    # drift out of sync immediately (§3.2 / §9).
-    present_titles = [title for title, flowables in sections if flowables]
-    story.extend(_build_toc_flowables(present_titles))
+    story += build_overview_flowables(payload, issues)
 
-    for _title, flowables in sections:
-        story.extend(flowables)
+    for _module, builder in _MODULE_SECTIONS:
+        section = builder(payload)
+        if section:
+            story.append(PageBreak())
+            story += section
 
+    story += appendix
     doc.build(story)
     return buffer.getvalue()
 
 
-def _build_toc_flowables(section_titles: List[str]) -> List[Flowable]:
-    """A simple generated Table of Contents page: one numbered row per
-    section that actually appears later in `story`, no page numbers."""
-    if not section_titles:
-        return []
-
-    rows = [
-        [Paragraph(f"{index}.", STYLES["TOCNumber"]), Paragraph(esc(title), STYLES["TOCEntry"])]
-        for index, title in enumerate(section_titles, start=1)
-    ]
-    table = Table(rows, colWidths=[10 * mm, 150 * mm])
-    table.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-        ("LINEBELOW", (0, 0), (-1, -2), 0.4, BORDER),
-    ]))
-
-    return [
-        Paragraph("Table of Contents", STYLES["H1"]),
-        Spacer(1, 6),
-        table,
-        PageBreak(),
-    ]
-
-
-def _build_doc_template(buffer: BytesIO, payload: ReportPayload) -> BaseDocTemplate:
+def _doc(buffer: BytesIO, payload: ReportPayload) -> BaseDocTemplate:
     margin = PAGE_MARGIN_MM * mm
     width, height = A4
-
     doc = BaseDocTemplate(
-        buffer,
-        pagesize=A4,
-        leftMargin=margin,
-        rightMargin=margin,
-        topMargin=margin,
-        bottomMargin=margin,
-        title=f"Website Audit Report - {payload.url}",
+        buffer, pagesize=A4,
+        leftMargin=margin, rightMargin=margin, topMargin=margin, bottomMargin=margin,
+        title=f"Website audit report — {hostname(payload.url)}",
         author="AuditPulse",
         subject=f"AuditPulse PDF layout v{PDF_LAYOUT_VERSION}",
     )
+    cover_frame = Frame(margin, 16 * mm, width - 2 * margin, height - BAND_HEIGHT - 8 * mm - 16 * mm,
+                        id="cover", leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
+    content_frame = Frame(margin, margin, width - 2 * margin, height - 2 * margin - 8 * mm,
+                          id="content", leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
 
-    full_frame = Frame(margin, margin, width - 2 * margin, height - 2 * margin, id="full")
-    content_frame = Frame(
-        margin, margin, width - 2 * margin, height - 2 * margin - 10 * mm, id="content"
-    )
+    def on_cover(canvas: Canvas, _doc) -> None:
+        draw_cover_band(canvas, payload)
+        draw_cover_footer(canvas)
 
-    doc.addPageTemplates(
-        [
-            PageTemplate(id=_COVER_TEMPLATE, frames=[full_frame], onPage=_draw_cover_chrome),
-            PageTemplate(id=_CONTENT_TEMPLATE, frames=[content_frame], onPage=_draw_content_chrome),
-        ]
-    )
-    doc._auditpulse_url = payload.url  # noqa: SLF001 — cheapest way to reach the header from onPage
+    def on_content(canvas: Canvas, _doc) -> None:
+        _content_chrome(canvas, payload)
+
+    doc.addPageTemplates([
+        PageTemplate(id=_COVER, frames=[cover_frame], onPage=on_cover),
+        PageTemplate(id=_CONTENT, frames=[content_frame], onPage=on_content),
+    ])
     return doc
 
 
-def _draw_cover_chrome(canvas: Canvas, doc: BaseDocTemplate) -> None:
-    # The cover page is deliberately chrome-free (no header/footer/page
-    # number) — pdf/cover.py's content already fills the page.
-    pass
-
-
-def _draw_content_chrome(canvas: Canvas, doc: BaseDocTemplate) -> None:
+def _content_chrome(canvas: Canvas, payload: ReportPayload) -> None:
     width, height = A4
     margin = PAGE_MARGIN_MM * mm
-
     canvas.saveState()
+    y = height - margin + 1 * mm
+    canvas.setFont(FONT_SEMIBOLD, 8)
+    canvas.setFillColor(TEXT_PRIMARY)
+    canvas.drawString(margin, y, "AuditPulse")
+    canvas.setFont(FONT_BODY, 8)
+    canvas.setFillColor(TEXT_TERTIARY)
+    canvas.drawString(margin + canvas.stringWidth("AuditPulse", FONT_SEMIBOLD, 8) + 2 * mm, y, "Website audit report")
+    canvas.drawRightString(width - margin, y, hostname(payload.url))
     canvas.setStrokeColor(BORDER)
     canvas.setLineWidth(0.5)
+    canvas.line(margin, y - 2.5 * mm, width - margin, y - 2.5 * mm)
 
-    header_y = height - margin + 4 * mm
-    canvas.line(margin, header_y - 2, width - margin, header_y - 2)
-    canvas.setFont("Helvetica-Bold", 8)
-    canvas.setFillColor(STYLES["H2"].textColor)
-    canvas.drawString(margin, header_y, "AuditPulse")
-    canvas.setFont("Helvetica", 8)
-    canvas.setFillColor(STYLES["BodyMuted"].textColor)
-    canvas.drawRightString(width - margin, header_y, _truncate(getattr(doc, "_auditpulse_url", ""), 70))
-
-    footer_y = margin - 6 * mm
-    canvas.line(margin, footer_y + 8, width - margin, footer_y + 8)
-    canvas.setFont("Helvetica", 7.5)
-    canvas.setFillColor(STYLES["FooterText"].textColor)
-    canvas.drawString(margin, footer_y, "Generated by AuditPulse")
-    canvas.setFont("Helvetica-Bold", 7.5)
-    canvas.drawCentredString(width / 2, footer_y, "Designed by Jeevan K S")
-    canvas.setFont("Helvetica", 7.5)
-    canvas.drawRightString(width - margin, footer_y, f"Page {canvas.getPageNumber()}")
+    fy = 9 * mm
+    canvas.line(margin, fy + 4 * mm, width - margin, fy + 4 * mm)
+    canvas.setFont(FONT_BODY, 7.5)
+    canvas.drawString(margin, fy, "Generated by AuditPulse")
+    canvas.setFont(FONT_SEMIBOLD, 7.5)
+    canvas.drawCentredString(width / 2, fy, "Designed by Jeevan K S")
+    canvas.setFont(FONT_BODY, 7.5)
+    canvas.drawRightString(width - margin, fy, f"Page {canvas.getPageNumber()}")
     canvas.restoreState()
-
-
-def _truncate(text: str, limit: int) -> str:
-    return text if len(text) <= limit else text[: limit - 1] + "\u2026"

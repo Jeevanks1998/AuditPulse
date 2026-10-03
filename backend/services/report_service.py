@@ -235,9 +235,11 @@ async def _resolve_screenshot_path(audit: Audit) -> Optional[str]:
     (missing browser binary, navigation timeout, etc.) rather than
     raising, so a bad capture never blocks the PDF.
     """
-    if not settings.CRAWLER_ENABLE_SCREENSHOTS:
-        return None
-    return await capture_screenshot(audit.url, filename_hint=f"audit-{audit.id}")
+    # PDF layout v6 no longer has a separate homepage "Page Preview" (it
+    # shows the consent/journey evidence screenshots instead), so don't
+    # launch a browser just to capture one — that cost ~10 s and a few
+    # hundred MB of memory per PDF.
+    return None
 
 
 # --------------------------------------------------------------------------

@@ -4,14 +4,14 @@ pdf/
 Binary PDF export for a completed audit's report, split by concern the
 same way reports/ is:
 
-  cover.py           - title page (URL, overall score ring, generated date)
-  summary.py         - executive summary + top-priorities highlights
-  charts.py          - score breakdown as a radar chart + bar chart
-  screenshots.py     - embeds the captured homepage screenshot, if any
-  recommendations.py - business impact + action plan (quick/short/long term)
-  appendix.py         - full findings table
-  pdf_generator.py   - assembles all of the above into one PDF (public entry point)
-  theme.py           - shared colors/fonts/paragraph styles used across this package
+  cover.py         - page 1: header band, overall + module scores, issue counts, summary
+  overview.py      - page 2 "Start here": top 5 to fix, what was checked, label key
+  issues.py        - groups raw findings into distinct issues (repeats counted once)
+  modules.py       - Consent / Analytics / Customer Journey evidence sections
+  appendix.py      - full affected-place lists, pages scanned, scan IDs
+  components.py    - shared building blocks (pills, rings, bars, tables, images)
+  theme.py         - palette, Source Sans 3 fonts, paragraph styles
+  pdf_generator.py - assembles all of the above (public entry point)
 
 Built on reportlab (vector drawing + Platypus flowables) rather than an
 HTML-to-PDF renderer — no browser engine, no extra system dependency

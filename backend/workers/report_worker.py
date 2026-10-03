@@ -68,6 +68,7 @@ async def _warm_report_cache_async(audit_id: int) -> dict:
             breakdown=audit.breakdown or {},
             findings=audit.findings or [],
             share_url=None,
+            **(await _module_data(audit_id, db)),
         )
 
     save_json(audit_id, to_json_report(payload))
@@ -98,8 +99,6 @@ def generate_report_pdf_task(self, audit_id: int) -> dict:
 
 
 async def _generate_report_pdf_async(audit_id: int) -> Optional[str]:
-    from crawler.screenshots import capture_screenshot
-    from config.settings import settings
     from models.audit import Audit
     from pdf.pdf_generator import generate_pdf_report
     from reports import build_report_payload
@@ -119,11 +118,22 @@ async def _generate_report_pdf_async(audit_id: int) -> Optional[str]:
             breakdown=audit.breakdown or {},
             findings=audit.findings or [],
             share_url=None,
+            **(await _module_data(audit_id, db)),
         )
 
-        screenshot_path = None
-        if settings.CRAWLER_ENABLE_SCREENSHOTS:
-            screenshot_path = await capture_screenshot(audit.url, filename_hint=f"audit-{audit.id}")
-
-    pdf_bytes = generate_pdf_report(payload, screenshot_path=screenshot_path)
+    pdf_bytes = generate_pdf_report(payload)
     return save_pdf(audit_id, pdf_bytes)
+
+
+async def _module_data(audit_id: int, db) -> dict:
+    """Consent / Analytics / Journey results for the payload — the same
+    helpers the request path (services.report_service) uses, so a
+    pre-warmed cached export is identical to one built on demand instead
+    of a thinner copy without the module sections."""
+    from services.report_service import _get_analytics_dict, _get_consent_dict, _get_journey_dict
+
+    return {
+        "consent": await _get_consent_dict(audit_id, db),
+        "analytics": await _get_analytics_dict(audit_id, db),
+        "journey": await _get_journey_dict(audit_id, db),
+    }

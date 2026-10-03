@@ -1,108 +1,119 @@
 """
 pdf/theme.py
 
-Shared visual constants for the whole pdf/ package — brand colors, fonts,
-and a set of reusable ParagraphStyles — so cover.py, summary.py,
-charts.py, screenshots.py, recommendations.py, and appendix.py all draw
-from one palette instead of redefining hex codes independently (the same
-problem reports/html_report.py solves for the HTML export with its one
-`_CSS` block).
+Shared visual constants for the pdf/ package: the AuditPulse UI palette
+(assets/css/theme.css), the Source Sans 3 type family (embedded from
+pdf/assets/fonts, SIL Open Font License — see OFL.txt there), and the
+ParagraphStyles every section uses.
 
-Colors are copied from assets/css/variables.css's design tokens (kept in
-sync by hand, since this package has no CSS to read from — reportlab
-draws its own glyphs/shapes, it doesn't run a browser). `Sora`/`Inter`
-(the frontend's --font-display/--font-body) aren't available to reportlab
-without embedding TTFs, so Helvetica/Helvetica-Bold stand in for both
-everywhere in this package; `--font-mono` maps to Courier for the same
-reason.
+If the font files can't be registered for any reason the package falls
+back to Helvetica, so a font problem never breaks report generation.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from xml.sax.saxutils import escape as _xml_escape
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.lib.styles import ParagraphStyle
 
-# Bumped whenever the section order, page templates, or any structural
-# layout piece in this package changes — reports/report_storage.py folds
-# this into the on-disk PDF cache key so a layout change invalidates old
-# cached PDFs instead of quietly continuing to serve them (§11 "Cache" /
-# the PDF validation checklist's "not accidentally served from an
-# outdated cache").
-# v3 (Phase 2 - Professional Content Structure): new Severity Distribution
-# and Critical Findings sections were inserted into the section order, and
-# the Score Breakdown / Business Impact / Action Plan / Appendix tables all
-# changed shape (Finding ID columns, grouped rows, metric cards) — see
-# pdf/charts.py, pdf/summary.py, pdf/recommendations.py, pdf/appendix.py.
-PDF_LAYOUT_VERSION = 5
+# Bumped whenever the layout changes — reports/report_storage.py folds it
+# into the PDF cache key so old cached PDFs are never served after a
+# redesign.
+# v6: full redesign — cover with module scores, "Start here" top fixes,
+# per-module sections with consent + journey screenshots, compact
+# appendix, compressed images.
+# v7: no separate "Issues to fix" section; more journey screenshots.
+PDF_LAYOUT_VERSION = 7
 
 # --------------------------------------------------------------------------
-# Brand palette (assets/css/variables.css)
+# Fonts
 # --------------------------------------------------------------------------
-PRIMARY = colors.HexColor("#2563EB")
-PRIMARY_SOFT = colors.HexColor("#DBEAFE")
-SUCCESS = colors.HexColor("#10B981")
-SUCCESS_SOFT = colors.HexColor("#D1FAE5")
-WARNING = colors.HexColor("#F59E0B")
-WARNING_SOFT = colors.HexColor("#FEF3C7")
-ERROR = colors.HexColor("#EF4444")
-ERROR_SOFT = colors.HexColor("#FEE2E2")
+_FONT_DIR = Path(__file__).resolve().parent / "assets" / "fonts"
 
-TEXT_PRIMARY = colors.HexColor("#0F172A")
-TEXT_SECONDARY = colors.HexColor("#64748B")
-TEXT_TERTIARY = colors.HexColor("#94A3B8")
-BORDER = colors.HexColor("#E2E8F0")
-SURFACE_SUNKEN = colors.HexColor("#F8FAFC")
+
+def _register_fonts() -> tuple:
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+
+        pdfmetrics.registerFont(TTFont("SourceSans3", str(_FONT_DIR / "SourceSans3-Regular.ttf")))
+        pdfmetrics.registerFont(TTFont("SourceSans3-SemiBold", str(_FONT_DIR / "SourceSans3-SemiBold.ttf")))
+        pdfmetrics.registerFont(TTFont("SourceSans3-Bold", str(_FONT_DIR / "SourceSans3-Bold.ttf")))
+        pdfmetrics.registerFontFamily(
+            "SourceSans3", normal="SourceSans3", bold="SourceSans3-Bold",
+            italic="SourceSans3", boldItalic="SourceSans3-Bold",
+        )
+        return "SourceSans3", "SourceSans3-SemiBold", "SourceSans3-Bold"
+    except Exception:  # noqa: BLE001 — never let a font problem break the PDF
+        return "Helvetica", "Helvetica-Bold", "Helvetica-Bold"
+
+
+FONT_BODY, FONT_SEMIBOLD, FONT_BOLD = _register_fonts()
+FONT_DISPLAY = FONT_BOLD
+FONT_BODY_BOLD = FONT_BOLD
+FONT_MONO = "Courier"
+
+# --------------------------------------------------------------------------
+# Palette (assets/css/theme.css)
+# --------------------------------------------------------------------------
+INK = colors.HexColor("#101828")
+PRIMARY = colors.HexColor("#4F46E5")
+PRIMARY_DARK = colors.HexColor("#3730A3")
+PRIMARY_SOFT = colors.HexColor("#EEF2FF")
+
+SUCCESS = colors.HexColor("#12B76A")
+SUCCESS_SOFT = colors.HexColor("#ECFDF3")
+SUCCESS_TEXT = colors.HexColor("#027A48")
+WARNING = colors.HexColor("#F79009")
+WARNING_SOFT = colors.HexColor("#FFFAEB")
+WARNING_TEXT = colors.HexColor("#B54708")
+ERROR = colors.HexColor("#F04438")
+ERROR_SOFT = colors.HexColor("#FEF3F2")
+ERROR_TEXT = colors.HexColor("#B42318")
+INFO = colors.HexColor("#2E90FA")
+INFO_SOFT = colors.HexColor("#EFF8FF")
+INFO_TEXT = colors.HexColor("#175CD3")
+
+TEXT_PRIMARY = INK
+TEXT_SECONDARY = colors.HexColor("#475467")
+TEXT_TERTIARY = colors.HexColor("#667085")
+BORDER = colors.HexColor("#EAECF0")
+BORDER_STRONG = colors.HexColor("#D0D5DD")
+SURFACE_SUNKEN = colors.HexColor("#F9FAFB")
+CANVAS = colors.HexColor("#F6F7FB")
 WHITE = colors.white
 
-SEVERITY_COLORS = {"critical": ERROR, "warning": WARNING, "info": PRIMARY}
-SEVERITY_SOFT_COLORS = {"critical": ERROR_SOFT, "warning": WARNING_SOFT, "info": PRIMARY_SOFT}
+# One colour per audit module — same as the web app's --mod-* tokens.
+MODULE_COLORS = {
+    "consent": (colors.HexColor("#7C3AED"), colors.HexColor("#F4EBFF")),
+    "analytics": (colors.HexColor("#2563EB"), colors.HexColor("#EAF2FF")),
+    "journey": (colors.HexColor("#0D9488"), colors.HexColor("#E6F6F4")),
+}
+MODULE_LABELS = {"consent": "Consent", "analytics": "Analytics", "journey": "Customer Journey"}
 
-# Same good/mid/low banding as config.constants.SCORE_BANDS on the frontend.
+
+def module_color(module: str):
+    return MODULE_COLORS.get(module, (PRIMARY, PRIMARY_SOFT))
+
+
+# Severity: colour + plain-language meaning used everywhere in the report.
+SEVERITY_META = {
+    "critical": {"label": "Critical", "action": "Fix now", "fg": ERROR, "bg": ERROR_SOFT, "text": ERROR_TEXT},
+    "warning": {"label": "Warning", "action": "Fix soon", "fg": WARNING, "bg": WARNING_SOFT, "text": WARNING_TEXT},
+    "info": {"label": "Info", "action": "Good to know", "fg": INFO, "bg": INFO_SOFT, "text": INFO_TEXT},
+}
+SEVERITY_COLORS = {k: v["fg"] for k, v in SEVERITY_META.items()}
+SEVERITY_SOFT_COLORS = {k: v["bg"] for k, v in SEVERITY_META.items()}
+
 SCORE_BAND_GOOD = 80
 SCORE_BAND_MID = 50
-
-
-def score_color(score: int) -> colors.Color:
-    """Bands a 0-100 score into the same good/mid/low colors as the frontend's score chips."""
-    if score >= SCORE_BAND_GOOD:
-        return SUCCESS
-    if score >= SCORE_BAND_MID:
-        return WARNING
-    return ERROR
-
-
-def severity_color(severity: str) -> colors.Color:
-    return SEVERITY_COLORS.get(severity, PRIMARY)
-
-
-def severity_soft_color(severity: str) -> colors.Color:
-    return SEVERITY_SOFT_COLORS.get(severity, PRIMARY_SOFT)
-
-
-# Shared PASS/FAIL/NOT TESTED/N/A vocabulary (§3.10/§3.9's four explicit
-# states) — the one place every section that renders a runtime/consent
-# status label reads its wording from, so pdf/evidence.py and any other
-# module never drift into different phrasing for the same state.
-STATUS_LABELS = {
-    "passed": "PASS",
-    "failed": "FAIL",
-    "not_tested": "NOT TESTED",
-    "not_applicable": "N/A",
-}
-STATUS_COLORS = {"passed": SUCCESS, "failed": ERROR, "not_tested": TEXT_TERTIARY, "not_applicable": TEXT_TERTIARY}
-
-# good/mid/bad -> the same wording assets/js/dashboard.js's healthBadgeLabel
-# already shows on the dashboard, so the PDF's "Overall Status" never
-# invents a label the rest of the app doesn't use (§3.3).
-SCORE_BAND_LABELS = {"good": "Healthy", "mid": "Needs Attention", "bad": "Issues Found"}
+SCORE_BAND_LABELS = {"good": "Healthy", "mid": "Needs attention", "bad": "Issues found"}
 
 
 def score_band(score: int) -> str:
-    """Same tier boundaries as `score_color` above, returned as a key ("good"/"mid"/"bad")
-    instead of a color — for callers (e.g. cover.py's status line) that need the label, not the ring."""
     if score >= SCORE_BAND_GOOD:
         return "good"
     if score >= SCORE_BAND_MID:
@@ -110,125 +121,91 @@ def score_band(score: int) -> str:
     return "bad"
 
 
-def esc(text) -> str:
-    """XML-escapes audit/AI-derived text before it goes into a Paragraph.
+def score_color(score: int) -> colors.Color:
+    return {"good": SUCCESS, "mid": WARNING, "bad": ERROR}[score_band(score)]
 
-    Every Paragraph body in this package is built from findings/summaries
-    that can originate from an AI provider or a crawled page (the same
-    trust boundary reports/html_report.py's `html.escape` calls out) —
-    reportlab's Paragraph parses a small XML-like markup, so unescaped
-    text could otherwise be misread as tags.
-    """
+
+def score_soft_color(score: int) -> colors.Color:
+    return {"good": SUCCESS_SOFT, "mid": WARNING_SOFT, "bad": ERROR_SOFT}[score_band(score)]
+
+
+def score_text_color(score: int) -> colors.Color:
+    return {"good": SUCCESS_TEXT, "mid": WARNING_TEXT, "bad": ERROR_TEXT}[score_band(score)]
+
+
+def severity_color(severity: str) -> colors.Color:
+    return SEVERITY_COLORS.get(severity, INFO)
+
+
+def severity_soft_color(severity: str) -> colors.Color:
+    return SEVERITY_SOFT_COLORS.get(severity, INFO_SOFT)
+
+
+# PASS / FAIL / NOT TESTED vocabulary for runtime + consent checks.
+STATE_META = {
+    "pass": ("Pass", SUCCESS_TEXT, SUCCESS_SOFT),
+    "passed": ("Pass", SUCCESS_TEXT, SUCCESS_SOFT),
+    "fail": ("Fail", ERROR_TEXT, ERROR_SOFT),
+    "failed": ("Fail", ERROR_TEXT, ERROR_SOFT),
+    "not_tested": ("Not tested", TEXT_TERTIARY, SURFACE_SUNKEN),
+    "not_applicable": ("N/A", TEXT_TERTIARY, SURFACE_SUNKEN),
+    "not_assessed": ("Not assessed", TEXT_TERTIARY, SURFACE_SUNKEN),
+    "info": ("Info", INFO_TEXT, INFO_SOFT),
+    "neutral": ("—", TEXT_TERTIARY, SURFACE_SUNKEN),
+}
+STATUS_LABELS = {"passed": "PASS", "failed": "FAIL", "not_tested": "NOT TESTED", "not_applicable": "N/A"}
+
+
+def hexstr(color) -> str:
+    return "#" + color.hexval()[2:]
+
+
+def esc(text) -> str:
+    """XML-escape crawled / AI text before it goes into a Paragraph."""
     return _xml_escape(str(text if text is not None else ""))
 
 
-FONT_BODY = "Helvetica"
-FONT_BODY_BOLD = "Helvetica-Bold"
-FONT_DISPLAY = "Helvetica-Bold"
-FONT_MONO = "Courier"
-
-PAGE_MARGIN_MM = 18
-
-_stylesheet = getSampleStyleSheet()
+PAGE_MARGIN_MM = 16
 
 
-def _style(name: str, parent: str = "Normal", **kwargs) -> ParagraphStyle:
-    return ParagraphStyle(name, parent=_stylesheet[parent], **kwargs)
+def _style(name: str, **kwargs) -> ParagraphStyle:
+    base = dict(fontName=FONT_BODY, fontSize=9.5, leading=13.5, textColor=TEXT_PRIMARY)
+    base.update(kwargs)
+    return ParagraphStyle(name, **base)
 
 
 STYLES = {
-    "CoverTitle": _style(
-        "CoverTitle", fontName=FONT_DISPLAY, fontSize=26, leading=32,
-        textColor=TEXT_PRIMARY, alignment=TA_CENTER, spaceAfter=6,
-    ),
-    "CoverSubtitle": _style(
-        "CoverSubtitle", fontName=FONT_BODY, fontSize=12, leading=16,
-        textColor=TEXT_SECONDARY, alignment=TA_CENTER, spaceAfter=4,
-    ),
-    "CoverMeta": _style(
-        "CoverMeta", fontName=FONT_MONO, fontSize=9, leading=13,
-        textColor=TEXT_TERTIARY, alignment=TA_CENTER, spaceAfter=2,
-    ),
-    "H1": _style(
-        "H1", fontName=FONT_DISPLAY, fontSize=15, leading=19,
-        textColor=TEXT_PRIMARY, spaceBefore=2, spaceAfter=10,
-    ),
-    "H2": _style(
-        "H2", fontName=FONT_BODY_BOLD, fontSize=11, leading=14,
-        textColor=TEXT_PRIMARY, spaceBefore=12, spaceAfter=6,
-    ),
-    "Body": _style(
-        "Body", fontName=FONT_BODY, fontSize=9.5, leading=14,
-        textColor=TEXT_PRIMARY, alignment=TA_LEFT, spaceAfter=6,
-    ),
-    "BodyMuted": _style(
-        "BodyMuted", fontName=FONT_BODY, fontSize=8.5, leading=12,
-        textColor=TEXT_SECONDARY, spaceAfter=4,
-    ),
-    "Caption": _style(
-        "Caption", fontName=FONT_BODY, fontSize=8, leading=11,
-        textColor=TEXT_TERTIARY, alignment=TA_CENTER, spaceBefore=4,
-    ),
-    "TableCell": _style(
-        "TableCell", fontName=FONT_BODY, fontSize=8.5, leading=12,
-        textColor=TEXT_PRIMARY,
-    ),
-    "TableCellMuted": _style(
-        "TableCellMuted", fontName=FONT_BODY, fontSize=8, leading=11,
-        textColor=TEXT_SECONDARY,
-    ),
-    "TableHeader": _style(
-        "TableHeader", fontName=FONT_BODY_BOLD, fontSize=8.5, leading=11,
-        textColor=WHITE,
-    ),
-    "Badge": _style(
-        "Badge", fontName=FONT_BODY_BOLD, fontSize=6.5, leading=8,
-        textColor=WHITE, alignment=TA_CENTER,
-    ),
-    "ListItem": _style(
-        "ListItem", fontName=FONT_BODY, fontSize=9, leading=13,
-        textColor=TEXT_PRIMARY, spaceAfter=5, leftIndent=2,
-    ),
-    "ListItemMeta": _style(
-        "ListItemMeta", fontName=FONT_BODY, fontSize=7.5, leading=10,
-        textColor=TEXT_SECONDARY,
-    ),
-    "FooterText": _style(
-        "FooterText", fontName=FONT_BODY, fontSize=7.5, leading=10,
-        textColor=TEXT_TERTIARY,
-    ),
-    # Executive Summary metric cards (§3.3: Overall Score / Critical
-    # Findings / Total Findings / Weakest Module).
-    "MetricValue": _style(
-        "MetricValue", fontName=FONT_DISPLAY, fontSize=20, leading=24,
-        textColor=TEXT_PRIMARY, alignment=TA_CENTER, spaceAfter=1,
-    ),
-    "MetricLabel": _style(
-        "MetricLabel", fontName=FONT_BODY_BOLD, fontSize=7.5, leading=10,
-        textColor=TEXT_SECONDARY, alignment=TA_CENTER,
-    ),
-    # A smaller variant of MetricValue for cards whose value is a longer
-    # string than a bare number/score (e.g. the Weakest Module card's
-    # "<Module> (NN/100)" — §3.3) so it wraps instead of overflowing.
-    "MetricValueSmall": _style(
-        "MetricValueSmall", fontName=FONT_DISPLAY, fontSize=12, leading=15,
-        textColor=TEXT_PRIMARY, alignment=TA_CENTER, spaceAfter=1,
-    ),
-    # Small uppercase-ish label above a section's H1 (e.g. cover scope
-    # line, a page's section eyebrow) — never actual uppercase transform
-    # since reportlab Paragraphs don't do CSS text-transform, so callers
-    # pass already-uppercased text.
-    "Eyebrow": _style(
-        "Eyebrow", fontName=FONT_BODY_BOLD, fontSize=8, leading=11,
-        textColor=TEXT_SECONDARY, alignment=TA_CENTER, spaceAfter=8,
-    ),
-    # Generated section index / Table of Contents entries.
-    "TOCEntry": _style(
-        "TOCEntry", fontName=FONT_BODY, fontSize=10, leading=18,
-        textColor=TEXT_PRIMARY, leftIndent=4,
-    ),
-    "TOCNumber": _style(
-        "TOCNumber", fontName=FONT_BODY_BOLD, fontSize=10, leading=18,
-        textColor=PRIMARY,
-    ),
+    # cover
+    "CoverEyebrow": _style("CoverEyebrow", fontName=FONT_SEMIBOLD, fontSize=10, leading=13, textColor=colors.HexColor("#C7D2FE")),
+    "CoverTitle": _style("CoverTitle", fontName=FONT_BOLD, fontSize=30, leading=34, textColor=WHITE),
+    "CoverSite": _style("CoverSite", fontName=FONT_SEMIBOLD, fontSize=14, leading=18, textColor=colors.HexColor("#E0E7FF")),
+    "CoverMeta": _style("CoverMeta", fontSize=9, leading=12, textColor=colors.HexColor("#C7D2FE")),
+    # headings
+    "Kicker": _style("Kicker", fontName=FONT_SEMIBOLD, fontSize=9, leading=12, textColor=PRIMARY, spaceAfter=2),
+    "H1": _style("H1", fontName=FONT_BOLD, fontSize=19, leading=23, spaceAfter=4),
+    "H2": _style("H2", fontName=FONT_BOLD, fontSize=12.5, leading=16, spaceBefore=10, spaceAfter=5),
+    "H3": _style("H3", fontName=FONT_BOLD, fontSize=10.5, leading=14, spaceAfter=2),
+    "Lead": _style("Lead", fontSize=10.5, leading=15.5, textColor=TEXT_SECONDARY, spaceAfter=8),
+    "Body": _style("Body", spaceAfter=4),
+    "BodyMuted": _style("BodyMuted", fontSize=9, leading=12.5, textColor=TEXT_SECONDARY, spaceAfter=3),
+    "Small": _style("Small", fontSize=8.5, leading=11.5, textColor=TEXT_SECONDARY),
+    "SmallBold": _style("SmallBold", fontName=FONT_SEMIBOLD, fontSize=8.5, leading=11.5, textColor=TEXT_PRIMARY),
+    "Caption": _style("Caption", fontSize=8, leading=10.5, textColor=TEXT_TERTIARY, alignment=TA_CENTER, spaceBefore=3),
+    "Label": _style("Label", fontName=FONT_SEMIBOLD, fontSize=8, leading=10, textColor=TEXT_TERTIARY),
+    # tables
+    "TH": _style("TH", fontName=FONT_SEMIBOLD, fontSize=8.5, leading=11, textColor=TEXT_TERTIARY),
+    "TD": _style("TD", fontSize=9, leading=12),
+    "TDBold": _style("TDBold", fontName=FONT_SEMIBOLD, fontSize=9, leading=12),
+    "TDMuted": _style("TDMuted", fontSize=8.5, leading=11.5, textColor=TEXT_SECONDARY),
+    "TDRight": _style("TDRight", fontSize=9, leading=12, alignment=TA_RIGHT),
+    # numbers
+    "Stat": _style("Stat", fontName=FONT_BOLD, fontSize=20, leading=23),
+    "StatLabel": _style("StatLabel", fontName=FONT_SEMIBOLD, fontSize=8.5, leading=11, textColor=TEXT_SECONDARY),
+    "Pill": _style("Pill", fontName=FONT_SEMIBOLD, fontSize=7.5, leading=9, alignment=TA_CENTER),
+    "Center": _style("Center", alignment=TA_CENTER),
+    "Left": _style("Left", alignment=TA_LEFT),
 }
+
+# Back-compat aliases used by older call sites.
+STYLES["TableCell"] = STYLES["TD"]
+STYLES["TableCellMuted"] = STYLES["TDMuted"]

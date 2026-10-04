@@ -81,7 +81,10 @@ def _events_text(it: Interaction) -> str:
         lc = (it.tracking or {}).get("lifecycle_events") or []
         return ("No interaction event observed"
                 + (f" (only lifecycle: {', '.join(sorted({e.get('event') or '' for e in lc}))})" if lc else "") + ".")
-    return "Observed: " + ", ".join(f"{e.get('vendor_label')} “{e.get('event')}”" for e in evs[:5]) + "."
+    def one(e: dict) -> str:
+        kind = "dataLayer event" if e.get("source") == "dataLayer" else "analytics hit"
+        return f"{e.get('vendor_label')} “{e.get('event')}” ({kind})"
+    return "Observed: " + ", ".join(one(e) for e in evs[:5]) + "."
 
 
 def compute_health(interactions: List[Interaction], pages_count: int, forms_count: int) -> dict:
@@ -200,6 +203,17 @@ def build_findings(interactions: List[Interaction], pages_meta: List[dict], anal
                     f"The form “{it.label}” on {it.page_url} was focused and typed into, but no form_start / "
                     "form interaction event was observed.",
                     "Track form starts (GA4 enhanced measurement or a GTM form trigger).", tracking=_events_text(it)))
+
+        if status == "tracked" and it.status == "success" and analytics_present \
+                and (kind in CONVERSION_CLASSES or kind == FORM):
+            sources = {e.get("source") for e in (tr.get("events") or [])}
+            if sources == {"dataLayer"}:
+                findings.append(_finding(
+                    "info", "tracking", f"DataLayer event only, no analytics hit: {it.label}", it,
+                    f"Activating “{it.label}” ({label}) on {it.page_url} pushed a dataLayer event, but no "
+                    "analytics request (GA4, Adobe, Piano, Meta…) was observed in the same window.",
+                    "Check that a tag in your tag manager forwards this dataLayer event to your analytics tool.",
+                    tracking=_events_text(it)))
 
         if status == "duplicate":
             findings.append(_finding(

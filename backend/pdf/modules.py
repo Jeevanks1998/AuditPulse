@@ -384,8 +384,9 @@ def build_journey_section(payload: ReportPayload) -> List[Flowable]:
         return []
     story: List[Flowable] = [module_banner(
         "journey", "Customer journey", _score(payload, "journey"),
-        "We clicked through the site like a visitor — buttons, links, forms and downloads — and checked "
-        "that each one works and is measured.")]
+        "We discovered the site's journeys from its pages, links, buttons, forms and downloads, executed the "
+        "safe ones in a real browser and checked what analytics recorded. These are discovered paths, not "
+        "recordings of real visitors.")]
     story.append(Spacer(1, 5 * mm))
     if not jv.get("available"):
         story.append(note_box(esc(jv.get("error") or "The journey scan did not complete for this audit.")))
@@ -398,25 +399,31 @@ def build_journey_section(payload: ReportPayload) -> List[Flowable]:
         {"label": "Tested", "value": f"{c.get('successful_interactions', 0)} of {c.get('interactions_tested', 0)} worked",
          "sub": "Clicked in a real browser",
          "state": "pass" if c.get("interactions_tested") and c.get("successful_interactions") == c.get("interactions_tested") else "info"},
-        {"label": "Tracking gaps", "value": gaps_n, "sub": f"{c.get('tracked_interactions', 0)} actions were tracked",
+        {"label": "Tracking gaps", "value": gaps_n, "sub": f"{c.get('tracked_interactions', 0)} actions had tracking detected",
          "state": "fail" if gaps_n else "pass"},
     ]
     story.append(_check_tiles(tiles))
-    story += _rate_rows(jv.get("rates") or {})
+    story += _journey_paths(jv)
+    story += _health_breakdown(jv)
 
     cov = (jv.get("tracking") or {}).get("coverage_by_type") or []
     if cov:
-        story += _h2("Tracking by type of action", "For each kind of action we tested: how many were measured by analytics.")
+        story += _h2("Analytics validation by type of action",
+                     "Analytics hit = a request reached an analytics tool. DataLayer = the site pushed the event to "
+                     "its dataLayer, which alone doesn't prove an analytics tool received it.")
         rows = []
         for r in cov:
             tested = r.get("tested") or 0
             tracked = r.get("tracked") or 0
             pct = round(100 * tracked / tested) if tested else 0
-            rows.append([Paragraph(esc(r.get("type", "")), STYLES["TDBold"]), str(tested), str(tracked),
-                         str(r.get("not_tracked") or 0), Bar(pct, 34 * mm, 2.2 * mm,
+            hit = r.get("analytics_hit")
+            rows.append([Paragraph(esc(r.get("type", "")), STYLES["TDBold"]), str(tested),
+                         str((hit or 0) + (r.get("both") or 0)) if hit is not None else str(tracked),
+                         str(r.get("datalayer_only") or 0) if hit is not None else "—",
+                         str(r.get("not_tracked") or 0), Bar(pct, 30 * mm, 2.2 * mm,
                                                             color=module_color("journey")[0])])
-        story.append(data_table(["Action", "Tested", "Tracked", "Not tracked", "Coverage"], rows,
-                                [W - 118 * mm, 20 * mm, 20 * mm, 26 * mm, 52 * mm], align_right=(1, 2, 3)))
+        story.append(data_table(["Action", "Executed", "Analytics hit", "DataLayer only", "Not detected", "Detected"], rows,
+                                [W - 136 * mm, 18 * mm, 24 * mm, 26 * mm, 24 * mm, 44 * mm], align_right=(1, 2, 3, 4)))
 
     broken = [i for i in jv.get("interactions") or [] if i.get("test_status") == "failed"]
     if broken:
@@ -430,7 +437,8 @@ def build_journey_section(payload: ReportPayload) -> List[Flowable]:
 
     gaps = jv.get("gaps") or []
     if gaps:
-        story += _h2("Worked, but not tracked", "These actions work for visitors, but analytics never hears about them.")
+        story += _h2("Worked, but no tracking detected",
+                     "These actions worked when executed, but neither an analytics hit nor a dataLayer event was observed.")
         rows = [[Paragraph(soft_wrap(g.get("label") or "—"), STYLES["TDBold"]), g.get("type_label") or "",
                  soft_wrap(g.get("page_path") or short_url(g.get("page"))),
                  soft_wrap(short_url(g.get("destination")) if g.get("destination") else "—")]
@@ -457,9 +465,15 @@ def build_journey_section(payload: ReportPayload) -> List[Flowable]:
         story += _h2("Downloads")
         rows = []
         for d in dls[:MAX_ROWS]:
-            tr = (d.get("tracking") or "not_tested").lower()
-            tstate = {"tracked": ("Tracked", SUCCESS_TEXT, SUCCESS_SOFT), "not_tracked": ("Not tracked", ERROR_TEXT, ERROR_SOFT),
-                      "duplicate": ("Counted twice", WARNING_TEXT, WARNING_SOFT)}.get(tr, ("Not tested", TEXT_TERTIARY, SURFACE_SUNKEN))
+            tr = ((d.get("row") or {}).get("analytics_result")
+                  or {"tracked": "detected", "not_tracked": "not_detected", "duplicate": "duplicate"}.get(
+                      (d.get("tracking") or "").lower(), "unable"))
+            tstate = {"both": ("Hit + dataLayer", SUCCESS_TEXT, SUCCESS_SOFT),
+                      "analytics_hit": ("Analytics hit", SUCCESS_TEXT, SUCCESS_SOFT),
+                      "detected": ("Detected", SUCCESS_TEXT, SUCCESS_SOFT),
+                      "datalayer": ("DataLayer only", INFO_TEXT, INFO_SOFT),
+                      "not_detected": ("Not detected", ERROR_TEXT, ERROR_SOFT),
+                      "duplicate": ("Duplicate", WARNING_TEXT, WARNING_SOFT)}.get(tr, ("Not validated", TEXT_TERTIARY, SURFACE_SUNKEN))
             http = d.get("http_status")
             rows.append([soft_wrap(short_url(d.get("destination")) or d.get("label") or ""),
                          (d.get("file_type") or "").upper(),
@@ -480,10 +494,77 @@ def build_journey_section(payload: ReportPayload) -> List[Flowable]:
 
 _JOURNEY_STATUS = {
     "failed": ("Didn't work", ERROR_TEXT),
-    "not_tracked": ("Worked · not tracked", WARNING_TEXT),
-    "duplicate": ("Worked · counted twice", WARNING_TEXT),
-    "tracked": ("Worked · tracked", SUCCESS_TEXT),
+    "not_tracked": ("Worked · no tracking detected", WARNING_TEXT),
+    "duplicate": ("Worked · duplicate detected", WARNING_TEXT),
+    "tracked": ("Worked · tracking detected", SUCCESS_TEXT),
 }
+_JOURNEY_PATH_STATUS = {
+    "broken": ("Broken step", ERROR_TEXT, ERROR_SOFT),
+    "tracking_gap": ("Tracking gap", WARNING_TEXT, WARNING_SOFT),
+    "not_verified": ("Not fully verified", TEXT_TERTIARY, SURFACE_SUNKEN),
+    "ok": ("Working, tracked", SUCCESS_TEXT, SUCCESS_SOFT),
+}
+MAX_JOURNEY_PATHS = 8
+
+
+def _journey_paths(jv: dict) -> List[Flowable]:
+    """The discovered journey paths, most critical first (as the web report)."""
+    journeys = ((jv.get("map") or {}).get("journeys")) or []
+    nodes = (jv.get("map") or {}).get("nodes") or {}
+    out = _h2("Discovered journey paths",
+              "Generated automatically from this scan: the shortest path we found from the start page to each "
+              "conversion action. Most critical first.")
+    if not journeys:
+        out.append(note_box("No journey path was discovered — no CTA, form, download, signup, booking, purchase, "
+                            "phone or email link was found on the scanned pages.", fg=INFO_TEXT, bg=INFO_SOFT))
+        return out
+    rows = []
+    for j in journeys[:MAX_JOURNEY_PATHS]:
+        labels = []
+        for sid in j.get("steps") or []:
+            n = nodes.get(sid) or {}
+            if n.get("kind") == "page":
+                labels.append("Homepage" if n.get("path") == "/" else (n.get("path") or ""))
+            elif n:
+                labels.append(f"[{n.get('type_label')}] {n.get('label') or ''}")
+        st = _JOURNEY_PATH_STATUS.get(j.get("status"), ("—", TEXT_TERTIARY, SURFACE_SUNKEN))
+        rows.append([Paragraph(soft_wrap("  ›  ".join(labels)), STYLES["TD"]),
+                     esc(j.get("goal_type_label") or ""), (j.get("importance") or "").capitalize(),
+                     pill(st[0], st[1], st[2], width=28 * mm)])
+    out.append(data_table(["Path", "Type", "Importance", "Status"], rows, [W - 78 * mm, 24 * mm, 22 * mm, 32 * mm]))
+    if len(journeys) > MAX_JOURNEY_PATHS:
+        out.append(Paragraph(f"Showing the {MAX_JOURNEY_PATHS} most critical of {len(journeys)} paths. "
+                             "All paths are on the Customer Journey section of the web report.",
+                             STYLES["Small"].clone("jpm", textColor=TEXT_TERTIARY, spaceBefore=1.5 * mm)))
+    return out
+
+
+def _health_breakdown(jv: dict) -> List[Flowable]:
+    ex = jv.get("health_explained") or {}
+    parts = ex.get("parts") or []
+    if not parts:
+        return _rate_rows(jv.get("rates") or {})
+    out = _h2("How the journey health score was calculated", esc(ex.get("formula") or ""))
+    rows = []
+    for p in parts:
+        rate = p.get("rate")
+        pct = round(float(rate) * 100) if rate is not None else 0
+        rows.append([Paragraph(f"<b>{esc(p.get('label'))}</b><br/>"
+                               f"<font size='8' color='{hexstr(TEXT_TERTIARY)}'>{esc(p.get('detail') or '')}</font>", STYLES["TD"]),
+                     Bar(pct, 60 * mm, 2.4 * mm),
+                     Paragraph(f"<b>{p.get('points') if p.get('points') is not None else '—'}</b> / {p.get('weight')}",
+                               STYLES["TDRight"])])
+    t = Table(rows, colWidths=[W - 86 * mm, 64 * mm, 22 * mm])
+    t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                           ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                           ("TOPPADDING", (0, 0), (-1, -1), 1.6 * mm), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.6 * mm),
+                           ("LINEBELOW", (0, 0), (-1, -2), 0.5, BORDER)]))
+    out.append(t)
+    crit = ex.get("critical_failures") or 0
+    out.append(Paragraph(f"Critical failures found: <b>{crit}</b>"
+                         + (" — " + esc(" · ".join(ex.get("critical_titles") or [])) if crit else ""),
+                         STYLES["Small"].clone("jcf", spaceBefore=1.5 * mm)))
+    return out
 MAX_PAGE_SHOTS = 6
 MAX_INTERACTION_SHOTS = 8
 
@@ -523,7 +604,7 @@ def _journey_screenshots(jv: dict, broken: List[dict], gaps: List[dict]) -> List
 
     seen, ordered = set(), []
     tested = [i for i in jv.get("interactions") or [] if i.get("test_status") in ("success", "failed")]
-    tracked = [i for i in tested if i.get("tracking_status") == "tracked"]
+    tracked = [i for i in tested if i.get("tracking_status") == "tracked"]  # tracking detected
     for it in list(broken) + list(gaps) + [i for i in tested if i.get("tracking_status") == "duplicate"] + tracked:
         key = it.get("index")
         if key in seen:

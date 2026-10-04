@@ -555,7 +555,7 @@
         content: 'journeyContent', empty: 'journeyEmpty', health: 'journeyHealth', summary: 'journeySummary',
         map: 'journeyMap', detail: 'journeyDetail', coverage: 'journeyCoverage', gaps: 'journeyGaps',
         forms: 'journeyForms', downloads: 'journeyDownloads', ctas: 'journeyCtas', evidence: 'journeyEvidence',
-        recs: 'journeyRecs'
+        recs: 'journeyRecs', interactions: 'journeyInteractions', findings: 'journeyFindings'
       });
       if (chipEl) {
         if (view && view.score != null) {

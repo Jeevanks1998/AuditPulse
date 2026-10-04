@@ -393,28 +393,41 @@
                 <div id="journeyEmpty" class="text-sm" style="display:none; color: var(--text-tertiary);"></div>
                 <div id="journeyContent" class="jr" style="display:none;">
                   <div class="jr-block">
-                    <p class="jr-title">Journey Health</p>
-                    <div id="journeyHealth"></div>
-                  </div>
-                  <div class="jr-block">
-                    <p class="jr-title">Interaction Summary</p>
-                    <div id="journeySummary"></div>
-                  </div>
-                  <div class="jr-block">
-                    <p class="jr-title">Journey Map</p>
-                    <p class="jr-muted">Built only from pages and elements discovered on the site. Click any step to see its evidence.</p>
+                    <p class="jr-title">1. Discovered Journey Paths</p>
+                    <p class="jr-muted">Automatically generated from this scan. Click any step to see its evidence.</p>
                     <div class="jr-map">
                       <div id="journeyMap" class="jr-map__main"></div>
                       <aside id="journeyDetail" class="jr-detail" aria-live="polite"></aside>
                     </div>
                   </div>
                   <details class="analytics-subsection" open>
-                    <summary class="analytics-subsection__summary"><span>Tracking Coverage</span></summary>
-                    <div class="analytics-subsection__body" id="journeyCoverage"></div>
+                    <summary class="analytics-subsection__summary"><span>2. Interaction Details</span></summary>
+                    <div class="analytics-subsection__body" id="journeyInteractions"></div>
                   </details>
                   <details class="analytics-subsection" open>
-                    <summary class="analytics-subsection__summary"><span>Tracking Gaps</span></summary>
-                    <div class="analytics-subsection__body" id="journeyGaps"></div>
+                    <summary class="analytics-subsection__summary"><span>3. Analytics Validation</span></summary>
+                    <div class="analytics-subsection__body">
+                      <div id="journeyCoverage"></div>
+                      <p class="jr-title" style="margin-top:12px;">Tracking gaps</p>
+                      <div id="journeyGaps"></div>
+                    </div>
+                  </details>
+                  <details class="analytics-subsection" open>
+                    <summary class="analytics-subsection__summary"><span>4. Journey Health</span></summary>
+                    <div class="analytics-subsection__body" id="journeyHealth"></div>
+                  </details>
+                  <details class="analytics-subsection" open>
+                    <summary class="analytics-subsection__summary"><span>5. Findings</span></summary>
+                    <div class="analytics-subsection__body" id="journeyFindings"></div>
+                  </details>
+                  <details class="analytics-subsection">
+                    <summary class="analytics-subsection__summary"><span>6. Recommendations (also listed in Issues to fix)</span></summary>
+                    <div class="analytics-subsection__body" id="journeyRecs"></div>
+                  </details>
+                  <p class="jr-title" style="margin-top:4px;">Supporting information</p>
+                  <details class="analytics-subsection">
+                    <summary class="analytics-subsection__summary"><span>Interaction summary by type</span></summary>
+                    <div class="analytics-subsection__body" id="journeySummary"></div>
                   </details>
                   <details class="analytics-subsection">
                     <summary class="analytics-subsection__summary"><span>Forms</span></summary>
@@ -431,10 +444,6 @@
                   <details class="analytics-subsection">
                     <summary class="analytics-subsection__summary"><span>Evidence Screenshots</span></summary>
                     <div class="analytics-subsection__body" id="journeyEvidence"></div>
-                  </details>
-                  <details class="analytics-subsection">
-                    <summary class="analytics-subsection__summary"><span>Recommendations (also listed in Issues to fix)</span></summary>
-                    <div class="analytics-subsection__body" id="journeyRecs"></div>
                   </details>
                 </div>
               </div>

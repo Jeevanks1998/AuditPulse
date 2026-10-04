@@ -187,19 +187,19 @@ def build_findings(interactions: List[Interaction], pages_meta: List[dict], anal
         if status == "not_tracked" and it.status == "success":
             if kind in _CRITICAL_GAP_CLASSES:
                 findings.append(_finding(
-                    "critical", "tracking", f"Conversion interaction not tracked: {it.label}", it,
+                    "critical", "tracking", f"No analytics detected for conversion interaction: {it.label}", it,
                     f"Tracking gap: “{it.label}” ({label}) on {it.page_url} was discovered and successfully "
                     "tested, but no corresponding analytics event was observed.",
                     f"Add an analytics event for this {label.lower()} (e.g. a GA4 event via GTM) and verify it fires on click.",
                     tracking=_events_text(it)))
             elif kind in (PHONE, EMAIL, LOGIN):
                 findings.append(_finding(
-                    "warning", "tracking", f"{label} interaction not tracked: {it.label}", it,
+                    "warning", "tracking", f"No analytics detected for {label.lower()} interaction: {it.label}", it,
                     f"“{it.label}” on {it.page_url} was activated, but no analytics event was observed.",
                     f"Track {label.lower()} clicks as a lead/engagement event.", tracking=_events_text(it)))
             elif kind == FORM:
                 findings.append(_finding(
-                    "warning", "forms", f"Form interaction not tracked: {it.label}", it,
+                    "warning", "forms", f"No analytics detected for form interaction: {it.label}", it,
                     f"The form “{it.label}” on {it.page_url} was focused and typed into, but no form_start / "
                     "form interaction event was observed.",
                     "Track form starts (GA4 enhanced measurement or a GTM form trigger).", tracking=_events_text(it)))
@@ -253,11 +253,11 @@ def build_findings(interactions: List[Interaction], pages_meta: List[dict], anal
         if groups.get("t") and groups.get("n") and kind in CONVERSION_CLASSES | {FORM}:
             findings.append(_finding(
                 "warning", "tracking", f"Tracking inconsistency across {CLASS_LABELS.get(kind, kind)} interactions", None,
-                f"{len(groups['t'])} {CLASS_LABELS.get(kind, kind)} interaction(s) are tracked "
-                f"({', '.join(i.label for i in groups['t'][:3])}) but {len(groups['n'])} are not "
+                f"{len(groups['t'])} {CLASS_LABELS.get(kind, kind)} interaction(s) have analytics detected "
+                f"({', '.join(i.label for i in groups['t'][:3])}) but {len(groups['n'])} have none "
                 f"({', '.join(i.label for i in groups['n'][:3])}).",
                 "Apply the same tracking to every interaction of this type.",
-                observed="Mixed tracked / untracked", tracking="Inconsistent", page=groups["n"][0].page_url))
+                observed="Mixed: analytics detected / not detected", tracking="Inconsistent", page=groups["n"][0].page_url))
 
     # Journey pages with no analytics at all.
     if analytics_present:

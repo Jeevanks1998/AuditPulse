@@ -94,7 +94,7 @@
   var MODULE_LABELS = {
     performance: 'Performance', accessibility: 'Accessibility',
     security: 'Security', ux: 'UX', images: 'Images', links: 'Links',
-    mobile: 'Mobile', forms: 'Forms', consent: 'Consent', analytics: 'Analytics', journey: 'Customer Journey', ai: 'AI Review'
+    mobile: 'Mobile', forms: 'Forms', consent: 'Consent', analytics: 'Analytics', journey: 'Journey Map', ai: 'AI Review'
   };
   var OVERALL_STATUS_LABELS = { good: 'Healthy', mid: 'Needs Attention', bad: 'Issues Found' };
 
@@ -1718,7 +1718,7 @@
       if (vendorTable && analytics.runtimeAvailable && analytics.runtimeResult && analytics.runtimeResult.source === 'journey') {
         var jErr = analytics.runtimeResult.analyticsRuntimeError || analytics.runtimeResult.analytics_runtime_error || '';
         vendorTable.insertAdjacentHTML('beforeend',
-          '<p class="rp-note" style="margin:10px 0 0;">Page View results here come from the Customer Journey\'s browser pass ' +
+          '<p class="rp-note" style="margin:10px 0 0;">Page View results here come from the Journey Map\'s browser pass ' +
           '(every scanned page loaded with consent accepted), because the Analytics module\'s own live check could not run' +
           (jErr ? ' (<code style="font-size:0.95em;">' + U.escapeHtml(String(jErr).slice(0, 200)) + '</code>)' : '') +
           '. Scroll and Click were not tested.</p>');

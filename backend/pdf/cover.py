@@ -268,7 +268,7 @@ def build_cover_flowables(payload: ReportPayload, issues: List[Issue], has_appen
     for c in payload.score_grid:
         contents.append({"consent": "Consent & cookies — banner, screenshots, what loads before consent",
                          "analytics": "Analytics & tracking — tools found and the live browser check",
-                         "journey": "Customer journey — buttons, forms and downloads we tested, with screenshots"}.get(c.module, c.label))
+                         "journey": "Journey map — discovered journey paths, safely tested, with screenshots"}.get(c.module, c.label))
     if has_appendix:
         contents.append("Appendix — full lists and scan details")
     story.append(Spacer(1, 5 * mm))

@@ -2,7 +2,7 @@
 journey type/importance/status and the health breakdown all come from the
 stored scan."""
 
-from reports.journey_view import analytics_result, build_journey_view, safety_status
+from reports.journey_view import ANALYTICS_LABELS, analytics_result, build_journey_view, journey_type, safety_status
 
 
 def _it(index, cls, status, events=(), tstatus=None, **kw):
@@ -23,13 +23,24 @@ def test_analytics_result_separates_sources():
     assert analytics_result(_it(1, "cta", "success", [NET, DL], "tracked"))["key"] == "both"
     assert analytics_result(_it(1, "cta", "success", [NET, NET], "duplicate"))["key"] == "duplicate"
     assert analytics_result(_it(1, "cta", "success", [], "not_tracked"))["key"] == "not_detected"
-    r = analytics_result(_it(1, "purchase", "skipped", [], "not_tested"))
+    r = analytics_result(_it(1, "purchase", "skipped", [], "not_tested", safe=False))
+    assert r["key"] == "safety_restricted" and "transaction" in r["reason"]
+    r = analytics_result(_it(1, "other", "not_tested", [], "not_tested"))
     assert r["key"] == "unable" and r["reason"]
+
+
+def test_only_the_agreed_status_vocabulary():
+    shown = {v for k, v in ANALYTICS_LABELS.items() if k != "not_applicable"}
+    assert shown == {"Analytics Hit Detected", "DataLayer Event Detected", "Both Detected", "Not Detected",
+                     "Duplicate Detected", "Unable to Validate", "Not Tested — Safety Restricted"}
 
 
 def test_safety_status_explains_skips():
     s = safety_status(_it(1, "purchase", "skipped", unsafe_reason="purchase/payment action", safe=False))
-    assert s["key"] == "not_executed" and "purchase/payment action" in s["label"]
+    assert s["key"] == "not_executed" and s["label"] == "Not Tested — Safety Restricted"
+    assert s["reason"] == "Safety restricted because this action may create a transaction."
+    s = safety_status(_it(2, "form_submit", "skipped", unsafe_reason="form submission", safe=False))
+    assert s["reason"] == "Submission was skipped to prevent creating an external record."
     assert safety_status(_it(1, "cta", "success"))["key"] == "executed"
     assert safety_status(_it(1, "other", "not_tested"))["key"] == "not_selected"
 
@@ -57,12 +68,13 @@ def test_view_journeys_health_and_counts():
     })
     js = view["map"]["journeys"]
     assert [j["status"] for j in js] == ["broken", "tracking_gap", "ok"]
-    assert js[0]["goal_type_label"] == "CTA" and js[0]["importance"] == "high"
+    assert js[0]["goal_type_label"] == "Navigation" and js[0]["importance"] == "high"
+    assert js[1]["goal_type_label"] == "Download"
     assert js[2]["goal_type_label"] == "Signup" and js[2]["importance"] == "medium"
     v = view["tracking"]["validation"]
     assert v["datalayer"] == 1 and v["not_detected"] == 1 and v["analytics_hit"] == 0
     parts = {p["key"]: p for p in view["health_explained"]["parts"]}
-    assert parts["tracking"]["points"] == 22.5 and parts["functional"]["weight"] == 35
+    assert parts["tracking"]["points"] == 22.5 and parts["tracking"]["label"] == "Analytics coverage" and parts["functional"]["weight"] == 35
     assert view["health_explained"]["critical_failures"] == 1
     assert "not recordings of real visitors" in view["provenance"]
     assert view["recommendations"] == [{"severity": "critical", "title": "Broken", "recommendation": "Fix"}]
@@ -73,3 +85,17 @@ def test_no_findings_means_no_recommendations():
                                "journey_map": {}, "findings": []})
     assert view["recommendations"] == [] and view["map"]["journeys"] == []
     assert view["health_explained"]["parts"] == []
+
+
+def test_journey_type_only_from_detected_interaction():
+    assert journey_type({"classification": "cta", "label": "Request a quote"}, "cta", []) == "Lead Generation"
+    assert journey_type({"classification": "cta", "label": "Talk to sales"}, "cta", []) == "Contact"
+    assert journey_type({"classification": "cta", "label": "Learn more"}, "cta",
+                        [{"type": "form", "label": "Newsletter form"}]) == "Lead Generation"
+    assert journey_type({"classification": "cta", "label": "Explore pumps"}, "cta", []) == "Navigation"
+    assert journey_type({"classification": "form", "label": "Contact us"}, "form", []) == "Contact"
+    assert journey_type({"classification": "phone", "label": "+1 555"}, "phone", []) == "Contact"
+    for k, v in {"signup": "Signup", "appointment": "Appointment", "download": "Download",
+                 "purchase": "Purchase", "login": "Login"}.items():
+        assert journey_type({"classification": k}, k, []) == v
+    assert journey_type({}, None, []) is None

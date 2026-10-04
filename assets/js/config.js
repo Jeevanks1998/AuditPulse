@@ -34,7 +34,7 @@ window.APP_CONFIG = {
     { id: 'checkCrawl', label: 'Crawling website' },
     { id: 'checkConsent', label: 'Cookie consent' },
     { id: 'checkAnalytics', label: 'Analytics' },
-    { id: 'checkJourney', label: 'Customer journey' },
+    { id: 'checkJourney', label: 'Journey map' },
     { id: 'checkReport', label: 'Generating report' }
   ],
 

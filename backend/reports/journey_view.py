@@ -26,27 +26,42 @@ the /screenshots/... URLs main.py serves.
 
 from __future__ import annotations
 
+import re
 from typing import Dict, List, Optional
 
 _SEVERITY_RANK = {"critical": 0, "warning": 1, "info": 2}
 _CONVERSION = {"cta", "form", "form_start", "download", "signup", "purchase", "appointment", "phone", "email", "login"}
-# Journey goal types, as the interaction classifier names them.
-_GOAL_LABELS = {"cta": "CTA", "form": "Lead form", "form_start": "Lead form", "download": "Download",
-                "signup": "Signup", "purchase": "Purchase", "appointment": "Appointment", "phone": "Phone call",
-                "email": "Email", "login": "Login"}
 _IMPORTANCE = {3: "high", 2: "medium", 1: "low"}
 
+# The only analytics statuses the Journey Map uses (web report, dashboard,
+# PDF). "Tracked" on its own is never shown: it doesn't say whether an
+# analytics tool actually received anything.
 ANALYTICS_LABELS = {
-    "both": "Analytics hit + DataLayer event",
-    "analytics_hit": "Analytics hit detected",
-    "datalayer": "DataLayer event detected",
-    "detected": "Tracking event detected",
-    "duplicate": "Duplicate detected",
-    "not_detected": "Not detected",
-    "unable": "Unable to validate",
+    "analytics_hit": "Analytics Hit Detected",
+    "datalayer": "DataLayer Event Detected",
+    "both": "Both Detected",
+    "not_detected": "Not Detected",
+    "duplicate": "Duplicate Detected",
+    "unable": "Unable to Validate",
+    "safety_restricted": "Not Tested — Safety Restricted",
     "not_applicable": "—",
 }
-_TRACKED_RESULTS = {"both", "analytics_hit", "datalayer", "detected", "duplicate"}
+_TRACKED_RESULTS = {"both", "analytics_hit", "datalayer", "duplicate"}
+
+# Why an action was not executed, by what the crawler classified it as.
+_SAFETY_REASONS = {
+    "purchase": "Safety restricted because this action may create a transaction.",
+    "appointment": "Safety restricted because this action may create a booking.",
+    "form_submit": "Submission was skipped to prevent creating an external record.",
+    "search": "Submission was skipped — forms are never submitted on production sites.",
+}
+_DESTRUCTIVE_REASON = "Safety restricted because this action may sign out, delete or unsubscribe an account."
+
+# Journey types, only ever derived from the classified goal interaction
+# (and, for CTAs and forms, the words on it / where it leads).
+_CONTACT_RE = re.compile(r"contact|enquir|inquir|get in touch|talk to|speak to|call us|message|support", re.I)
+_LEAD_RE = re.compile(r"quote|demo|trial|consult|get started|request|sign me|proposal|pricing|estimate|"
+                      r"callback|call back|lead|subscribe|apply|register interest", re.I)
 
 
 def screenshot_url(path: Optional[str]) -> Optional[str]:
@@ -80,13 +95,8 @@ def _shots(d: Optional[dict]) -> Dict[str, Optional[str]]:
     return {k: screenshot_url(v) for k, v in (d or {}).items() if v}
 
 
-def _tracking_label(status: Optional[str]) -> str:
-    return {"tracked": "Tracked", "not_tracked": "Not detected", "duplicate": "Duplicate event",
-            "not_tested": "Not tested", "not_applicable": "—", None: "Not tested"}.get(status, status or "Not tested")
-
-
 def _test_label(status: Optional[str]) -> str:
-    return {"success": "Successfully tested", "failed": "Failed", "skipped": "Not executed (safety)",
+    return {"success": "Worked", "failed": "Failed", "skipped": "Not Tested — Safety Restricted",
             "not_tested": "Discovered (not tested)", "same_as_first": "Same as first occurrence",
             "consent_control": "Consent control (tested in Consent)"}.get(status or "", status or "")
 
@@ -99,8 +109,13 @@ def analytics_result(i: dict) -> dict:
     net = any(e.get("source") == "network" for e in events)
     dl = any(e.get("source") == "dataLayer" for e in events)
     reason = ""
-    if st in ("tracked", "duplicate"):
-        base = "both" if (net and dl) else "analytics_hit" if net else "datalayer" if dl else "detected"
+    if i.get("status") == "skipped" or (i.get("status") == "not_tested" and i.get("safe") is False):
+        key = "safety_restricted"
+        reason = safety_reason(i)
+    elif st in ("tracked", "duplicate"):
+        # Every "tracked" status is backed by the stored events; if the event
+        # list is somehow missing, say so rather than guess the source.
+        base = "both" if (net and dl) else "analytics_hit" if net else "datalayer" if dl else "unable"
         key = "duplicate" if st == "duplicate" else base
     elif st == "not_tracked":
         key = "not_detected"
@@ -121,12 +136,24 @@ def analytics_result(i: dict) -> dict:
             "duplicate": st == "duplicate", "reason": reason}
 
 
+def safety_reason(i: dict) -> str:
+    unsafe = (i.get("unsafe_reason") or "").lower()
+    if "irreversible" in unsafe or "sign out" in unsafe:
+        return _DESTRUCTIVE_REASON
+    reason = _SAFETY_REASONS.get(i.get("classification") or "")
+    if reason:
+        return reason
+    if "form" in unsafe:
+        return _SAFETY_REASONS["form_submit"]
+    return f"Safety restricted: {i.get('unsafe_reason')}." if i.get("unsafe_reason") else \
+        "Safety restricted because this action may not be reversible."
+
+
 def safety_status(i: dict) -> dict:
     """Whether the interaction was executed, and if not, why."""
     st = i.get("status")
     if st == "skipped" or (st == "not_tested" and i.get("safe") is False):
-        reason = i.get("unsafe_reason") or "potentially irreversible action"
-        return {"key": "not_executed", "label": f"Not executed — {reason}"}
+        return {"key": "not_executed", "label": "Not Tested — Safety Restricted", "reason": safety_reason(i)}
     if st == "consent_control":
         return {"key": "consent", "label": "Not executed here — cookie-banner control (tested by the Consent module)"}
     if st == "same_as_first":
@@ -136,6 +163,29 @@ def safety_status(i: dict) -> dict:
             return {"key": "checked", "label": "External link — checked by HTTP request, not clicked"}
         return {"key": "executed", "label": "Executed in a real browser"}
     return {"key": "not_selected", "label": "Discovered — not selected for a live test (test limit or low-value element)"}
+
+
+def journey_type(goal: dict, goal_type: Optional[str], step_rows: List[dict]) -> Optional[str]:
+    """Lead Generation / Contact / Signup / Appointment / Download / Purchase /
+    Login / Navigation — from the goal interaction the crawler classified.
+    None when the goal can't be identified (no type is invented)."""
+    kind = goal.get("classification") or goal_type
+    fixed = {"signup": "Signup", "appointment": "Appointment", "download": "Download", "purchase": "Purchase",
+             "login": "Login", "phone": "Contact", "email": "Contact", "navigation": "Navigation"}
+    if kind in fixed:
+        return fixed[kind]
+    words = " ".join(filter(None, [goal.get("label"), goal.get("destination"), goal.get("page_url")]
+                                  + [r.get("label") for r in step_rows]))
+    if kind in ("form", "form_start"):
+        return "Contact" if _CONTACT_RE.search(words) else "Lead Generation"
+    if kind == "cta":
+        has_form = any(r.get("type") in ("form", "form_start", "form_submit") for r in step_rows)
+        if _CONTACT_RE.search(words):
+            return "Contact"
+        if has_form or _LEAD_RE.search(words):
+            return "Lead Generation"
+        return "Navigation"
+    return None
 
 
 def _interaction_row(i: dict) -> dict:
@@ -156,7 +206,7 @@ def _interaction_row(i: dict) -> dict:
         "outcome": i.get("outcome"),
         "observed": i.get("observed"),
         "tracking_status": tr.get("status"),
-        "tracking_label": _tracking_label(tr.get("status")),
+        "tracking_label": ar["label"],
         "tracking_events": [f"{e.get('vendor_label')}: {e.get('event')}" for e in (tr.get("events") or [])][:8],
         "tracking_note": tr.get("note"),
         "analytics_result": ar["key"],
@@ -166,6 +216,7 @@ def _interaction_row(i: dict) -> dict:
         "datalayer_event": ar["datalayer"],
         "safety_status": sf["key"],
         "safety_label": sf["label"],
+        "safety_reason": sf.get("reason", ""),
         "importance": _IMPORTANCE.get(i.get("importance") or 1, "low"),
         "signals": i.get("signals") or [],
         "confidence": i.get("confidence"),
@@ -234,7 +285,8 @@ def build_journey_view(journey: Optional[dict]) -> Optional[dict]:
             c["not_tracked"] += 1
         else:
             c["unable"] += 1
-    validation = {k: 0 for k in ("analytics_hit", "datalayer", "both", "not_detected", "duplicate", "unable")}
+    validation = {k: 0 for k in ("analytics_hit", "datalayer", "both", "not_detected", "duplicate", "unable",
+                                 "safety_restricted")}
     for r in rows:
         a = r["analytics_result"]
         if a == "duplicate":
@@ -248,6 +300,8 @@ def build_journey_view(journey: Optional[dict]) -> Optional[dict]:
                 validation["datalayer"] += 1
         elif a == "not_detected":
             validation["not_detected"] += 1
+        elif a == "safety_restricted":
+            validation["safety_restricted"] += 1
         elif a == "unable" and r["test_status"] not in ("consent_control",):
             validation["unable"] += 1
 
@@ -284,17 +338,17 @@ def build_journey_view(journey: Optional[dict]) -> Optional[dict]:
                 "points": None if rate is None else round(weight * rate, 1), "detail": detail}
 
     breakdown = [] if score is None else [
-        part("functional", "Functional success", 35, rates.get("success_rate"),
+        part("functional", "Interaction success", 35, rates.get("success_rate"),
              f"{len(successful)} of {len(tested)} executed interactions worked."),
-        part("tracking", "Tracking coverage", 45, rates.get("conversion_tracking_coverage"),
+        part("tracking", "Analytics coverage", 45, rates.get("conversion_tracking_coverage"),
              (f"{len(conv_tracked)} of {len(conv_ok)} working conversion interactions (CTAs, forms, downloads, "
-              "signups…) produced an analytics hit or dataLayer event.") if conv_ok else
+              "signups…) produced an Analytics Hit or DataLayer Event.") if conv_ok else
              "No working conversion interaction was executed, so nothing could be missing (counted as full)."),
         part("evidence", "Evidence coverage", 20, rates.get("evidence_rate"),
              f"{len(with_shot)} of {len(tested)} executed interactions have a screenshot."),
     ]
     health_explained = {
-        "formula": "35% functional success + 45% tracking coverage + 20% evidence coverage",
+        "formula": "35% interaction success + 45% analytics coverage + 20% evidence coverage",
         "parts": breakdown,
         "critical_failures": len(critical),
         "critical_titles": [f.get("title") for f in critical[:5]],
@@ -320,13 +374,13 @@ def build_journey_view(journey: Optional[dict]) -> Optional[dict]:
         elif j.get("tracking_gaps"):
             status, status_label = "tracking_gap", "Tracking gap"
         elif step_rows and all(r["analytics_result"] in _TRACKED_RESULTS for r in step_rows):
-            status, status_label = "ok", "Working, tracking detected"
+            status, status_label = "ok", "Working — analytics detected"
         else:
             status, status_label = "not_verified", "Not fully verified"
         imp = goal.get("importance") or 1
         journeys.append({
             **j,
-            "goal_type_label": _GOAL_LABELS.get(j.get("goal_type"), goal.get("classification_label") or j.get("goal_type")),
+            "goal_type_label": journey_type(goal, j.get("goal_type"), step_rows),
             "importance": _IMPORTANCE.get(imp, "low"),
             "status": status,
             "status_label": status_label,
@@ -342,10 +396,11 @@ def build_journey_view(journey: Optional[dict]) -> Optional[dict]:
         {"key": "interactions", "label": "Interactions found", "value": counts.get("interactions_discovered", 0)},
         {"key": "tested", "label": "Executed", "value": counts.get("interactions_tested", 0)},
         {"key": "successful", "label": "Worked", "value": counts.get("successful_interactions", 0)},
-        {"key": "tracked", "label": "Tracking detected", "value": counts.get("tracked_interactions", 0)},
+        {"key": "analytics_hit", "label": "Analytics Hit Detected", "value": validation["analytics_hit"] + validation["both"]},
+        {"key": "datalayer", "label": "DataLayer Event Only", "value": validation["datalayer"]},
         {"key": "gaps", "label": "Tracking gaps", "value": counts.get("tracking_gaps", 0),
          "state": "fail" if counts.get("tracking_gaps") else "pass"},
-        {"key": "skipped", "label": "Not executed (safety)",
+        {"key": "skipped", "label": "Not Tested — Safety Restricted",
          "value": len([r for r in rows if r["safety_status"] == "not_executed"])},
         {"key": "evidence", "label": "Evidence captured", "value": counts.get("evidence_captured", 0)},
     ]
@@ -358,9 +413,10 @@ def build_journey_view(journey: Optional[dict]) -> Optional[dict]:
         "score": score,
         "rates": rates,
         "health_explained": health_explained,
-        "provenance": ("These journey paths were discovered automatically from this scan of the website — its pages, "
-                       "links, CTAs, forms and downloads, the interactions we executed and the tracking we observed. "
-                       "They are not recordings of real visitors."),
+        "provenance": ("Automatically discovered from website pages, interactions, navigation and audit results. "
+                       "These are paths found by the audit, not recordings of real visitors."),
+        "pipeline": ["Scan website", "Discover", "Classify", "Safely test", "Observe analytics", "Capture evidence",
+                     "Build journey paths", "Score", "Findings", "Recommendations"],
         "counts": counts,
         "tiles": tiles,
         "by_type": [{"type": k, "count": v} for k, v in sorted((health.get("by_type") or {}).items(),
@@ -381,6 +437,8 @@ def build_journey_view(journey: Optional[dict]) -> Optional[dict]:
             "validation": validation,
         },
         "gaps": gaps,
+        "datalayer_only": [r for r in tested if r["test_status"] == "success" and r["type"] in _CONVERSION
+                           and r["analytics_result"] == "datalayer"],
         "forms": journey.get("forms") or [],
         "downloads": [{**d, "screenshot": screenshot_url(d.get("screenshot")),
                        "row": by_index.get(d.get("index"))} for d in (journey.get("downloads") or [])],

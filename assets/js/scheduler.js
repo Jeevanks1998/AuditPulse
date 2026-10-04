@@ -289,7 +289,7 @@
     var MODULES = [
       { id: 'analytics', label: 'Analytics' },
       { id: 'consent', label: 'Consent' },
-      { id: 'journey', label: 'Customer Journey' }
+      { id: 'journey', label: 'Journey Map' }
     ];
 
     function openScheduleModal(existing) {

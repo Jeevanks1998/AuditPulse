@@ -92,7 +92,7 @@ MODULE_COLORS = {
     "analytics": (colors.HexColor("#2563EB"), colors.HexColor("#EAF2FF")),
     "journey": (colors.HexColor("#0D9488"), colors.HexColor("#E6F6F4")),
 }
-MODULE_LABELS = {"consent": "Consent", "analytics": "Analytics", "journey": "Customer Journey"}
+MODULE_LABELS = {"consent": "Consent", "analytics": "Analytics", "journey": "Journey Map"}
 
 
 def module_color(module: str):

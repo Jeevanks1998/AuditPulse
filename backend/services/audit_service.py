@@ -562,7 +562,7 @@ def _backfill_analytics_from_journey(analytics_row, journey_row) -> None:
         prev.update({
             "available": True, "vendors": vendors, "source": "journey",
             "analytics_runtime_error": prev.get("error"),
-            "note": (f"Taken from the Customer Journey browser pass ({pages} page(s), consent accepted): "
+            "note": (f"Taken from the Journey Map browser pass ({pages} page(s), consent accepted): "
                      "the Analytics module's own live check could not run."),
         })
         analytics_row.runtime_result = prev

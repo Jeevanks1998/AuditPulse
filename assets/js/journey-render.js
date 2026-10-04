@@ -11,20 +11,24 @@
 
   // Analytics result per interaction (reports/journey_view.analytics_result):
   // what was actually observed, never inferred.
+  // The only analytics statuses the Journey Map shows ("Tracked" alone is
+  // ambiguous and never used).
   var ANALYTICS_CHIP = {
-    both: ['tracked', 'Analytics hit + DataLayer event'],
-    analytics_hit: ['tracked', 'Analytics hit detected'],
-    datalayer: ['datalayer', 'DataLayer event detected'],
-    detected: ['tracked', 'Tracking event detected'],
-    duplicate: ['duplicate', 'Duplicate detected'],
-    not_detected: ['not_tracked', 'Not detected'],
-    unable: ['not_tested', 'Unable to validate'],
+    analytics_hit: ['tracked', 'Analytics Hit Detected'],
+    datalayer: ['datalayer', 'DataLayer Event Detected'],
+    both: ['tracked', 'Both Detected'],
+    not_detected: ['not_tracked', 'Not Detected'],
+    duplicate: ['duplicate', 'Duplicate Detected'],
+    unable: ['not_tested', 'Unable to Validate'],
+    safety_restricted: ['skipped', 'Not Tested — Safety Restricted'],
     not_applicable: ['not_applicable', '—']
   };
-  var LEGACY_TRACK = { tracked: 'detected', not_tracked: 'not_detected', duplicate: 'duplicate', not_applicable: 'not_applicable' };
+  // Older stored scans without a per-source split: only "not detected" and
+  // "duplicate" can be stated; anything else can't be validated from them.
+  var LEGACY_TRACK = { not_tracked: 'not_detected', duplicate: 'duplicate', not_applicable: 'not_applicable' };
   var TEST_CHIP = {
     success: ['success', 'Worked'], failed: ['failed', 'Failed'],
-    skipped: ['skipped', 'Not executed (safety)'], not_tested: ['', 'Discovered, not executed'],
+    skipped: ['skipped', 'Not Tested — Safety Restricted'], not_tested: ['', 'Not tested'],
     same_as_first: ['', 'Same as first occurrence'],
     consent_control: ['', 'Consent control']
   };
@@ -60,12 +64,14 @@
         '<small class="jr-muted">' + esc(p.detail) + '</small></div>';
     }).join('');
     var crit = ex.critical_failures || 0;
+    var summary = (ex.parts || []).map(function (p) { return '<li>' + esc(p.label) + ': <strong>' + pct(p.rate) + '</strong></li>'; }).join('');
     return '<div class="jr-health">' +
       '<div class="jr-score" data-band="' + band(view.score) + '">' +
-        '<span class="jr-score__value">' + (view.score == null ? '—' : view.score) + '</span>' +
-        '<span class="jr-score__label">Technical journey health</span></div>' +
+        '<span class="jr-score__label">Journey Health</span>' +
+        '<span class="jr-score__value">' + (view.score == null ? '—' : view.score) + '<small>/100</small></span>' +
+        (summary ? '<ul class="jr-score__parts">' + summary + '</ul>' : '') + '</div>' +
       '<div>' +
-        (parts ? '<p class="jr-muted" style="margin:0 0 6px;">How the score was calculated from this scan: ' + esc(ex.formula || '') + '.</p>' +
+        (parts ? '<p class="jr-muted" style="margin:0 0 6px;">Calculated from this audit\'s results: ' + esc(ex.formula || '') + '.</p>' +
           '<div class="jr-parts">' + parts + '</div>'
           : '<p class="jr-muted">No interaction could be executed in this scan, so no health score was calculated.</p>') +
         '<p class="jr-muted" style="margin-top:8px;">Critical failures found: <strong style="color:' + (crit ? 'var(--color-error)' : 'inherit') + '">' + crit + '</strong>' +
@@ -99,8 +105,8 @@
         '<span class="jr-step__kind">Page</span><span class="jr-step__label">' + esc(node.path) + '</span></button>';
     }
     var a = analyticsKey(node);
-    var trk = { both: 'tracked', analytics_hit: 'tracked', detected: 'tracked', datalayer: 'datalayer', duplicate: 'duplicate',
-      not_detected: 'not_tracked', unable: 'not_tested', not_applicable: 'not_tested' }[a] || 'not_tested';
+    var trk = { both: 'tracked', analytics_hit: 'tracked', datalayer: 'datalayer', duplicate: 'duplicate',
+      not_detected: 'not_tracked', unable: 'not_tested', safety_restricted: 'not_tested', not_applicable: 'not_tested' }[a] || 'not_tested';
     if (trk === 'not_tracked' && node.test_status !== 'success') trk = 'not_tested';   // failed steps aren't tracking gaps
     return '<button type="button" class="jr-step jr-step--interaction" data-node="' + esc(nid) + '" data-tracking="' + esc(trk) + '"' +
       (node.test_status === 'failed' ? ' data-failed="true"' : '') + ' title="' + esc((ANALYTICS_CHIP[a] || ANALYTICS_CHIP.unable)[1]) + '">' +
@@ -120,7 +126,7 @@
 
   function journeyFlow(j, nodes, compact) {
     var meta = compact ? '' :
-      '<span class="jr-flow__meta">' + chip('type', j.goal_type_label || '') + importanceChip(j.importance) +
+      '<span class="jr-flow__meta">' + (j.goal_type_label ? chip('type', j.goal_type_label) : '') + importanceChip(j.importance) +
         (j.status === 'tracking_gap' && (j.tracking_gaps || []).length
           ? chip('not_tracked', j.tracking_gaps.length + ' tracking gap' + (j.tracking_gaps.length === 1 ? '' : 's'))
           : chip(JOURNEY_STATUS[j.status] || '', j.status_label || '')) +
@@ -137,11 +143,13 @@
     var journeys = map.journeys || [];
     var flows = journeys.map(function (j) { return journeyFlow(j, nodes, false); }).join('');
     var pages = Object.keys(nodes).filter(function (k) { return nodes[k].kind === 'page'; }).length;
+    var pipe = (view.pipeline || []).map(function (x) { return '<span>' + esc(x) + '</span>'; }).join('<span class="jr-arrow" aria-hidden="true">→</span>');
     return '<p class="jr-provenance">' + esc(view.provenance || '') + '</p>' +
-      '<div class="jr-legend"><span class="l-tracked">Analytics hit detected</span><span class="l-dl">DataLayer event only</span>' +
-      '<span class="l-gap">Executed, nothing detected</span><span class="l-dup">Duplicate detected</span>' +
-      '<span>Unable to validate (not executed)</span><span class="l-gap">Dashed = interaction failed</span></div>' +
-      '<p class="jr-title" style="margin-top:4px;">Discovered journey paths (' + journeys.length + ')</p>' +
+      (pipe ? '<p class="jr-pipeline">' + pipe + '</p>' : '') +
+      '<div class="jr-legend"><span class="l-tracked">Analytics Hit Detected / Both Detected</span><span class="l-dl">DataLayer Event Detected</span>' +
+      '<span class="l-gap">Not Detected</span><span class="l-dup">Duplicate Detected</span>' +
+      '<span>Unable to Validate / Not Tested — Safety Restricted</span><span class="l-gap">Dashed = interaction failed</span></div>' +
+      '<p class="jr-title" style="margin-top:4px;">' + journeys.length + ' journey path' + (journeys.length === 1 ? '' : 's') + ' discovered</p>' +
       (journeys.length ? '<p class="jr-muted" style="margin-top:0;">Most critical first: broken steps, then tracking gaps, then by importance of the goal.</p>' : '') +
       '<div class="jr-flows">' + (flows || '<p class="jr-muted">No journey path was discovered in this scan — no conversion-type interaction (CTA, form, download, signup, booking, purchase, phone or email link) was found on the scanned pages.</p>') + '</div>' +
       '<details class="jr-structure"><summary class="jr-title" style="cursor:pointer;">Supporting information: site structure (' + pages + ' page' + (pages === 1 ? '' : 's') + ')</summary>' +
@@ -174,7 +182,7 @@
       '<dt>Page</dt><dd>' + esc(row.page_path || n.path) + '</dd>' +
       (row.destination ? '<dt>Destination</dt><dd>' + esc(row.destination) + '</dd>' : '') +
       '<dt>Test result</dt><dd>' + testChip(row.test_status || n.test_status) + '</dd>' +
-      '<dt>Safety</dt><dd>' + esc(row.safety_label || '—') + '</dd>' +
+      '<dt>Safety</dt><dd>' + esc(row.safety_label || '—') + (row.safety_reason ? '<br><small>' + esc(row.safety_reason) + '</small>' : '') + '</dd>' +
       '<dt>Observed</dt><dd>' + esc(row.observed || n.observed || '—') + '</dd>' +
       '<dt>Analytics</dt><dd>' + analyticsChip(row) +
         ((row.tracking_events || []).length ? '<br>' + esc(row.tracking_events.join(', ')) : '') +
@@ -199,8 +207,8 @@
 
   /* ------------------------------ interaction details ------------------------------ */
   var INTERACTION_FILTERS = [
-    ['all', 'All discovered'], ['executed', 'Executed'], ['not_executed', 'Not executed (safety)'],
-    ['failed', 'Failed'], ['gap', 'Executed, no tracking detected'], ['datalayer', 'DataLayer only']
+    ['all', 'All discovered'], ['executed', 'Executed'], ['not_executed', 'Not Tested — Safety Restricted'],
+    ['failed', 'Failed'], ['gap', 'Executed — Not Detected'], ['datalayer', 'DataLayer Event Detected'], ['unable', 'Unable to Validate']
   ];
   var MAX_INTERACTION_ROWS = 200;
 
@@ -210,6 +218,7 @@
       if (f === 'not_executed') return r.safety_status === 'not_executed';
       if (f === 'failed') return r.test_status === 'failed';
       if (f === 'gap') return r.test_status === 'success' && analyticsKey(r) === 'not_detected';
+      if (f === 'unable') return analyticsKey(r) === 'unable';
       if (f === 'datalayer') return analyticsKey(r) === 'datalayer';
       return true;
     });
@@ -224,12 +233,10 @@
     return d;
   }
 
-  var SAFETY_SHORT = { executed: 'Executed', checked: 'HTTP check only', not_executed: 'Not executed (safety)',
+  var SAFETY_SHORT = { executed: 'Executed', checked: 'HTTP check only', not_executed: 'Safety restricted',
     consent: 'Consent control', repeat: 'Repeat element', not_selected: 'Not selected for test' };
   function safetyCell(r) {
-    var short = SAFETY_SHORT[r.safety_status] || '—';
-    var reason = r.safety_status === 'not_executed' ? (r.safety_label || '').replace(/^Not executed — /, '') : '';
-    return '<span title="' + esc(r.safety_label || '') + '">' + esc(short) + '</span>' + (reason ? '<small>' + esc(reason) + '</small>' : '');
+    return '<span title="' + esc(r.safety_label || '') + '">' + esc(SAFETY_SHORT[r.safety_status] || '—') + '</span>';
   }
 
   function interactionDetailRows(rows) {
@@ -239,9 +246,12 @@
       return [esc(r.label || '—') + '<small>' + esc(r.page_path) + '</small>',
         chip('type', r.type_label),
         r.destination ? '<span class="jr-dest" title="' + esc(r.destination) + '">' + esc(shortDest(r)) + '</span>' : '—',
-        testChip(r.test_status) + (r.observed ? '<small>' + esc(r.observed) + '</small>' : ''),
+        (r.safety_status === 'not_executed'
+          ? chip('skipped', 'Not Tested — Safety Restricted') + '<small>' + esc(r.safety_reason || '') + '</small>'
+          : testChip(r.test_status) + (r.observed ? '<small>' + esc(r.observed) + '</small>' : '')),
         safetyCell(r),
-        analyticsChip(r) + ((r.tracking_events || []).length ? '<small>' + esc(r.tracking_events.join(', ')) + '</small>' : ''),
+        (analyticsKey(r) === 'safety_restricted' ? '<span class="jr-muted">—</span>' : analyticsChip(r)) +
+          ((r.tracking_events || []).length ? '<small>' + esc(r.tracking_events.join(', ')) + '</small>' : ''),
         shot ? '<a class="jr-nowrap" href="' + esc(img(shot)) + '" target="_blank" rel="noopener">View</a>' : '<span class="jr-muted">—</span>'];
     });
   }
@@ -285,18 +295,19 @@
     var vendors = tr.vendors || [];
     var v = tr.validation || {};
     var tiles = [
-      ['Analytics hit detected', v.analytics_hit, 'pass'], ['DataLayer event detected', v.datalayer, v.datalayer ? 'warn' : ''],
-      ['Both detected', v.both, 'pass'], ['Not detected', v.not_detected, v.not_detected ? 'fail' : ''],
-      ['Duplicate detected', v.duplicate, v.duplicate ? 'warn' : ''], ['Unable to validate', v.unable, '']
+      ['Analytics Hit Detected', v.analytics_hit, 'pass'], ['DataLayer Event Detected', v.datalayer, v.datalayer ? 'warn' : ''],
+      ['Both Detected', v.both, 'pass'], ['Not Detected', v.not_detected, v.not_detected ? 'fail' : ''],
+      ['Duplicate Detected', v.duplicate, v.duplicate ? 'warn' : ''], ['Unable to Validate', v.unable, ''],
+      ['Not Tested — Safety Restricted', v.safety_restricted, '']
     ];
     return '<p class="jr-muted">For each interaction we recorded analytics requests sent over the network (GA4, Adobe, Piano, Meta…) ' +
-      'and dataLayer pushes separately. A dataLayer event alone shows the site prepared the data — it does not prove an analytics tool received it.</p>' +
+      'and dataLayer pushes separately. A DataLayer Event on its own shows the site prepared the data — it does not prove an analytics tool received it.</p>' +
       (tr.validation ? '<div class="jr-tiles">' + tiles.map(function (t) {
         return '<div class="jr-tile"' + (t[2] ? ' data-state="' + t[2] + '"' : '') + '><span class="jr-tile__value">' + esc(t[1] || 0) + '</span><span class="jr-tile__label">' + esc(t[0]) + '</span></div>';
       }).join('') + '</div>' : '') +
       '<p class="jr-muted">Analytics observed during the scan: ' +
       (vendors.length ? vendors.map(function (x) { return esc(x.label) + ' (' + x.hits + ' hits)'; }).join(', ') : 'none') + '.</p>' +
-      table(['Interaction type', 'Executed', 'Analytics hit', 'DataLayer only', 'Both', 'Not detected', 'Duplicate'], cov.map(function (c) {
+      table(['Interaction type', 'Executed', 'Analytics Hit Detected', 'DataLayer Event only', 'Both Detected', 'Not Detected', 'Duplicate Detected'], cov.map(function (c) {
         var hasSplit = c.analytics_hit != null;
         return [esc(c.type), c.tested, hasSplit ? c.analytics_hit : c.tracked, hasSplit ? c.datalayer_only : '—', hasSplit ? c.both : '—',
           c.not_tracked ? '<strong style="color:var(--color-error)">' + c.not_tracked + '</strong>' : 0, c.duplicate];
@@ -318,9 +329,17 @@
 
   function renderGaps(view) {
     var gaps = view.gaps || [];
-    if (!gaps.length) return '<p class="jr-muted">No tracking gaps: every conversion interaction that worked when executed produced an analytics hit or dataLayer event.</p>';
-    return '<p class="jr-muted">Each of these was discovered and executed successfully, but neither an analytics hit nor a dataLayer event was observed.</p>' +
-      table(['Interaction', 'Type', 'Test result', 'Analytics'], interactionRows(gaps), function (i) { return ' class="is-clickable" data-index="' + gaps[i].index + '"'; });
+    var dl = view.datalayer_only || [];
+    var html = '<p class="jr-muted">A tracking gap is a conversion interaction that worked when executed but produced neither an Analytics Hit nor a DataLayer Event.</p>';
+    html += gaps.length
+      ? table(['Interaction', 'Type', 'Test result', 'Analytics'], interactionRows(gaps), function (i) { return ' class="is-clickable" data-index="' + gaps[i].index + '"'; })
+      : '<p class="jr-note">No tracking gaps detected based on the configured validation criteria.</p>';
+    if (dl.length) {
+      html += '<p class="jr-title" style="margin-top:12px;">DataLayer evidence only (' + dl.length + ')</p>' +
+        '<p class="jr-muted">These pushed a DataLayer Event but no analytics network hit was observed. They are not counted as gaps, but delivery to an analytics tool is not confirmed.</p>' +
+        table(['Interaction', 'Type', 'Test result', 'Analytics'], interactionRows(dl), function (i) { return ' class="is-clickable" data-index="' + dl[i].index + '"'; });
+    }
+    return html;
   }
 
   function renderForms(view) {
@@ -392,12 +411,12 @@
     var content = get(ids.content), empty = get(ids.empty);
     var view = journey && journey.reportView;
     if (!view) {
-      if (empty) { empty.textContent = "This audit didn't include the Customer Journey module."; empty.style.display = ''; }
+      if (empty) { empty.textContent = "This audit didn't include the Journey Map module."; empty.style.display = ''; }
       if (content) content.style.display = 'none';
       return null;
     }
     if (!view.available) {
-      if (empty) { empty.textContent = 'The customer journey scan could not run: ' + (view.error || 'unknown error'); empty.style.display = ''; }
+      if (empty) { empty.textContent = 'The journey map scan could not run: ' + (view.error || 'unknown error'); empty.style.display = ''; }
       if (content) content.style.display = 'none';
       return view;
     }
@@ -430,7 +449,7 @@
     var inter = get(ids.interactions);
     if (inter) renderInteractions(inter, view, pick);
     set(ids.coverage, renderCoverage(view));
-    var gapsEl = set(ids.gaps, renderGaps(view)); if (gapsEl) clickableRows(gapsEl, view.gaps || [], pick);
+    var gapsEl = set(ids.gaps, renderGaps(view)); if (gapsEl) clickableRows(gapsEl, [], pick);
     set(ids.forms, renderForms(view));
     var dlEl = set(ids.downloads, renderDownloads(view)); if (dlEl) clickableRows(dlEl, [], pick);
     var ctaEl = set(ids.ctas, renderCtas(view)); if (ctaEl) clickableRows(ctaEl, [], pick);
@@ -448,18 +467,19 @@
     var badge = document.getElementById('journeyHealthBadge');
     var gaps = c.tracking_gaps || 0;
     badge.className = 'badge ' + (gaps ? 'badge--error' : 'badge--success');
-    badge.textContent = gaps ? gaps + ' tracking gap' + (gaps === 1 ? '' : 's') : 'Tracking detected on every executed conversion';
+    badge.textContent = gaps ? gaps + ' tracking gap' + (gaps === 1 ? '' : 's') : 'No tracking gaps detected';
     var journeys = (view.map || {}).journeys || [];
+    var v = (view.tracking || {}).validation || {};
     var tiles = [['Journey paths found', journeys.length], ['Interactions found', c.interactions_discovered], ['Executed', c.interactions_tested],
-      ['Tracking detected', c.tracked_interactions], ['Tracking gaps', gaps, gaps ? 'fail' : 'pass'], ['Forms', c.forms],
-      ['Downloads', c.downloads], ['Journey health', view.score == null ? '—' : view.score]];
+      ['Analytics Hit Detected', (v.analytics_hit || 0) + (v.both || 0)], ['DataLayer Event only', v.datalayer || 0],
+      ['Tracking gaps', gaps, gaps ? 'fail' : 'pass'], ['Journey Health', view.score == null ? '—' : view.score + '/100']];
     var nodes = (view.map || {}).nodes || {};
     var flows = journeys.slice(0, 3).map(function (j) { return journeyFlow(j, nodes, false); }).join('');
     document.getElementById('journeyHealthBody').innerHTML =
       '<div class="jr-tiles">' + tiles.map(function (t) {
         return '<div class="jr-tile"' + (t[2] ? ' data-state="' + t[2] + '"' : '') + '><span class="jr-tile__value">' + esc(t[1] == null ? 0 : t[1]) + '</span><span class="jr-tile__label">' + esc(t[0]) + '</span></div>';
       }).join('') + '</div>' +
-      (flows ? '<p class="jr-muted" style="margin:12px 0 4px;">Discovered journey paths (most critical first)</p><div class="jr-flows">' + flows + '</div>' : '');
+      (flows ? '<p class="jr-muted" style="margin:12px 0 4px;">Discovered Journey Paths (most critical first)</p><div class="jr-flows">' + flows + '</div>' : '');
     document.getElementById('journeyHealthLink').href = link + '#journey';
     card.querySelectorAll('[data-node]').forEach(function (b) { b.addEventListener('click', function () { window.location.href = link + '#journey'; }); });
     card.style.display = '';

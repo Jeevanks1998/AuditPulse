@@ -358,9 +358,9 @@ def build_analytics_section(payload: ReportPayload) -> List[Flowable]:
 # Customer Journey
 # --------------------------------------------------------------------------
 def _rate_rows(rates: dict) -> List[Flowable]:
-    items = [("Interactions that worked", rates.get("success_rate")),
-             ("Key actions that were tracked", rates.get("conversion_tracking_coverage")),
-             ("Tests with screenshot evidence", rates.get("evidence_rate"))]
+    items = [("Interaction success", rates.get("success_rate")),
+             ("Analytics coverage", rates.get("conversion_tracking_coverage")),
+             ("Evidence coverage", rates.get("evidence_rate"))]
     rows = []
     for label, val in items:
         if val is None:
@@ -383,10 +383,9 @@ def build_journey_section(payload: ReportPayload) -> List[Flowable]:
     if not jv:
         return []
     story: List[Flowable] = [module_banner(
-        "journey", "Customer journey", _score(payload, "journey"),
-        "We discovered the site's journeys from its pages, links, buttons, forms and downloads, executed the "
-        "safe ones in a real browser and checked what analytics recorded. These are discovered paths, not "
-        "recordings of real visitors.")]
+        "journey", "Journey map", _score(payload, "journey"),
+        "Discovered Journey Paths — automatically discovered from website pages, interactions, navigation and "
+        "audit results. These are paths found by the audit, not recordings of real visitors.")]
     story.append(Spacer(1, 5 * mm))
     if not jv.get("available"):
         story.append(note_box(esc(jv.get("error") or "The journey scan did not complete for this audit.")))
@@ -399,7 +398,8 @@ def build_journey_section(payload: ReportPayload) -> List[Flowable]:
         {"label": "Tested", "value": f"{c.get('successful_interactions', 0)} of {c.get('interactions_tested', 0)} worked",
          "sub": "Clicked in a real browser",
          "state": "pass" if c.get("interactions_tested") and c.get("successful_interactions") == c.get("interactions_tested") else "info"},
-        {"label": "Tracking gaps", "value": gaps_n, "sub": f"{c.get('tracked_interactions', 0)} actions had tracking detected",
+        {"label": "Tracking gaps", "value": gaps_n,
+         "sub": f"{_val(jv, 'analytics_hit') + _val(jv, 'both')} Analytics Hit Detected · {_val(jv, 'datalayer')} DataLayer only",
          "state": "fail" if gaps_n else "pass"},
     ]
     story.append(_check_tiles(tiles))
@@ -409,8 +409,8 @@ def build_journey_section(payload: ReportPayload) -> List[Flowable]:
     cov = (jv.get("tracking") or {}).get("coverage_by_type") or []
     if cov:
         story += _h2("Analytics validation by type of action",
-                     "Analytics hit = a request reached an analytics tool. DataLayer = the site pushed the event to "
-                     "its dataLayer, which alone doesn't prove an analytics tool received it.")
+                     "Analytics Hit Detected = a request reached an analytics tool. DataLayer Event Detected = the site "
+                     "pushed the event to its dataLayer, which alone doesn't prove an analytics tool received it.")
         rows = []
         for r in cov:
             tested = r.get("tested") or 0
@@ -422,7 +422,7 @@ def build_journey_section(payload: ReportPayload) -> List[Flowable]:
                          str(r.get("datalayer_only") or 0) if hit is not None else "—",
                          str(r.get("not_tracked") or 0), Bar(pct, 30 * mm, 2.2 * mm,
                                                             color=module_color("journey")[0])])
-        story.append(data_table(["Action", "Executed", "Analytics hit", "DataLayer only", "Not detected", "Detected"], rows,
+        story.append(data_table(["Action", "Executed", "Analytics hit", "DataLayer only", "Not Detected", "Hit or dataLayer"], rows,
                                 [W - 136 * mm, 18 * mm, 24 * mm, 26 * mm, 24 * mm, 44 * mm], align_right=(1, 2, 3, 4)))
 
     broken = [i for i in jv.get("interactions") or [] if i.get("test_status") == "failed"]
@@ -436,9 +436,13 @@ def build_journey_section(payload: ReportPayload) -> List[Flowable]:
         story += _more_note(min(len(broken), MAX_ROWS), len(broken), "items")
 
     gaps = jv.get("gaps") or []
+    story += _h2("Tracking gaps",
+                 "A tracking gap is a conversion action that worked when executed but produced neither an "
+                 "Analytics Hit nor a DataLayer Event.")
+    if not gaps:
+        story.append(note_box("No tracking gaps detected based on the configured validation criteria.",
+                              fg=INFO_TEXT, bg=INFO_SOFT))
     if gaps:
-        story += _h2("Worked, but no tracking detected",
-                     "These actions worked when executed, but neither an analytics hit nor a dataLayer event was observed.")
         rows = [[Paragraph(soft_wrap(g.get("label") or "—"), STYLES["TDBold"]), g.get("type_label") or "",
                  soft_wrap(g.get("page_path") or short_url(g.get("page"))),
                  soft_wrap(short_url(g.get("destination")) if g.get("destination") else "—")]
@@ -446,6 +450,17 @@ def build_journey_section(payload: ReportPayload) -> List[Flowable]:
         story.append(data_table(["Element", "Type", "Page", "Goes to"], rows,
                                 [56 * mm, 22 * mm, 40 * mm, W - 118 * mm]))
         story += _more_note(min(len(gaps), MAX_ROWS), len(gaps), "gaps")
+    dl_only = jv.get("datalayer_only") or []
+    if dl_only:
+        story += _h2("DataLayer evidence only",
+                     "These conversion actions pushed a DataLayer Event, but no analytics network hit was observed. "
+                     "They are not counted as gaps, but analytics delivery is not confirmed.")
+        rows = [[Paragraph(soft_wrap(g.get("label") or "—"), STYLES["TDBold"]), g.get("type_label") or "",
+                 soft_wrap(g.get("page_path") or short_url(g.get("page"))),
+                 soft_wrap(", ".join(g.get("tracking_events") or []) or "—")]
+                for g in dl_only[:MAX_ROWS]]
+        story.append(data_table(["Element", "Type", "Page", "DataLayer event"], rows,
+                                [56 * mm, 22 * mm, 40 * mm, W - 118 * mm]))
 
     forms = [f for f in jv.get("forms") or [] if not f.get("is_search")]
     if forms:
@@ -466,21 +481,15 @@ def build_journey_section(payload: ReportPayload) -> List[Flowable]:
         rows = []
         for d in dls[:MAX_ROWS]:
             tr = ((d.get("row") or {}).get("analytics_result")
-                  or {"tracked": "detected", "not_tracked": "not_detected", "duplicate": "duplicate"}.get(
-                      (d.get("tracking") or "").lower(), "unable"))
-            tstate = {"both": ("Hit + dataLayer", SUCCESS_TEXT, SUCCESS_SOFT),
-                      "analytics_hit": ("Analytics hit", SUCCESS_TEXT, SUCCESS_SOFT),
-                      "detected": ("Detected", SUCCESS_TEXT, SUCCESS_SOFT),
-                      "datalayer": ("DataLayer only", INFO_TEXT, INFO_SOFT),
-                      "not_detected": ("Not detected", ERROR_TEXT, ERROR_SOFT),
-                      "duplicate": ("Duplicate", WARNING_TEXT, WARNING_SOFT)}.get(tr, ("Not validated", TEXT_TERTIARY, SURFACE_SUNKEN))
+                  or {"not_tracked": "not_detected", "duplicate": "duplicate"}.get((d.get("tracking") or "").lower(), "unable"))
+            tstate = _analytics_pill(tr)
             http = d.get("http_status")
             rows.append([soft_wrap(short_url(d.get("destination")) or d.get("label") or ""),
                          (d.get("file_type") or "").upper(),
                          pill(str(http) if http else "—", SUCCESS_TEXT if http and http < 400 else ERROR_TEXT,
                               SUCCESS_SOFT if http and http < 400 else ERROR_SOFT, width=12 * mm) if http else "—",
-                         pill(tstate[0], tstate[1], tstate[2], width=24 * mm)])
-        story.append(data_table(["File", "Type", "Opens", "Tracking"], rows, [W - 70 * mm, 16 * mm, 22 * mm, 32 * mm]))
+                         pill(tstate[0], tstate[1], tstate[2], width=40 * mm)])
+        story.append(data_table(["File", "Type", "Opens", "Analytics"], rows, [W - 82 * mm, 16 * mm, 22 * mm, 44 * mm]))
         story += _more_note(min(len(dls), MAX_ROWS), len(dls), "downloads")
 
     story += _journey_screenshots(jv, broken, gaps)
@@ -492,17 +501,31 @@ def build_journey_section(payload: ReportPayload) -> List[Flowable]:
     return story
 
 
-_JOURNEY_STATUS = {
-    "failed": ("Didn't work", ERROR_TEXT),
-    "not_tracked": ("Worked · no tracking detected", WARNING_TEXT),
-    "duplicate": ("Worked · duplicate detected", WARNING_TEXT),
-    "tracked": ("Worked · tracking detected", SUCCESS_TEXT),
+def _val(jv: dict, key: str) -> int:
+    return int(((jv.get("tracking") or {}).get("validation") or {}).get(key) or 0)
+
+
+# The Journey Map's analytics statuses (same words as the web report).
+_ANALYTICS_PILLS = {
+    "analytics_hit": ("Analytics Hit Detected", SUCCESS_TEXT, SUCCESS_SOFT),
+    "datalayer": ("DataLayer Event Detected", INFO_TEXT, INFO_SOFT),
+    "both": ("Both Detected", SUCCESS_TEXT, SUCCESS_SOFT),
+    "not_detected": ("Not Detected", ERROR_TEXT, ERROR_SOFT),
+    "duplicate": ("Duplicate Detected", WARNING_TEXT, WARNING_SOFT),
+    "unable": ("Unable to Validate", TEXT_TERTIARY, SURFACE_SUNKEN),
+    "safety_restricted": ("Not Tested — Safety Restricted", TEXT_TERTIARY, SURFACE_SUNKEN),
 }
+
+
+def _analytics_pill(key: str):
+    return _ANALYTICS_PILLS.get(key, _ANALYTICS_PILLS["unable"])
+
+
 _JOURNEY_PATH_STATUS = {
     "broken": ("Broken step", ERROR_TEXT, ERROR_SOFT),
     "tracking_gap": ("Tracking gap", WARNING_TEXT, WARNING_SOFT),
     "not_verified": ("Not fully verified", TEXT_TERTIARY, SURFACE_SUNKEN),
-    "ok": ("Working, tracked", SUCCESS_TEXT, SUCCESS_SOFT),
+    "ok": ("Working — analytics detected", SUCCESS_TEXT, SUCCESS_SOFT),
 }
 MAX_JOURNEY_PATHS = 8
 
@@ -529,12 +552,14 @@ def _journey_paths(jv: dict) -> List[Flowable]:
                 labels.append(f"[{n.get('type_label')}] {n.get('label') or ''}")
         st = _JOURNEY_PATH_STATUS.get(j.get("status"), ("—", TEXT_TERTIARY, SURFACE_SUNKEN))
         rows.append([Paragraph(soft_wrap("  ›  ".join(labels)), STYLES["TD"]),
-                     esc(j.get("goal_type_label") or ""), (j.get("importance") or "").capitalize(),
-                     pill(st[0], st[1], st[2], width=28 * mm)])
-    out.append(data_table(["Path", "Type", "Importance", "Status"], rows, [W - 78 * mm, 24 * mm, 22 * mm, 32 * mm]))
+                     Paragraph(esc(j.get("goal_type_label") or "—"), STYLES["TD"]),
+                     (j.get("importance") or "").capitalize(),
+                     pill(st[0], st[1], st[2], width=34 * mm)])
+    out.append(data_table(["Path", "Journey type", "Importance", "Status"], rows,
+                          [W - 92 * mm, 30 * mm, 22 * mm, 40 * mm]))
     if len(journeys) > MAX_JOURNEY_PATHS:
         out.append(Paragraph(f"Showing the {MAX_JOURNEY_PATHS} most critical of {len(journeys)} paths. "
-                             "All paths are on the Customer Journey section of the web report.",
+                             "All paths are in the Journey Map section of the web report.",
                              STYLES["Small"].clone("jpm", textColor=TEXT_TERTIARY, spaceBefore=1.5 * mm)))
     return out
 
@@ -544,12 +569,14 @@ def _health_breakdown(jv: dict) -> List[Flowable]:
     parts = ex.get("parts") or []
     if not parts:
         return _rate_rows(jv.get("rates") or {})
-    out = _h2("How the journey health score was calculated", esc(ex.get("formula") or ""))
+    score = jv.get("score")
+    out = _h2(f"Journey Health — {score if score is not None else '—'}/100",
+              "Calculated from this audit's results: " + esc(ex.get("formula") or ""))
     rows = []
     for p in parts:
         rate = p.get("rate")
         pct = round(float(rate) * 100) if rate is not None else 0
-        rows.append([Paragraph(f"<b>{esc(p.get('label'))}</b><br/>"
+        rows.append([Paragraph(f"<b>{esc(p.get('label'))}: {pct if rate is not None else '—'}%</b><br/>"
                                f"<font size='8' color='{hexstr(TEXT_TERTIARY)}'>{esc(p.get('detail') or '')}</font>", STYLES["TD"]),
                      Bar(pct, 60 * mm, 2.4 * mm),
                      Paragraph(f"<b>{p.get('points') if p.get('points') is not None else '—'}</b> / {p.get('weight')}",
@@ -618,8 +645,11 @@ def _journey_screenshots(jv: dict, broken: List[dict], gaps: List[dict]) -> List
         url = shots.get("highlighted") or shots.get("after") or shots.get("before")
         if not (url and screenshot_url_to_path(url)):
             continue
-        status_key = "failed" if it.get("test_status") == "failed" else (it.get("tracking_status") or "")
-        label, color = _JOURNEY_STATUS.get(status_key, ("Tested", TEXT_SECONDARY))
+        if it.get("test_status") == "failed":
+            label, color = "Didn't work", ERROR_TEXT
+        else:
+            pl = _analytics_pill(it.get("analytics_result") or "unable")
+            label, color = f"Worked · {pl[0]}", (WARNING_TEXT if pl[1] == ERROR_TEXT else pl[1])
         page = it.get("page_path") or short_url(it.get("page"))
         if page == "/":
             page = "Homepage"

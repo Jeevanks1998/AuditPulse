@@ -146,7 +146,7 @@ def test_journey_map_and_findings(journey_site):
     labels = [nodes[s].get("path") if s.startswith("page:") else nodes[s]["label"] for s in quote["steps"]]
     assert labels[:4] == ["/", "Request a quote", "/quote", "Request a quote (form)"]
     titles = [f["title"] for f in r.findings]
-    assert "Conversion interaction not tracked: Request a quote" in titles
+    assert "No analytics detected for conversion interaction: Request a quote" in titles
     assert "Broken important CTA: See the offer" in titles
     assert "Download inaccessible: Old catalogue" in titles
     assert "Duplicate event: Compare models" in titles

@@ -136,7 +136,7 @@ async def audit_journey(
     if not journey:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No customer journey scan for this audit — was 'journey' included in its modules?",
+            detail="No journey map scan for this audit — was 'journey' included in its modules?",
         )
     return journey
 

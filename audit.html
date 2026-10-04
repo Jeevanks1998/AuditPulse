@@ -67,7 +67,7 @@
           Consent Banner</a></li>
         <li><a class="sidebar__link" href="report.html#journey">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>
-          Customer Journey</a></li>
+          Journey Map</a></li>
       </ul>
 
       <div class="sidebar__group-label" style="margin-top:20px;">System</div>
@@ -194,8 +194,8 @@
               <label class="module-row">
                 <span class="module-row__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg></span>
                 <span class="module-row__body">
-                  <span class="module-row__title">Customer Journey</span>
-                  <span class="module-row__desc">Discovers pages, CTAs, forms &amp; downloads, maps the journey and checks tracking</span>
+                  <span class="module-row__title">Journey Map</span>
+                  <span class="module-row__desc">Discovers journey paths from pages, CTAs, forms &amp; downloads, safely tests them and validates analytics</span>
                 </span>
                 <span class="toggle"><input type="checkbox" data-module="journey" checked><span class="toggle__track"></span></span>
               </label>
@@ -224,7 +224,7 @@
           <div class="card card__pad summary-card">
             <div class="card__head"><h3 data-icon="clipboard" data-icon-tone="success">Audit Summary</h3></div>
             <div class="summary-list">
-              <div class="summary-list__row"><span>Target</span><span class="mono" id="summaryTarget">example.com</span></div>
+              <div class="summary-list__row"><span>Target</span><span class="mono" id="summaryTarget">—</span></div>
               <div class="summary-list__row"><span>Depth</span><span id="summaryDepth">Homepage</span></div>
               <div class="summary-list__row"><span>Max pages</span><span class="mono" id="summaryMaxPages">100</span></div>
               <div class="summary-list__row"><span>Modules</span><span id="summaryModules">6 / 6</span></div>
@@ -244,7 +244,7 @@
               <div class="run-panel">
                 <div class="run-stage">
                   <div class="run-browser" aria-hidden="true">
-                    <div class="run-browser__bar"><i></i><i></i><i></i><span class="run-browser__url" id="progressHost">example.com</span></div>
+                    <div class="run-browser__bar"><i></i><i></i><i></i><span class="run-browser__url" id="progressHost"></span></div>
                     <div class="run-browser__page">
                       <div class="run-skel">
                         <div class="run-skel__col"><span class="lg"></span><span></span><span class="w80"></span><span class="w60"></span><span class="btn"></span></div>
@@ -266,7 +266,7 @@
                 </div>
 
                 <div class="run-head">
-                  <h3 id="progressHeading">Auditing example.com</h3>
+                  <h3 id="progressHeading">Auditing…</h3>
                   <p class="run-status"><span class="live-dot"></span><span id="progressStatusText">Starting…</span></p>
                 </div>
 
@@ -291,7 +291,7 @@
                   </li>
                   <li class="check-item check-item--pending" id="checkJourney" data-step="journey">
                     <span class="run-step__glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg></span>
-                    <span class="check-item__label">Customer journey<small>Click through CTAs, forms and downloads</small></span>
+                    <span class="check-item__label">Journey map<small>Discover and safely test journey paths</small></span>
                     <span class="check-item__time" id="checkJourneyTime">pending</span>
                     <span class="check-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg></span>
                   </li>

@@ -13,7 +13,7 @@ from pydantic import BaseModel
 MODULE_LABELS = {
     "analytics": "Analytics",
     "consent": "Consent",
-    "journey": "Customer Journey",
+    "journey": "Journey Map",
 }
 
 

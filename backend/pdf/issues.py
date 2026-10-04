@@ -29,7 +29,7 @@ _SKIP_MODULES = {"ai"}
 # Plain-language "why it matters", most specific match first.
 _WHY_BY_TITLE = [
     (r"broken important cta|broken .*link|did not work|404", "Visitors click this and nothing useful happens, so you lose leads and trust."),
-    (r"not tracked|tracking gap|no analytics event", "These actions happen on your site but never reach analytics, so conversions are under-reported."),
+    (r"not tracked|no analytics detected|tracking gap|no analytics event", "These actions happen on your site but never reach analytics, so conversions are under-reported."),
     (r"tracking inconsistency", "Similar buttons are measured differently, which makes reports hard to compare and trust."),
     (r"difficult to verify", "We couldn't see a clear result after clicking, so a visitor may not either."),
     (r"before consent|not held back|without consent", "Collecting data before a visitor agrees breaks GDPR/ePrivacy rules and can lead to fines."),

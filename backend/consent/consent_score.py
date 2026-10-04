@@ -730,12 +730,16 @@ def build_ccpa_assessment(
 # and withdrawal as easy as giving consent.
 DPDP_CHECK_ORDER = (
     "notice_available",
+    "notice_purpose_stated",
+    "grievance_contact",
+    "notice_rights_described",
     "affirmative_consent_action",
     "refusal_available",
     "no_tracking_before_consent",
     "no_cookies_before_consent",
     "withdrawal_available",
     "refusal_blocks_tracking",
+    "dpdp_referenced",
 )
 
 DPDP_CHECK_LABELS: Dict[str, str] = {
@@ -746,6 +750,37 @@ DPDP_CHECK_LABELS: Dict[str, str] = {
     "no_cookies_before_consent": "No analytics/marketing cookies before consent",
     "withdrawal_available": "Consent withdrawal available",
     "refusal_blocks_tracking": "Refusal actually blocks tracking",
+    "notice_purpose_stated": "Notice states what data is collected and why (s.5)",
+    "grievance_contact": "Grievance / Data Protection Officer contact published (s.8(10))",
+    "notice_rights_described": "Notice explains rights: access, correction, erasure, grievance (ss.11–14)",
+    "dpdp_referenced": "Notice refers to the DPDP Act",
+}
+
+# DPDP notice checks — read from the privacy notice itself
+# (consent.site_evidence). None = the notice could not be read.
+_DPDP_NOTICE_RULES = {
+    "notice_purpose_stated": (
+        re.compile(r"\bpurposes?\b", re.I),
+        re.compile(r"\bpersonal (?:data|information)\b|\bdata (?:we|that we) collect\b|\bcategories of (?:personal )?data\b", re.I),
+    ),
+    "grievance_contact": (
+        re.compile(r"\bgrievance\b|\bdata protection officer\b|\bDPO\b|\bprivacy officer\b|\bnodal officer\b", re.I),
+        re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+|\bcontact\b", re.I),
+    ),
+    "notice_rights_described": (
+        re.compile(r"\bright(?:s)? (?:to|of)\b|\byour rights\b", re.I),
+        re.compile(r"\b(?:access|correct\w*|rectif\w*|eras\w*|delet\w*|withdraw\w*|nominat\w*|grievance)\b", re.I),
+    ),
+    "dpdp_referenced": (
+        re.compile(r"\bDPDP\b|Digital\s+Personal\s+Data\s+Protection", re.I),
+        None,
+    ),
+}
+_DPDP_NOTICE_FAIL = {
+    "notice_purpose_stated": "The privacy notice does not clearly say what personal data is collected and for what purpose.",
+    "grievance_contact": "No Grievance Officer / Data Protection Officer contact was found in the privacy notice.",
+    "notice_rights_described": "The privacy notice does not explain the data principal's rights (access, correction, erasure, grievance).",
+    "dpdp_referenced": "The privacy notice does not mention the Digital Personal Data Protection Act, 2023.",
 }
 
 _DPDP_SOURCE = {
@@ -758,14 +793,38 @@ _DPDP_SOURCE = {
     "refusal_blocks_tracking": "reject_blocks_tracking",
 }
 
-_DPDP_REQUIRED_FOR_COMPLIANCE = frozenset(DPDP_CHECK_ORDER) - {"refusal_blocks_tracking"}
+_DPDP_REQUIRED_FOR_COMPLIANCE = frozenset(DPDP_CHECK_ORDER) - {"refusal_blocks_tracking", "dpdp_referenced", "notice_rights_described"}
 
 
-def build_dpdp_assessment(technical: GdprAssessment) -> dict:
-    """DPDP view over the technical checks — returned as a JSON-ready dict."""
+def _dpdp_notice_check(key: str, site_evidence) -> tuple:
+    """(passed, evidence) for one notice check; passed None when no notice was read."""
+    notice = getattr(site_evidence, "notice", None) if site_evidence is not None else None
+    if notice is None or not (notice.text or "").strip():
+        return None, {"reason": "The privacy notice could not be read automatically, so this was not tested."}
+    first, second = _DPDP_NOTICE_RULES[key]
+    text = notice.text
+    m1 = first.search(text)
+    ok = bool(m1) and (second is None or bool(second.search(text)))
+    where = {"notice": notice.url}
+    if ok:
+        start = max(0, m1.start() - 60)
+        return True, {**where, "excerpt": " ".join(text[start:m1.end() + 120].split())[:220]}
+    return False, {**where, "reason": _DPDP_NOTICE_FAIL[key]}
+
+
+def build_dpdp_assessment(technical: GdprAssessment, site_evidence=None) -> dict:
+    """DPDP view: the technical consent checks plus checks read from the
+    privacy notice itself (purpose, grievance contact, rights, DPDP
+    reference) — returned as a JSON-ready dict."""
     checks: Dict[str, Optional[bool]] = {}
     evidence: Dict[str, dict] = {}
     for key in DPDP_CHECK_ORDER:
+        if key in _DPDP_NOTICE_RULES:
+            passed, ev = _dpdp_notice_check(key, site_evidence)
+            checks[key] = passed
+            if passed is not True and ev:
+                evidence[key] = ev
+            continue
         src = technical.get(_DPDP_SOURCE[key])
         checks[key] = src.passed if src else None
         if src and src.passed is not True:
@@ -889,6 +948,7 @@ def build_consent_summary(
     region: Optional[RegionResult] = None,
     ccpa_signals: Optional[CcpaSignals] = None,
     scan_meta: Optional[dict] = None,
+    site_evidence=None,
     # Phase 1 keyword, kept for callers that still pass it.
     applicability: Optional[RegionResult] = None,
 ) -> ConsentSummary:
@@ -910,6 +970,10 @@ def build_consent_summary(
     ccpa_signals = ccpa_signals or detect_ccpa_signals(page)
 
     privacy_policy_url = detect_privacy_policy(page)
+    if privacy_policy_url is None and getattr(site_evidence, "notice", None) is not None:
+        # No privacy link on the homepage, but the notice was found one level
+        # down (e.g. a PDF linked from a "Policies" page).
+        privacy_policy_url = site_evidence.notice.url
     ccpa_link_found = ccpa_signals.do_not_sell_link
     privacy_choices = ccpa_signals.privacy_choices
     gpc_honored = ccpa_signals.gpc_handling
@@ -961,7 +1025,7 @@ def build_consent_summary(
         }
 
     if applicability.applies(FW_DPDP):
-        assessments[FW_DPDP] = build_dpdp_assessment(technical)
+        assessments[FW_DPDP] = build_dpdp_assessment(technical, site_evidence)
 
     runtime_available = bool(runtime_result and runtime_result.available)
     runtime_tested = bool(

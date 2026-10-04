@@ -1458,7 +1458,7 @@
         var dpdp = dpdpFw && dpdpFw.assessment;
         if (dpdp && dpdp.checks) {
           var dpdpItems = (dpdp.order || Object.keys(dpdp.checks)).map(function (k) {
-            return { key: k, label: (dpdp.labels || {})[k] || k, required: k !== 'refusal_blocks_tracking' };
+            return { key: k, label: (dpdp.labels || {})[k] || k, required: ['refusal_blocks_tracking', 'dpdp_referenced', 'notice_rights_described'].indexOf(k) === -1 };
           });
           var dpdpStatus = complianceStatus(dpdpItems, dpdp.checks);
           dpdpGrid.innerHTML = renderComplianceSummary('DPDP', dpdpStatus, dpdpItems, dpdp.checks, dpdp.evidence || {});

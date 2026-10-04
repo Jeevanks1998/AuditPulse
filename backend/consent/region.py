@@ -132,7 +132,7 @@ _TEXT_SIGNALS = [
     (re.compile(r"\b(?:Pvt\.?\s*Ltd|Private Limited)\b", re.I), REGION_IN, 25, "Indian company form (Pvt. Ltd.)"),
     (re.compile(r"₹|\bINR\b|\bRs\.\s?\d"), REGION_IN, 20, "India localisation (rupee prices)"),
     (re.compile(r"\+91[\s-]?\d{2,5}[\s-]?\d{3,}"), REGION_IN, 20, "India localisation (+91 phone number)"),
-    (re.compile(r"\bDPDP\b|Digital Personal Data Protection", re.I), REGION_IN, 30, "India-specific privacy text (DPDP Act)"),
+    (re.compile(r"\bDPDP\b|Digital\s+Personal\s+Data\s+Protection", re.I), REGION_IN, 30, "India-specific privacy text (DPDP Act)"),
     (re.compile(r"\bGrievance Officer\b|\bData Protection Board of India\b|\bConsent Manager\b.*\bIndia\b", re.I),
      REGION_IN, 30, "India-specific privacy text (Grievance Officer / Data Protection Board)"),
     # EU / EEA
@@ -151,12 +151,23 @@ _TEXT_SIGNALS = [
     (re.compile(r"\bInformation Commissioner|\bUK GDPR\b|\bPECR\b", re.I), REGION_UK, 25, "UK privacy law referenced"),
 ]
 
+# Evidence from the site's other pages, documents and link URLs
+# (consent/site_evidence.py). Global .com sites often only reveal where they
+# operate here: office cities, "...-in-india" news URLs, statutory filings.
+_SITE_SIGNALS = [
+    (re.compile(r"\b(pune|bengaluru|bangalore|mumbai|hyderabad|chennai|gurugram|gurgaon|noida|kolkata|new[- ]delhi|ahmedabad)\b", re.I),
+     REGION_IN, 25, "Indian office location"),
+    (re.compile(r"(?<![a-z])india(?![a-z])", re.I), REGION_IN, 15, "India referenced on the site"),
+    (re.compile(r"\bMGT[- _]?7\b|Form[- _]?MGT|Companies Act,? 2013|\bCSR[- _]?Policy\b.*\bSchedule VII\b", re.I),
+     REGION_IN, 35, "Indian Companies Act filing (e.g. Form MGT-7 annual return)"),
+]
+
 # What the *rendered* consent banner says about how the CMP was configured
 # for this visit — "CMP regional configuration".
 _CMP_SIGNALS = [
     (re.compile(r"\bdo not sell|\bopt[- ]out of (?:the )?sale|your privacy choices|\bCCPA\b|\bCPRA\b", re.I),
      REGION_US_CA, 30, "CMP regional configuration: US opt-out (CCPA-style) banner"),
-    (re.compile(r"\bDPDP\b|Digital Personal Data Protection|\bConsent Manager\b", re.I),
+    (re.compile(r"\bDPDP\b|Digital\s+Personal\s+Data\s+Protection|\bConsent Manager\b", re.I),
      REGION_IN, 30, "CMP regional configuration: India DPDP consent notice"),
     (re.compile(r"\bGDPR\b|\blegitimate interest|\bIAB\b.*\bTCF\b|\bTransparency (?:and|&) Consent Framework", re.I),
      REGION_EU, 25, "CMP regional configuration: GDPR / IAB TCF consent banner"),
@@ -373,13 +384,81 @@ def _alternate_signals(page: ParsedPage) -> List[RegionSignal]:
     return [RegionSignal(REGION_EU, 30, "lang", f"EU-language versions of the site ({shown})")]
 
 
-def detect_region_signals(url: str, page: Optional[ParsedPage] = None) -> List[RegionSignal]:
+def _site_signals(site) -> List[RegionSignal]:
+    """Signals from consent.site_evidence: linked policy/about pages, the
+    privacy notice (HTML or PDF) and every link URL on those pages."""
+    out: List[RegionSignal] = []
+    if site is None:
+        return out
+    for doc in getattr(site, "documents", []) or []:
+        where = urlparse(doc.url).path or "/"
+        where = where if len(where) <= 48 else "…" + where[-47:]
+        for sig in _text_signals(doc.text, _TEXT_SIGNALS + _SITE_SIGNALS, "site"):
+            m = None
+            for pattern, region, weight, desc in _TEXT_SIGNALS + _SITE_SIGNALS:
+                if desc == sig.detail:
+                    m = pattern.search(doc.text)
+                    break
+            found = f" “{m.group(0)[:40]}”" if m else ""
+            out.append(RegionSignal(sig.region, sig.weight, "site", f"{sig.detail}{found} (on {where})"))
+    urls = " ".join(getattr(site, "link_urls", []) or [])
+    texts = " ".join(getattr(site, "link_texts", []) or [])
+    for pattern, region, weight, desc in _SITE_SIGNALS:
+        m = pattern.search(urls) or pattern.search(texts)
+        if m:
+            out.append(RegionSignal(region, weight, "site", f"{desc} “{m.group(0)[:40]}” (site links)"))
+    return out
+
+
+def _dedupe(signals: List[RegionSignal]) -> List[RegionSignal]:
+    """Each kind of evidence counts once (the strongest copy), however many
+    pages repeat it — ten pages saying "Pune" are one office location."""
+    best: Dict[tuple, RegionSignal] = {}
+    order: List[tuple] = []
+    for s in signals:
+        key = (s.region, s.detail.split(" “")[0].split(" (on ")[0].split(" (site links)")[0])
+        if key not in best:
+            order.append(key)
+            best[key] = s
+        elif s.weight > best[key].weight:
+            best[key] = s
+    return [best[k] for k in order]
+
+
+def detect_region_signals(url: str, page: Optional[ParsedPage] = None, site=None) -> List[RegionSignal]:
     signals = _url_signals(url)
     if page is not None:
         signals += _lang_signals(page)
         signals += _alternate_signals(page)
         signals += _text_signals(page.text_content or "", _TEXT_SIGNALS, "content")
-    return signals
+        signals += _homepage_link_signals(url, page)
+    signals += _site_signals(site)
+    return _dedupe(signals)
+
+
+def _homepage_link_signals(url: str, page) -> List[RegionSignal]:
+    """The homepage's own link URLs and texts (e.g. news slugs like
+    "...-in-pune-..." or "...30-years-in-india") — available even when the
+    linked pages are never fetched."""
+    from urllib.parse import urljoin
+    hrefs, texts = [], []
+    for a in (getattr(page, "anchor_tags", None) or [])[:1500]:
+        try:
+            href = (a.get("href") or "").strip()
+            text = a.get_text(" ", strip=True) or ""
+        except Exception:  # noqa: BLE001
+            continue
+        if href and not href.startswith(("#", "mailto:", "javascript:")):
+            hrefs.append(urljoin(url, href))
+        if text:
+            texts.append(text)
+    urls, txt = " ".join(hrefs), " ".join(texts)
+    out: List[RegionSignal] = []
+    for pattern, region, weight, desc in _SITE_SIGNALS:
+        m = pattern.search(urls) or pattern.search(txt)
+        if m:
+            out.append(RegionSignal(region, weight, "site", f"{desc} “{m.group(0)[:40]}” (site links)"))
+    return out
 
 
 def _decide(signals: List[RegionSignal]) -> RegionResult:
@@ -406,6 +485,7 @@ def detect_region(
     url: str,
     page: Optional[ParsedPage] = None,
     target_region: Optional[str] = None,
+    site=None,
 ) -> RegionResult:
     """Step 1 of the consent pipeline: region from URL, language and page text."""
     explicit = _normalize_explicit(target_region)
@@ -413,7 +493,7 @@ def detect_region(
         sig = RegionSignal(explicit, 100, "explicit", f"Target region set for this audit: {target_region}")
         return RegionResult(regions=[explicit], confidence="high", frameworks=list(REGION_FRAMEWORKS[explicit]),
                             signals=[sig], scores={explicit: 100})
-    return _decide(detect_region_signals(url, page))
+    return _decide(detect_region_signals(url, page, site))
 
 
 def refine_region(result: RegionResult, runtime_result=None) -> RegionResult:
@@ -441,7 +521,7 @@ def refine_region(result: RegionResult, runtime_result=None) -> RegionResult:
                                         "CMP regional configuration: opt-in banner with Reject all / Accept all"))
     if not cmp_signals:
         return result
-    return _decide(result.signals + cmp_signals)
+    return _decide(_dedupe(result.signals + cmp_signals))
 
 
 def determine_applicability(

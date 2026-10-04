@@ -111,6 +111,7 @@ from consent.network import PreConsentNetworkResult, capture_pre_consent_request
 from consent.preferences import (
     PreferencesDetection, check_preferences, detect_preferences_link, verify_preferences_runtime,
 )
+from consent.site_evidence import SiteEvidence, gather_site_evidence
 from consent.region import (
     Applicability, RegionResult, detect_region, determine_applicability, refine_region,
 )
@@ -188,6 +189,35 @@ class ConsentAuditResult:
     pipeline: List[dict] = field(default_factory=list)
 
 
+_DPDP_FINDINGS = {
+    "grievance_contact": ("warning", "No Grievance Officer contact in the privacy notice (DPDP Act)",
+                          "Publish the name or title and contact details of a Grievance Officer / Data Protection "
+                          "Officer who answers questions about personal data (DPDP Act s.8(10))."),
+    "notice_purpose_stated": ("warning", "Privacy notice does not state what data is collected and why (DPDP Act)",
+                              "List the personal data collected and the specific purpose for each, in clear language, "
+                              "before or at the time consent is asked (DPDP Act s.5)."),
+    "notice_rights_described": ("info", "Privacy notice does not explain data principal rights (DPDP Act)",
+                                "Explain how people can access, correct and erase their data, withdraw consent, "
+                                "nominate someone, and raise a grievance (DPDP Act ss.11–14)."),
+}
+
+
+def _dpdp_notice_findings(site_evidence, url: str) -> List[dict]:
+    from consent.consent_score import _dpdp_notice_check
+
+    out: List[dict] = []
+    notice = getattr(site_evidence, "notice", None) if site_evidence is not None else None
+    for key, (severity, title, rec) in _DPDP_FINDINGS.items():
+        passed, ev = _dpdp_notice_check(key, site_evidence)
+        if passed is False:
+            out.append({
+                "module": "consent", "category": "dpdp", "severity": severity, "title": title,
+                "description": f"{ev.get('reason', '')} Notice checked: {notice.url if notice else url}.",
+                "recommendation": rec,
+            })
+    return out
+
+
 async def analyze_site(
     url: str,
     page: ParsedPage,
@@ -227,8 +257,19 @@ async def analyze_site(
         pipeline.append({"step": n, "name": name, "status": status, "detail": detail})
 
     # 1. Region ---------------------------------------------------------------
-    region = detect_region(url, page, target_region)
-    step(1, "Detect region", "done", f"{region.region_label} ({region.confidence} confidence)")
+    # Global .com homepages rarely say where a business operates, so the
+    # privacy notice and a few linked policy / about pages are read too
+    # (consent.site_evidence) — for region evidence and the DPDP notice checks.
+    site_evidence = None
+    if enable_live_checks:
+        try:
+            site_evidence = await gather_site_evidence(url, page)
+        except Exception:  # noqa: BLE001 — extra evidence is optional
+            site_evidence = None
+    region = detect_region(url, page, target_region, site=site_evidence)
+    read = len(site_evidence.documents) if site_evidence else 0
+    step(1, "Detect region", "done", f"{region.region_label} ({region.confidence} confidence)"
+         + (f"; {read} linked page(s)/document(s) read" if read else ""))
 
     # 2. Banner (static markup; the runtime re-detects it in the rendered page)
     banner = detect_banner(page)
@@ -320,6 +361,11 @@ async def analyze_site(
             findings = [f for f in findings if f not in static_button_findings]
             findings += check_buttons(page, banner_detected=True, detection=runtime_result.buttons_detection())
 
+    # DPDP notice requirements (India) become findings so they are scored and
+    # listed with everything else.
+    if region.applies("dpdp"):
+        findings += _dpdp_notice_findings(site_evidence, url)
+
     # 9. Applicable assessment(s) ---------------------------------------------
     score = score_consent(findings)
     scan_meta = {
@@ -345,6 +391,7 @@ async def analyze_site(
         region=region,
         ccpa_signals=ccpa_signals,
         scan_meta=scan_meta,
+        site_evidence=site_evidence,
     )
     step(9, "Build applicable assessment", "done",
          ", ".join(region.applicable_frameworks) or "technical consent scan only")

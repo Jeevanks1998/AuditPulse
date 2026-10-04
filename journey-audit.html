@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>New Audit — AuditPulse</title>
+<title>Journey Map Audit — AuditPulse</title>
 <link rel="stylesheet" href="assets/css/variables.css">
 <link rel="stylesheet" href="assets/css/style.css">
 <link rel="stylesheet" href="assets/css/animations.css">
@@ -22,7 +22,7 @@
   .target-region__hint { flex-basis: 100%; font-size: 12px; color: var(--text-tertiary, #94A3B8); }
 </style>
 </head>
-<body>
+<body data-audit-kind="journey">
 
 <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 <div class="app-shell">
@@ -40,10 +40,10 @@
         <li><a class="sidebar__link" href="dashboard.html">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
           Dashboard</a></li>
-        <li><a class="sidebar__link is-active" href="audit.html">
+        <li><a class="sidebar__link" href="audit.html">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M11 8v6M8 11h6"/></svg>
           New Audit</a></li>
-        <li><a class="sidebar__link" href="journey-audit.html">
+        <li><a class="sidebar__link is-active" href="journey-audit.html">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>
           Journey Map Audit</a></li>
         <li><a class="sidebar__link" href="scheduler.html">
@@ -116,9 +116,9 @@
     <main class="content">
 
       <div class="page-head animate-in">
-        <div class="page-head__eyebrow">Configure</div>
-        <h1>Run a new website audit</h1>
-        <p>Audit a website's analytics and cookie consent. To discover and test journey paths, use <a href="journey-audit.html">Journey Map Audit</a>.</p>
+        <div class="page-head__eyebrow">Journey Map</div>
+        <h1>Run a journey map audit</h1>
+        <p>Automatically discovers journey paths from the website's pages, CTAs, forms and downloads, safely tests them, observes analytics and captures evidence.</p>
       </div>
 
       <div class="audit-layout">
@@ -140,12 +140,12 @@
               <label class="depth-option">
                 <input type="radio" name="depth" id="depthHomepage" value="homepage" checked>
                 <div class="depth-option__title"><span class="depth-option__radio"></span>Homepage only</div>
-                <div class="depth-option__desc">Fast scan of the landing page — ~1 minute</div>
+                <div class="depth-option__desc">Journeys starting from the homepage — ~3 minutes</div>
               </label>
               <label class="depth-option">
                 <input type="radio" name="depth" id="depthFull" value="full">
                 <div class="depth-option__title"><span class="depth-option__radio"></span>Entire website</div>
-                <div class="depth-option__desc">Crawl and score every reachable page</div>
+                <div class="depth-option__desc">Discover journeys across reachable pages</div>
               </label>
             </div>
 
@@ -155,41 +155,21 @@
               <input type="text" value="100" class="mono" id="maxPagesInput">
               <button class="stepper-btn" type="button" id="stepperPlus" aria-label="Increase">+</button>
             </div>
-
-            <div class="target-region">
-              <label class="text-sm text-tertiary" for="targetRegionSelect">Privacy region to assess</label>
-              <select id="targetRegionSelect">
-                <option value="auto" selected>Auto-detect from the site</option>
-                <option value="EU">EU / EEA — GDPR + ePrivacy</option>
-                <option value="UK">United Kingdom — UK GDPR + PECR</option>
-                <option value="US-CA">US / California — CCPA / CPRA</option>
-                <option value="IN">India — DPDP Act 2023</option>
-              </select>
-              <span class="target-region__hint">Global .com sites rarely show which region they target — pick one to get a regional compliance assessment.</span>
-            </div>
           </div>
 
           <div class="card card__pad">
             <div class="card__head">
-              <h3 data-icon="grid" data-icon-tone="primary">Audit Modules</h3>
+              <h3 data-icon="grid" data-icon-tone="primary">Journey Map Options</h3>
               <span class="badge badge--neutral" id="moduleCountBadge">6 enabled</span>
             </div>
             <div class="module-list" id="moduleList">
               <label class="module-row">
-                <span class="module-row__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-6 4 3 5-8"/></svg></span>
+                <span class="module-row__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg></span>
                 <span class="module-row__body">
-                  <span class="module-row__title">Analytics</span>
-                  <span class="module-row__desc">Checks that tracking scripts are firing correctly</span>
+                  <span class="module-row__title">Journey Map</span>
+                  <span class="module-row__desc">Discovers journey paths from pages, CTAs, forms &amp; downloads, safely tests them and validates analytics</span>
                 </span>
-                <span class="toggle"><input type="checkbox" data-module="analytics" checked><span class="toggle__track"></span></span>
-              </label>
-              <label class="module-row">
-                <span class="module-row__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v4M16 4v4M3 10h18"/></svg></span>
-                <span class="module-row__body">
-                  <span class="module-row__title">Consent Banner</span>
-                  <span class="module-row__desc">GDPR / CCPA cookie-consent compliance</span>
-                </span>
-                <span class="toggle"><input type="checkbox" data-module="consent" checked><span class="toggle__track"></span></span>
+                <span class="toggle"><input type="checkbox" data-module="journey" checked disabled aria-label="Journey Map (always on)"><span class="toggle__track"></span></span>
               </label>
               <label class="module-row">
                 <span class="module-row__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/><circle cx="12" cy="12" r="3"/></svg></span>
@@ -224,7 +204,7 @@
             </div>
             <button class="btn btn--primary btn--block btn--lg" id="startAuditBtn">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 3 14 9-14 9V3Z"/></svg>
-              Start Audit
+              Start Journey Map Audit
             </button>
 
             <hr class="divider">
@@ -269,16 +249,10 @@
                     <span class="check-item__time" id="checkCrawlTime">pending</span>
                     <span class="check-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg></span>
                   </li>
-                  <li class="check-item check-item--pending" id="checkConsent" data-step="consent">
-                    <span class="run-step__glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></span>
-                    <span class="check-item__label">Cookie consent<small>Banner, buttons and what loads before consent</small></span>
-                    <span class="check-item__time" id="checkConsentTime">pending</span>
-                    <span class="check-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg></span>
-                  </li>
-                  <li class="check-item check-item--pending" id="checkAnalytics" data-step="analytics">
-                    <span class="run-step__glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 15 4-6 4 3 5-8"/></svg></span>
-                    <span class="check-item__label">Analytics<small>Tags, data layer and live page-view checks</small></span>
-                    <span class="check-item__time" id="checkAnalyticsTime">pending</span>
+                  <li class="check-item check-item--pending" id="checkJourney" data-step="journey">
+                    <span class="run-step__glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg></span>
+                    <span class="check-item__label">Journey map<small>Discover and safely test journey paths</small></span>
+                    <span class="check-item__time" id="checkJourneyTime">pending</span>
                     <span class="check-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg></span>
                   </li>
                   <li class="check-item check-item--pending" id="checkReport" data-step="report">

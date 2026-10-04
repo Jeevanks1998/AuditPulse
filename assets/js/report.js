@@ -646,6 +646,19 @@
         if (el) { el.textContent = cell.score; el.setAttribute('data-band', U.scoreBand(cell.score)); }
       });
 
+      // Only show tabs for modules this audit actually ran (a Journey Map
+      // audit has no Consent / Analytics results, and vice versa).
+      var ran = (report.scoreGrid || []).map(function (c) { return c.module; })
+        .filter(function (m) { return DETAIL_TABS.indexOf(m) !== -1; });
+      if (ran.length) {
+        DETAIL_TABS.forEach(function (m) {
+          var tab = document.querySelector('.rp-tab[data-tab="' + m + '"]');
+          if (tab) tab.hidden = ran.indexOf(m) === -1;
+        });
+        var current = document.querySelector('.rp-tab[aria-selected="true"]');
+        if (!current || current.hidden) selectModuleTab(ran[0], false);
+      }
+
       var counts = severityCounts(findings);
       var sevEl = document.getElementById('severityTable');
       if (sevEl) {

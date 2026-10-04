@@ -40,7 +40,10 @@
     var progressStatusText = document.getElementById('progressStatusText');
     var etaValue = document.getElementById('etaValue');
 
-    var totalModules = CFG.MODULES.length;
+    // audit.html runs Analytics + Consent; journey-audit.html (body
+    // data-audit-kind="journey") runs the Journey Map on its own.
+    var isJourneyAudit = document.body.getAttribute('data-audit-kind') === 'journey';
+    var totalModules = U.qsa('input[data-module]', moduleList).length;
 
     /* ------------------------- live form state ------------------------- */
 
@@ -129,8 +132,9 @@
       if (urlWrap) urlWrap.classList.remove('is-invalid');
 
       var modules = currentModules();
-      if (!modules.length) {
-        window.Notifications.warning('No modules selected', 'Enable at least one audit module to continue.');
+      var checks = modules.filter(function (m) { return ['analytics', 'consent', 'journey'].indexOf(m) !== -1; });
+      if (!checks.length) {
+        window.Notifications.warning('No checks selected', 'Enable Analytics or Consent Banner to run an audit.');
         return;
       }
 
@@ -185,8 +189,11 @@
       }).then(function (report) {
         stopRunUi(false);
         if (progressStatusText) progressStatusText.textContent = 'Audit complete — opening the report…';
-        window.Notifications.success('Audit complete', U.hostnameOf(config.url) + ' scored ' + report.overall + '/100.');
-        setTimeout(function () { window.location.href = 'report.html?id=' + encodeURIComponent(report.id); }, 900);
+        window.Notifications.success(isJourneyAudit ? 'Journey map audit complete' : 'Audit complete',
+          U.hostnameOf(config.url) + ' scored ' + report.overall + '/100.');
+        setTimeout(function () {
+          window.location.href = 'report.html?id=' + encodeURIComponent(report.id) + (isJourneyAudit ? '#journey' : '');
+        }, 900);
       }).catch(function (err) {
         stopRunUi(true);
         window.Loader.setButtonLoading(startBtn, false);
@@ -258,7 +265,7 @@
       }
 
       var remainingPercent = 100 - shownPercent;
-      // The Customer Journey module renders and clicks through pages in a real
+      // The Journey Map module renders and clicks through pages in a real
       // browser, so it adds noticeably to the run time.
       var hasJourney = (config.modules || []).indexOf('journey') !== -1;
       var baseSeconds = (config.depth === 'full' ? 90 : 20) + (hasJourney ? (config.depth === 'full' ? 240 : 120) : 0);

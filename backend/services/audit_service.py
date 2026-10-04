@@ -127,12 +127,15 @@ def new_audit(
     # older schedule) instead of failing; never leave an audit with no checks.
     modules = [m for m in (modules or []) if m in AUDIT_MODULES]
     if not any(m in CHECK_MODULES for m in modules):
-        modules = modules + [m for m in CHECK_MODULES if m not in modules]
+        # The standard audit is Analytics + Consent; the Journey Map runs only
+        # when asked for (it has its own "Journey Map Audit" page).
+        modules = modules + [m for m in ("analytics", "consent") if m not in modules]
     return Audit(
         user_id=user_id,
         website_id=website_id,
         url=url,
-        label="Full site" if depth == "full" else "Homepage",
+        label=("Journey Map · " if [m for m in modules if m in CHECK_MODULES] == ["journey"] else "")
+              + ("Full site" if depth == "full" else "Homepage"),
         depth=depth,
         max_pages=max_pages,
         modules=modules,

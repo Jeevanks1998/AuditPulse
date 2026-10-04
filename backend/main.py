@@ -90,9 +90,35 @@ setup_middleware(app)
 # on Consent.banner_screenshot_path can be turned into a URL the frontend
 # can load directly (see schemas.audit.ConsentOut.banner_screenshot_url).
 # --------------------------------------------------------------------------
+#
+# Files on disk are served first; when the file isn't there (the container
+# disk is wiped on every Railway redeploy, or the audit ran on a separate
+# worker service) the durable copy in the database is served instead —
+# see models/screenshot_blob.py and utils/screenshot_store.py.
 _screenshot_dir = Path(settings.SCREENSHOT_DIR)
 _screenshot_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/screenshots", StaticFiles(directory=str(_screenshot_dir)), name="screenshots")
+
+
+@app.get("/screenshots/{key:path}", include_in_schema=False)
+async def serve_screenshot(key: str):
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse, Response
+
+    from utils.screenshot_store import load_screenshot, safe_key
+
+    clean = safe_key(key)
+    if not clean:
+        raise HTTPException(status_code=404, detail="Not found")
+    root = _screenshot_dir.resolve()
+    path = (root / clean).resolve()
+    cache = {"Cache-Control": "public, max-age=604800, immutable"}
+    if root in path.parents and path.is_file():
+        return FileResponse(str(path), headers=cache)
+    stored = await load_screenshot(clean)
+    if stored is None:
+        raise HTTPException(status_code=404, detail="Screenshot not found")
+    content, content_type = stored
+    return Response(content=content, media_type=content_type, headers=cache)
 
 
 # --------------------------------------------------------------------------

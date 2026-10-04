@@ -76,6 +76,14 @@ class Settings(BaseSettings):
     CRAWLER_REQUEST_TIMEOUT_SECONDS: float = 15.0
     CRAWLER_ENABLE_SCREENSHOTS: bool = True
     SCREENSHOT_DIR: str = "screenshots"
+    # Durable copy of evidence screenshots in the database (models.screenshot_blob):
+    # the container disk is wiped on every redeploy, so without this the report's
+    # consent / Journey Map screenshots disappear.
+    SCREENSHOT_DB_ENABLED: bool = True
+    SCREENSHOT_DB_RETENTION_DAYS: int = 30
+    SCREENSHOT_DB_MAX_WIDTH: int = 1280
+    SCREENSHOT_DB_MAX_HEIGHT: int = 8000
+    SCREENSHOT_DB_JPEG_QUALITY: int = 68
     # Gates the Playwright-based click-through/runtime validation passes in
     # consent.runtime and analytics.runtime (separate from the plain
     # screenshot capture above) — off this, both modules still run their

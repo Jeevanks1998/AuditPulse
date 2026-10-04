@@ -121,6 +121,8 @@ async def _generate_report_pdf_async(audit_id: int) -> Optional[str]:
             **(await _module_data(audit_id, db)),
         )
 
+    from utils.screenshot_store import restore_for_payload
+    await restore_for_payload(payload)
     pdf_bytes = generate_pdf_report(payload)
     return save_pdf(audit_id, pdf_bytes)
 

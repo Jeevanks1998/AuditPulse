@@ -222,6 +222,23 @@ def build_consent_view(consent: Optional[dict]) -> Optional[dict]:
         "evidence": c.get("evidence", ""),
         "layer": c.get("layer", 1),
     } for c in controls]
+    # Only controls the scan could classify as a consent action are shown;
+    # the rest (close icons, "Back", filters, "More information"…) are just
+    # counted so the table stays about what the banner actually lets you do.
+    unclassified = [c for c in controls if (c["action"] or "unclassified") == "unclassified"]
+    seen_controls = set()
+    classified = []
+    for c in controls:
+        if (c["action"] or "unclassified") == "unclassified":
+            continue
+        key = (c["label"].strip().lower(), c["action"], c["layer"])
+        if key in seen_controls:
+            continue
+        seen_controls.add(key)
+        classified.append(c)
+    controls = classified
+    controls_hidden = {"count": len(unclassified),
+                       "examples": list(dict.fromkeys(c["label"] for c in unclassified if c["label"]))[:6]}
 
     # ---- network ----------------------------------------------------------
     net = ts.get("network") or {}
@@ -294,6 +311,7 @@ def build_consent_view(consent: Optional[dict]) -> Optional[dict]:
         "tiles": tiles,
         "frameworks": frameworks,
         "controls": controls,
+        "controls_hidden": controls_hidden,
         "network": network,
         "cookies": cookies,
         "screenshots": screenshots,

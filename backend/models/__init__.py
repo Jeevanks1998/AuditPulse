@@ -25,6 +25,7 @@ from models.issue import Issue, IssueSeverity, IssueStatus, sync_issues_from_fin
 from models.consent import Consent
 from models.analytics import Analytics
 from models.journey import Journey
+from models.screenshot_blob import ScreenshotBlob
 from models.report import Report
 from models.report_email import ReportEmail
 from models.history import History, HistoryEventType, log_event
@@ -43,6 +44,7 @@ __all__ = [
     "Consent",
     "Analytics",
     "Journey",
+    "ScreenshotBlob",
     "Report",
     "ReportEmail",
     "History",

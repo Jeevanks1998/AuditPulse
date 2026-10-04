@@ -100,7 +100,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
 
     async def dispatch(self, request: Request, call_next):
-        if not settings.RATE_LIMIT_ENABLED or any(
+        # Evidence images are always exempt: one report page loads dozens of
+        # screenshots at once, which used to trip the API limit (429) and
+        # show "Screenshot not available".
+        if not settings.RATE_LIMIT_ENABLED or request.url.path.startswith("/screenshots/") or any(
             request.url.path.startswith(p) for p in settings.RATE_LIMIT_EXEMPT_PATHS
         ):
             return await call_next(request)

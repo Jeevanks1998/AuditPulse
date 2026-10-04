@@ -199,6 +199,7 @@ async def run_audit_pipeline(audit_id: int) -> None:
 
         audit.status = "running"
         audit.started_at = datetime.now(timezone.utc)
+        run_started_at = audit.started_at
         await db.commit()
 
         try:
@@ -351,6 +352,14 @@ async def run_audit_pipeline(audit_id: int) -> None:
                 # results — drop them so downloads reflect this scan.
                 report_storage.invalidate(audit_id)
 
+            async def _screenshots() -> None:
+                # Durable copy of this run's evidence screenshots (the
+                # container disk doesn't survive redeploys) — before the
+                # audit is marked completed so the report always has them.
+                from utils.screenshot_store import persist_new_screenshots
+                await persist_new_screenshots(db, run_started_at)
+
+            await _secondary("screenshots", _screenshots)
             await _secondary("report-cache", _report_cache)
             await _secondary("issues", _issues)
             if consent_row is not None:

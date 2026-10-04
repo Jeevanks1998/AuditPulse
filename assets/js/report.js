@@ -1098,8 +1098,19 @@
       return html;
     }
 
+    function hiddenControlsNote(n, examples) {
+      if (!n) return '';
+      return '<p class="cev-muted" style="margin-top:6px;">' + n + ' other control' + (n === 1 ? '' : 's') +
+        ' in the banner did not match a consent action and ' + (n === 1 ? 'is' : 'are') + ' not listed' +
+        ((examples || []).length ? ' (e.g. ' + U.escapeHtml(examples.slice(0, 4).join(', ')) + ')' : '') + '.</p>';
+    }
+
     function renderControlsTable(controls) {
-      if (!controls || !controls.length) {
+      var all = controls || [];
+      controls = all.filter(function (c) { return c.action && c.action !== 'unclassified'; });
+      var hidden = all.filter(function (c) { return !c.action || c.action === 'unclassified'; });
+      if (!controls.length) {
+        if (hidden.length) return hiddenControlsNote(hidden.length, hidden.map(function (c) { return c.label; }));
         return '<p class="text-sm" style="color: var(--text-tertiary);">No controls were found inside a consent banner.</p>';
       }
       var rows = controls.map(function (c) {
@@ -1113,7 +1124,8 @@
       return '<div style="overflow-x:auto;"><table class="text-sm" style="width:100%; border-collapse: collapse;">' +
         '<thead><tr style="text-align:left; color: var(--text-tertiary);">' +
         '<th style="padding:4px 8px;">Displayed text</th><th style="padding:4px 8px;">Detected action</th><th style="padding:4px 8px;">Evidence</th>' +
-        '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+        hiddenControlsNote(hidden.length, hidden.map(function (c) { return c.label; }));
     }
 
     function renderNetworkSummary(summary) {
@@ -1265,14 +1277,18 @@
       var html = '<div class="cev">';
 
       html += '<div class="cev-block"><p class="cev-block__title">Banner controls</p>';
-      if (view.controls && view.controls.length) {
+      var shownControls = (view.controls || []).filter(function (c) { return c.action && c.action !== 'unclassified'; });
+      var hid = view.controls_hidden || view.controlsHidden || { count: (view.controls || []).length - shownControls.length, examples: [] };
+      if (shownControls.length) {
         html += '<div class="cev-table-wrap"><table class="cev-table"><thead><tr>' +
           '<th>Displayed text</th><th>Detected action</th><th>Evidence</th></tr></thead><tbody>' +
-          view.controls.map(function (c) {
+          shownControls.map(function (c) {
             return '<tr><td>' + U.escapeHtml(c.label) + '</td><td>' + chip('action', c.action) +
               '<small>' + U.escapeHtml(ACTION_TEXT[c.action] || c.action_label || '') + (c.layer === 2 ? ' · preference panel' : '') + '</small></td>' +
               '<td>' + U.escapeHtml(c.evidence) + '</td></tr>';
-          }).join('') + '</tbody></table></div>';
+          }).join('') + '</tbody></table></div>' + hiddenControlsNote(hid.count, hid.examples);
+      } else if (hid.count) {
+        html += hiddenControlsNote(hid.count, hid.examples);
       } else {
         html += '<p class="cev-muted">No controls were found inside a consent banner.</p>';
       }

@@ -241,6 +241,11 @@ def build_consent_section(payload: ReportPayload) -> List[Flowable]:
             rows.append([Paragraph(esc(c.get("label", "")), STYLES["TDBold"]), c.get("action_label") or "—", where])
         story.append(data_table(["Button text", "What it does", "Where"], rows, [70 * mm, 54 * mm, W - 124 * mm]))
         story += _more_note(min(len(controls), MAX_ROWS), len(controls), "buttons")
+    hidden = (cv.get("controls_hidden") or {}).get("count") or 0
+    if hidden:
+        story.append(Paragraph(f"{hidden} other control{'s' if hidden != 1 else ''} in the banner did not match a "
+                               "consent action and are not listed.",
+                               STYLES["Small"].clone("chn", textColor=TEXT_TERTIARY, spaceBefore=1.5 * mm)))
 
     shots = [s for s in (cv.get("screenshots") or []) if s.get("url")]
     if shots:

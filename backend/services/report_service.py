@@ -160,7 +160,7 @@ async def _build_full_payload(audit_id: int, db: AsyncSession, user: User):
     analytics = await _get_analytics_dict(audit_id, db)
     journey = await _get_journey_dict(audit_id, db)
 
-    return await build_report_payload(
+    payload = await build_report_payload(
         audit_id=audit.id,
         url=audit.url,
         overall=audit.overall_score or 0,
@@ -172,6 +172,11 @@ async def _build_full_payload(audit_id: int, db: AsyncSession, user: User):
         analytics=analytics,
         journey=journey,
     )
+    # PDF / evidence ZIP / email attachments read screenshots from disk;
+    # bring back any the container lost since the audit ran.
+    from utils.screenshot_store import restore_for_payload
+    await restore_for_payload(payload)
+    return payload
 
 
 async def export_report_json(audit_id: int, db: AsyncSession, user: User, force_refresh: bool = False) -> dict:

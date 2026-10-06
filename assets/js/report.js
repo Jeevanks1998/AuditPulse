@@ -983,17 +983,9 @@
       var failed = checkItems.filter(function (c) { return checksMap[c.key] === false; });
       var passed = checkItems.filter(function (c) { return checksMap[c.key] === true; });
 
-      var cls = status === 'pass' ? 'check-item--pass' : status === 'fail' ? 'check-item--fail' : 'check-item--pending';
-      var icon = status === 'pass' ? PASS_ICON : status === 'fail' ? FAIL_ICON : '';
-      var statusLabel = status === 'pass' ? 'Passed' : status === 'fail' ? 'Failed' : 'Not tested';
-      
-      // Header section
-      var html = '<div style="margin-bottom: 16px;">' +
-        '<div class="check-item ' + cls + '"><span class="check-item__icon">' + icon + '</span>' +
-        '<span class="check-item__label" style="font-size: 1.05em; font-weight: 600;">' + U.escapeHtml(label) + ' Compliance</span></div>' +
-        '<div style="margin-left: 34px; margin-top: 4px;">' +
-        '<span class="text-sm" style="color: var(--text-tertiary);">' + U.escapeHtml(label) + ' — ' + statusLabel + '</span>' +
-        '</div></div>';
+      // No inner header here: the section's own accordion title
+      // ("GDPR Compliance" + status icon) already shows the verdict.
+      var html = '';
 
       // "Checks" section — all checks shown with their status
       html += '<div style="margin-bottom: 16px;">' +

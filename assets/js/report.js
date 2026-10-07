@@ -1893,11 +1893,16 @@
           { label: 'Pages scanned', value: sk(coverage, 'pages_scanned') },
           { label: 'Pages with Analytics', value: sk(coverage, 'pages_with_analytics') },
           { label: 'Pages without Analytics', value: sk(coverage, 'pages_without_analytics') },
+          // Tags on this site are added by JavaScript; these pages were only
+          // checked as raw HTML, so they are neither "with" nor "without".
+          sk(coverage, 'pages_not_verified')
+            ? { label: 'Pages not verified (tags added by JavaScript)', value: sk(coverage, 'pages_not_verified') }
+            : null,
           { label: 'Pages with runtime failures', value: sk(coverage, 'pages_with_runtime_failures') },
           { label: 'Pages with inconsistencies', value: sk(coverage, 'pages_with_analytics_inconsistencies') },
           { label: 'Pages with findings', value: sk(coverage, 'pages_with_findings') }
         ];
-        coverageGrid.innerHTML = coverageItems.map(function (item) {
+        coverageGrid.innerHTML = coverageItems.filter(Boolean).map(function (item) {
           var val = (item.value === null || item.value === undefined) ? '—' : item.value;
           return '<div class="check-item"><span class="check-item__label">' + U.escapeHtml(item.label) +
             '</span><span style="font-weight:600;">' + val + '</span></div>';

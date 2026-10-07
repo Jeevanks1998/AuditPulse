@@ -701,20 +701,30 @@ async def _run_analytics_checks_site(
             # fetch above) purely to run the static analytics detectors
             # against it — the crawl itself is not repeated.
             crawl_result = await crawl_site(audit.url, max_pages=audit.max_pages, depth="full")
-            for page_result in crawl_result.ok_pages:
-                if page_result.url == audit.url:
-                    continue  # homepage already analyzed above with the full runtime pass
-                try:
-                    page_response = await client.get(page_result.url)
-                    if "text/html" not in page_response.headers.get("content-type", ""):
-                        continue
-                    parsed_page = parse_html(page_result.url, page_response.text)
-                except Exception as page_exc:  # noqa: BLE001 — one unreachable page shouldn't drop the rest
-                    logger.debug(
-                        f"_run_analytics_checks_site: could not fetch {page_result.url} for analytics: {page_exc}"
-                    )
+            # Fetch the other pages in parallel (one at a time made a
+            # 100-page audit spend minutes here).
+            fetch_sem = asyncio.Semaphore(8)
+
+            async def _fetch_and_analyze(page_url: str):
+                async with fetch_sem:
+                    try:
+                        page_response = await client.get(page_url)
+                        if "text/html" not in page_response.headers.get("content-type", ""):
+                            return None
+                        parsed_page = parse_html(page_url, page_response.text)
+                    except Exception as page_exc:  # noqa: BLE001 — one unreachable page shouldn't drop the rest
+                        logger.debug(f"_run_analytics_checks_site: could not fetch {page_url} for analytics: {page_exc}")
+                        return None
+                    return analytics_module.analyze_page_for_site(parsed_page, page_url)
+
+            other_urls = [p.url for p in crawl_result.ok_pages if p.url != audit.url]
+            for site_page_result in await asyncio.gather(*(_fetch_and_analyze(u) for u in other_urls)):
+                if site_page_result is None:
                     continue
-                site_page_result = analytics_module.analyze_page_for_site(parsed_page, page_result.url)
+                # Homepage tags exist only in the browser (JS / tag manager):
+                # a raw-HTML page showing nothing is unverified, not "missing".
+                if result.tags_injected_by_js and not site_page_result.trackers_detected:
+                    site_page_result.not_verified = True
                 page_results.append(site_page_result)
                 findings += site_page_result.findings
         except Exception as exc:  # noqa: BLE001 — full-site analytics degrades to homepage-only, not a hard failure

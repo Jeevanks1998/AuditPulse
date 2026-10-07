@@ -279,6 +279,9 @@ class PageAnalyticsResult:
     runtime_available: bool = False
     runtime_tested: bool = False
     runtime_result: Optional[dict] = None
+    # Only the raw HTML was checked and it showed nothing, on a site whose
+    # tags are injected by JavaScript: absence here is not evidence.
+    not_verified: bool = False
 
 
 def check_cross_page_consistency(pages: List[PageAnalyticsResult]) -> List[dict]:
@@ -291,6 +294,7 @@ def check_cross_page_consistency(pages: List[PageAnalyticsResult]) -> List[dict]
     TikTok IDs). Only ever produced from >= 2 real crawled pages — a
     single-page audit has nothing to compare, so this returns [].
     """
+    pages = [p for p in pages if not p.not_verified]
     if len(pages) < 2:
         return []
 
@@ -373,7 +377,10 @@ def compute_site_coverage(
     return {
         "pages_scanned": len(pages),
         "pages_with_analytics": sum(1 for p in pages if p.trackers_detected),
-        "pages_without_analytics": sum(1 for p in pages if not p.trackers_detected),
+        "pages_without_analytics": sum(1 for p in pages if not p.trackers_detected and not p.not_verified),
+        # Raw HTML showed nothing on a site whose tags are added by
+        # JavaScript — neither "with" nor "without" can be claimed.
+        "pages_not_verified": sum(1 for p in pages if p.not_verified),
         "pages_with_runtime_failures": sum(
             1 for p in pages if p.runtime_available and any(
                 f.get("category") == "runtime" and f.get("severity") == "critical" for f in p.findings

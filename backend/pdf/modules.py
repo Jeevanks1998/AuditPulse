@@ -299,9 +299,12 @@ def build_analytics_section(payload: ReportPayload) -> List[Flowable]:
     if cov.get("pages_scanned"):
         with_a = cov.get("pages_with_analytics", 0)
         total = cov.get("pages_scanned", 0)
-        tiles.append({"label": "Pages with analytics", "value": f"{with_a} of {total}",
-                      "sub": "Pages where a tracking tag was found",
-                      "state": "pass" if with_a == total else "fail" if with_a == 0 else "info"})
+        unverified = cov.get("pages_not_verified", 0)
+        checked = total - unverified
+        tiles.append({"label": "Pages with analytics", "value": f"{with_a} of {checked}",
+                      "sub": ("Pages where a tracking tag was found"
+                              + (f" ({unverified} more not verified: tags added by JavaScript)" if unverified else "")),
+                      "state": "pass" if with_a == checked else "fail" if with_a == 0 else "info"})
     tiles.append({"label": "Live browser check",
                   "value": "Ran" if an.get("runtime_tested") else "Not run",
                   "sub": (f"Consent: {rr.get('consent_state')}" if rr.get("consent_state") else

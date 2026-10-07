@@ -154,6 +154,11 @@ class AnalyticsAuditResult:
     findings: List[dict]
     score: AnalyticsScoreResult
     summary: AnalyticsSummary
+    # True when the server-delivered HTML shows no tracking at all and every
+    # vendor was found only in the browser (tags injected by JavaScript / a
+    # tag manager). Raw-HTML checks of other pages then prove nothing either
+    # way — see services.audit_service._run_analytics_checks_site.
+    tags_injected_by_js: bool = False
 
 
 def analyze_page(page: ParsedPage) -> AnalyticsAuditResult:
@@ -295,7 +300,8 @@ async def analyze_site(url: str, page: ParsedPage, enable_runtime_checks: bool =
                 detect_tagcommander(pg))
         return sum(1 for d in dets if d.detected) + (1 if detect_data_layer(pg).present else 0)
 
-    if rendered_page is not None and _detected_count(rendered_page) > _detected_count(page):
+    raw_detected = _detected_count(page)
+    if rendered_page is not None and _detected_count(rendered_page) > raw_detected:
         page = rendered_page
 
     ga4 = detect_ga4(page)
@@ -384,7 +390,8 @@ async def analyze_site(url: str, page: ParsedPage, enable_runtime_checks: bool =
             summary.trackers_detected.append(TRACKER_DISPLAY_NAMES.get(key, getattr(vendor, "vendor_name", key)))
             summary.vendor_configs[key] = [vendor.identifier] if getattr(vendor, "identifier", None) else []
 
-    return AnalyticsAuditResult(findings=findings, score=score, summary=summary)
+    return AnalyticsAuditResult(findings=findings, score=score, summary=summary,
+                                tags_injected_by_js=raw_detected == 0 and bool(summary.trackers_detected))
 
 
 # Static (markup-only) warnings that say "we couldn't see X happen". When the

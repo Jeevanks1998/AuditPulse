@@ -318,6 +318,21 @@ async def analyze_site(url: str, page: ParsedPage, enable_runtime_checks: bool =
     if not tagcommander.detected and globals_.get("tagcommander"):
         tagcommander.detected = True
         tagcommander.tc_api_found = True
+    # Piano loaded by a tag manager (TagCommander, GTM…) after consent is not
+    # in any markup; the browser saw the SDK object and its configured site.
+    if globals_.get("piano") or globals_.get("piano_site"):
+        piano.detected = True
+        piano.uses_current_sdk = piano.uses_current_sdk or bool(globals_.get("piano_site"))
+        site = str(globals_.get("piano_site") or "").strip()
+        if site and site not in piano.site_ids:
+            piano.site_ids.append(site)
+    if runtime_result is not None and getattr(runtime_result, "vendors", None):
+        pv = runtime_result.vendors.get("piano")
+        if pv is not None and getattr(pv, "captured_request_count", 0) > 0:
+            piano.detected = True
+            piano.send_event_call_found = True   # hits were seen leaving the browser
+            if pv.identifier and pv.identifier not in piano.site_ids:
+                piano.site_ids.append(str(pv.identifier))
 
     findings: List[dict] = []
     findings += check_ga4(page)

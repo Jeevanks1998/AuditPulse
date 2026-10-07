@@ -22,7 +22,7 @@ from crawler.parser import ParsedPage
 MODULE = "analytics"
 CATEGORY = "piano"
 
-LOADER_SRC_RE = re.compile(r"tag\.aticdn\.net|piano-analytics", re.IGNORECASE)
+LOADER_SRC_RE = re.compile(r"tag\.aticdn\.net|piano-analytics|pa\.setConfigurations\s*\(", re.IGNORECASE)
 LEGACY_COLLECTION_RE = re.compile(r"[\w.-]+\.xiti\.com", re.IGNORECASE)
 SEND_EVENT_RE = re.compile(r"\bpa\.sendEvent\s*\(", re.IGNORECASE)
 SITE_ID_RE = re.compile(r"site\s*[:=]\s*['\"]?(\d+)['\"]?", re.IGNORECASE)

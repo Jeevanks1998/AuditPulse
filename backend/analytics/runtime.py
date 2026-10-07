@@ -47,6 +47,11 @@ CATEGORY = "runtime"
 
 SETTLE_MS = 1_500
 CONSENT_SETTLE_MS = 3_000  # tag managers load their vendors after the consent callback
+# After consent, keep waiting while tag/analytics requests are still
+# arriving (a tag manager loads a vendor's library, which then sends its
+# first hit), up to this long in total.
+CONSENT_SETTLE_MAX_MS = 9_000
+QUIET_MS = 1_500
 SCROLL_SETTLE_MS = 1_200
 CLICK_SETTLE_MS = 1_500
 
@@ -152,8 +157,17 @@ def _piano_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedRequ
     # pa-cd.com is Piano Analytics' current collection domain (e.g.
     # <id>.pa-cd.com/event?s=...); xiti.com / aticdn.net are the AT Internet
     # legacy ones.
-    if not any(d in host for d in ("aticdn.net", "piano.io", "xiti.com", "pa-cd.com")):
+    path = urlparse(url).path or ""
+    known_host = any(d in host for d in ("aticdn.net", "piano.io", "xiti.com", "pa-cd.com"))
+    # Piano also collects through a site's own (CNAME) domain, e.g.
+    # stats.example.com/event?s=123&idclient=… — recognisable by the
+    # endpoint + numeric site id + Piano's visitor id parameter.
+    first_party = (path.endswith("/event") or path.endswith("/hit.xiti")) \
+        and (qs.get("s") or [""])[0].isdigit() and ("idclient" in qs or "idclient" in url)
+    if not (known_host or first_party):
         return None
+    if path.endswith(".js"):
+        return None                      # the SDK file itself (piano-analytics.js / smarttag.js) is not a hit
     if "event" not in url and "hit" not in url and "collect" not in url:
         return None
     raw = (qs.get("events") or qs.get("event") or [None])[0]
@@ -314,9 +328,26 @@ _PAGE_GLOBALS_JS = """() => ({
   tealium: !!window.utag,
   adobe_launch: !!window._satellite,
   piano: !!(window.pa || window.ATInternet || window._pac),
+  piano_site: (() => { try { return window.pa && window.pa.getConfiguration ? String(window.pa.getConfiguration('site') || '') || null : null; } catch (e) { return null; } })(),
+  piano_collect_domain: (() => { try { return window.pa && window.pa.getConfiguration ? String(window.pa.getConfiguration('collectDomain') || '') || null : null; } catch (e) { return null; } })(),
   matomo: Array.isArray(window._paq),
   scripts: Array.from(document.scripts).map(s => s.src).filter(Boolean).length
 })"""
+
+
+def _now() -> float:
+    import time
+    return time.monotonic()
+
+
+async def _settle_after_consent(page, activity: dict) -> None:
+    """Wait CONSENT_SETTLE_MS, then longer while tag/analytics requests keep
+    arriving, up to CONSENT_SETTLE_MAX_MS. A fixed 3 s missed vendors that a
+    tag manager loads only after the consent callback."""
+    start = _now()
+    await page.wait_for_timeout(CONSENT_SETTLE_MS)
+    while (_now() - start) * 1000 < CONSENT_SETTLE_MAX_MS and (_now() - activity["last"]) * 1000 < QUIET_MS:
+        await page.wait_for_timeout(500)
 
 
 async def _accept_consent(page) -> str:
@@ -325,7 +356,16 @@ async def _accept_consent(page) -> str:
         from consent.buttons import ACCEPT_CLICK_ORDER
         from consent.runtime import _click_control, inventory_banner
 
-        inv, handles = await inventory_banner(page)
+        # Poll for a late, client-rendered banner (same wait the Consent
+        # module uses). One immediate check missed CMPs such as OneTrust on
+        # slow pages: the pass reported "no_banner", never accepted, and
+        # every consent-gated tag (e.g. Piano fired by TagCommander) stayed
+        # silent, so the vendor was missing from the report.
+        try:
+            from consent.runtime import _wait_for_banner
+            inv, handles = await _wait_for_banner(page)
+        except ImportError:
+            inv, handles = await inventory_banner(page)
         if not inv.banner_detected:
             return "no_banner"
         accept = inv.first(ACCEPT_CLICK_ORDER)
@@ -372,11 +412,14 @@ async def _run_analytics_runtime_once(url: str) -> AnalyticsRuntimeResult:
     observed: Dict[str, dict] = {}
     site_host = urlparse(url).hostname or ""
 
+    activity = {"last": 0.0}
+
     def _on_request(request):
         match = _classify(request.url)
         if match is not None:
             match.phase = phase["current"]
             captured.append(match)
+            activity["last"] = _now()
         _observe(request)
 
     def _observe(request):
@@ -387,6 +430,7 @@ async def _run_analytics_runtime_once(url: str) -> AnalyticsRuntimeResult:
             return
         if nr.category not in (ANALYTICS, ADVERTISING, TAG_MANAGER) or not nr.vendor:
             return
+        activity["last"] = _now()
         o = observed.setdefault(nr.vendor, {"vendor": nr.vendor, "category": nr.category, "requests": 0,
                                             "collection_requests": 0, "hosts": [], "phases": []})
         o["requests"] += 1
@@ -422,7 +466,7 @@ async def _run_analytics_runtime_once(url: str) -> AnalyticsRuntimeResult:
                 # accepts are this page view's analytics, not a click event.
                 result.consent_state = await _accept_consent(page)
                 if result.consent_state.startswith("accepted"):
-                    await page.wait_for_timeout(CONSENT_SETTLE_MS)
+                    await _settle_after_consent(page, activity)
 
                 # --- rendered page evidence -----------------------------------------
                 # Many sites (Next.js, React, tag managers) inject their tags
@@ -456,6 +500,17 @@ async def _run_analytics_runtime_once(url: str) -> AnalyticsRuntimeResult:
                     result.scroll_tested = True
                 except Exception as exc:  # noqa: BLE001
                     logger.info(f"analytics/runtime.py: scroll phase failed for {url}: {exc}")
+
+                # Second look at the page: tags injected late (after consent,
+                # on scroll) are in the DOM / window by now.
+                try:
+                    late = await page.evaluate(_PAGE_GLOBALS_JS)
+                    for k, v in (late or {}).items():
+                        if v and not result.page_globals.get(k):
+                            result.page_globals[k] = v
+                    result._rendered_html = await page.content()
+                except Exception:  # noqa: BLE001 — keep the first snapshot
+                    pass
 
                 # --- click -------------------------------------------------------------
                 # Same isolation as scroll. Also: a safe clickable element genuinely

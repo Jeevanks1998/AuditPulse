@@ -1316,6 +1316,7 @@
       if (net.after_reject !== undefined || net.after_accept !== undefined) {
         html += '<details class="cev-block"><summary>Network after Reject / after Accept</summary>' +
           (net.after_reject !== undefined ? '<p class="cev-muted">After Reject</p>' + renderNetworkTable(net.after_reject) : '') +
+          (net.after_reject_next_page !== undefined ? '<p class="cev-muted">After Reject — next page view (choice saved, page reloaded)</p>' + renderNetworkTable(net.after_reject_next_page) : '') +
           (net.after_accept !== undefined ? '<p class="cev-muted">After Accept</p>' + renderNetworkTable(net.after_accept) : '') +
           '</details>';
       }

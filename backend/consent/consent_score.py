@@ -1170,7 +1170,7 @@ def build_technical_scan(
     elif runtime_ok and runtime_result.network_summary.get("before_consent"):
         network["before_consent"] = runtime_result.network_summary["before_consent"]
     if runtime_ok:
-        for k in ("after_reject", "after_accept"):
+        for k in ("after_reject", "after_reject_next_page", "after_accept"):
             if k in runtime_result.network_summary:   # an empty capture is evidence too ("no requests")
                 network[k] = runtime_result.network_summary[k]
 

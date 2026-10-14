@@ -89,15 +89,38 @@ _CMP_HINTS = (
     ("tarteaucitron", "tarteaucitron"), ("fc-consent", "Google Funding Choices"), ("sp_message", "Sourcepoint"),
     ("privacy-mgmt", "Sourcepoint"), ("cmpbox", "consentmanager"), ("cmpwrapper", "consentmanager"),
     ("termly", "Termly"), ("trustarc", "TrustArc"), ("cookielaw", "OneTrust"),
+    ("tc-privacy", "TrustCommander (Commanders Act)"), ("footer_tc_privacy", "TrustCommander (Commanders Act)"),
+    ("trustcommander", "TrustCommander (Commanders Act)"), ("cookiehub", "CookieHub"), ("klaro", "Klaro"),
+    ("cookie-script", "CookieScript"), ("cookiescript", "CookieScript"), ("ketch", "Ketch"),
 )
 
 
-def _banner_description(banner: dict) -> str:
+def _cmp_from_network(network: Optional[dict]) -> Optional[str]:
+    """The consent tool whose servers the page actually contacted (the live
+    capture's CMP group), most-requested first."""
+    counts: Dict[str, int] = {}
+    for state in (network or {}).values():
+        cmp_group = (state or {}).get("CMP") or {}
+        for v in cmp_group.get("vendors") or []:
+            counts[v] = counts.get(v, 0) + int(cmp_group.get("count") or 1)
+    return max(counts, key=counts.get) if counts else None
+
+
+def banner_vendor(banner: dict, network: Optional[dict] = None) -> Optional[str]:
+    """Which consent tool runs the banner, from evidence: the banner's own
+    markup (id/class), then the consent-tool servers the page contacted,
+    then a static-HTML signature. None when nothing identifies it."""
+    probe = f"{banner.get('container') or ''} {banner.get('frame') or ''}".lower()
+    return (next((n for key, n in _CMP_HINTS if key in probe), None)
+            or _cmp_from_network(network)
+            or banner.get("cmp_name"))
+
+
+def _banner_description(banner: dict, network: Optional[dict] = None) -> str:
     """Human description of the detected banner, e.g. 'OneTrust · rendered in page'."""
     if not banner or not banner.get("detected"):
         return ""
-    probe = f"{banner.get('container') or ''} {banner.get('frame') or ''}".lower()
-    name = next((n for key, n in _CMP_HINTS if key in probe), None) or "Custom banner"
+    name = banner_vendor(banner, network) or "Custom banner"
     frame = banner.get("frame")
     where = ("in a CMP iframe" if frame and frame != "main"
              else "rendered in page" if banner.get("source") == "rendered" else "in page HTML")
@@ -244,7 +267,7 @@ def build_consent_view(consent: Optional[dict]) -> Optional[dict]:
     net = ts.get("network") or {}
     network = {
         state: _network_rows(net.get(state))
-        for state in ("before_consent", "after_reject", "after_accept") if state in net
+        for state in ("before_consent", "after_reject", "after_reject_next_page", "after_accept") if state in net
     }
     before_rows = network.get("before_consent") or []
     tracking_before = sum(r["tracking_count"] for r in before_rows)
@@ -261,7 +284,7 @@ def build_consent_view(consent: Optional[dict]) -> Optional[dict]:
     tiles = [
         {"key": "banner", "label": "Consent banner",
          "value": "Detected" if consent.get("has_cookie_banner") else "Not detected",
-         "sub": _banner_description(ts.get("banner") or {}),
+         "sub": _banner_description(ts.get("banner") or {}, ts.get("network")),
          "state": "pass" if consent.get("has_cookie_banner") else "fail"},
         {"key": "region", "label": "Region",
          "value": region_label,
@@ -306,7 +329,8 @@ def build_consent_view(consent: Optional[dict]) -> Optional[dict]:
             "scan_id": scan.get("scan_id"),
             "scanned_at": scan.get("started_at"),
             "fresh_browser_contexts": scan.get("fresh_browser_contexts"),
-            "banner_description": _banner_description(ts.get("banner") or {}),
+            "banner_description": _banner_description(ts.get("banner") or {}, ts.get("network")),
+            "banner_vendor": banner_vendor(ts.get("banner") or {}, ts.get("network")) if (ts.get("banner") or {}).get("detected") else None,
         },
         "tiles": tiles,
         "frameworks": frameworks,

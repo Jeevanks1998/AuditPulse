@@ -85,8 +85,18 @@ class CapturedRequest:
 # --------------------------------------------------------------------------
 
 def _ga4_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedRequest]:
+    # A GA4 hit is any /g/collect request carrying a G- measurement id — sent
+    # to google-analytics.com, stats.g.doubleclick.net, or a site's own
+    # server-side GTM domain alike.
+    tid = (qs.get("tid") or [""])[0]
+    if urlparse(url).path.endswith("/g/collect") and tid.upper().startswith("G-"):
+        event = (qs.get("en") or [None])[0]
+        return CapturedRequest(url=url, phase="", vendor_key="ga4", event_name=event,
+                               is_page_view=(event == "page_view"), identifier=tid)
     if "google-analytics.com" not in url and "analytics.google.com" not in url:
         return None
+    if "adblocker_check" in url and not tid:
+        return None                      # gtag's ad-blocker probe, not a hit
     if "/g/collect" not in url and "/collect" not in url and "/j/collect" not in url:
         return None
     event = (qs.get("en") or [None])[0]
@@ -96,6 +106,11 @@ def _ga4_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedReques
 
 def _gtm_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedRequest]:
     if "googletagmanager.com" not in url:
+        # Server-side / first-party GTM: <own domain>/gtm.js?id=GTM-XXXX
+        cid = (qs.get("id") or [""])[0]
+        if urlparse(url).path.endswith("/gtm.js") and cid.upper().startswith("GTM-"):
+            return CapturedRequest(url=url, phase="", vendor_key="gtm", event_name="container_load",
+                                   is_page_view=True, identifier=cid)
         return None
     # GTM-specific signatures only (§1.2) — a real container load
     # (/gtm.js) or its noscript fallback (/ns.html). Deliberately
@@ -320,11 +335,32 @@ class AnalyticsRuntimeResult:
 
 
 # Read after load. Only booleans/counts — never page content.
-_PAGE_GLOBALS_JS = """() => ({
+_PAGE_GLOBALS_JS = r"""() => ({
   dataLayer: Array.isArray(window.dataLayer) ? window.dataLayer.length : null,
   google_tag_manager: !!window.google_tag_manager,
   gtag: typeof window.gtag === 'function',
-  tagcommander: !!(window.tC || window.tc_vars),
+  // TagCommander = a Commanders Act *tag container* (tC.container_<site>_<n>
+  // or a tc_<Name>_<n>.js script). window.tC alone is not enough: the
+  // TrustCommander cookie banner creates it too.
+  tagcommander: (() => { try {
+    const srcs = Array.from(document.scripts).map(s => s.src || '');
+    if (srcs.some(s => /tagcommander\.com\/\d+\/|\/tc_[\w-]+_\d+\.js/i.test(s))) return true;
+    return !!window.tC && Object.keys(window.tC).some(k => /^container_\d+_\d+$/.test(k));
+  } catch (e) { return false; } })(),
+  tagcommander_containers: (() => { try {
+    return Array.from(new Set(Array.from(document.scripts).map(s => (/\/tc_([\w-]+)_\d+\.js/i.exec(s.src || '') || [])[1]).filter(Boolean))).slice(0, 10);
+  } catch (e) { return []; } })(),
+  // IDs the page's own tracking libraries have loaded (tags added by GTM or
+  // after consent never appear in the HTML).
+  google_tag_ids: (() => { try {
+    return Object.keys(window.google_tag_manager || {}).filter(k => /^(G|GTM|AW|DC|GT)-[A-Z0-9]+$/.test(k)).slice(0, 20);
+  } catch (e) { return []; } })(),
+  meta_pixel_ids: (() => { try {
+    return Object.keys((window.fbq && window.fbq.instance && window.fbq.instance.pixelsByID) || {}).slice(0, 10);
+  } catch (e) { return []; } })(),
+  linkedin_partner_ids: (() => { try {
+    return (window._linkedin_data_partner_ids || []).concat(window._linkedin_partner_id ? [window._linkedin_partner_id] : []).map(String).slice(0, 10);
+  } catch (e) { return []; } })(),
   tealium: !!window.utag,
   adobe_launch: !!window._satellite,
   piano: !!(window.pa || window.ATInternet || window._pac),

@@ -61,6 +61,7 @@ whole crawl):
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -324,6 +325,12 @@ async def analyze_site(url: str, page: ParsedPage, enable_runtime_checks: bool =
     if not tagcommander.detected and globals_.get("tagcommander"):
         tagcommander.detected = True
         tagcommander.tc_api_found = True
+    if (runtime_result is not None and getattr(runtime_result, "available", False)
+            and globals_.get("tagcommander") is False and not tagcommander.script_tag_count
+            and not tagcommander.container_ids):
+        # The browser found no Commanders Act tag container: the window.tC /
+        # tC.* signals came from the TrustCommander cookie banner, not TagCommander.
+        tagcommander.detected = False
     # Piano loaded by a tag manager (TagCommander, GTM…) after consent is not
     # in any markup; the browser saw the SDK object and its configured site.
     if globals_.get("piano") or globals_.get("piano_site"):
@@ -388,7 +395,18 @@ async def analyze_site(url: str, page: ParsedPage, enable_runtime_checks: bool =
             if getattr(vendor, "captured_request_count", 0) <= 0 or key in summary.vendor_configs:
                 continue
             summary.trackers_detected.append(TRACKER_DISPLAY_NAMES.get(key, getattr(vendor, "vendor_name", key)))
-            summary.vendor_configs[key] = [vendor.identifier] if getattr(vendor, "identifier", None) else []
+            summary.vendor_configs[key] = []
+        # IDs seen in the browser (the data each tag sent, and the IDs its
+        # library loaded) complete what the page code showed — e.g. a Meta
+        # Pixel or LinkedIn tag fired by GTM has no ID anywhere in the HTML.
+        for key, ids in runtime_vendor_ids(runtime_result).items():
+            if key not in summary.vendor_configs:
+                continue
+            merged = list(summary.vendor_configs.get(key) or [])
+            for i in ids:
+                if i and i not in merged:
+                    merged.append(i)
+            summary.vendor_configs[key] = merged
 
     return AnalyticsAuditResult(findings=findings, score=score, summary=summary,
                                 tags_injected_by_js=raw_detected == 0 and bool(summary.trackers_detected))
@@ -403,6 +421,57 @@ _RUNTIME_DISPROVABLE = {
     "Adobe Analytics loaded without a detected page-view call": ("vendor_pv", "adobe"),
     "GTM installed but no dataLayer activity found": ("global", "dataLayer"),
 }
+
+
+_RUNTIME_ID_PATTERNS = {
+    "ga4": [re.compile(r"[?&]tid=(G-[A-Z0-9]+)", re.I), re.compile(r"gtag/js\?id=(G-[A-Z0-9]+)", re.I)],
+    "gtm": [re.compile(r"gtm\.js\?id=(GTM-[A-Z0-9]+)", re.I)],
+    "meta_pixel": [re.compile(r"facebook\.com/tr/?\?(?:.*&)?id=(\d+)", re.I), re.compile(r"/signals/config/(\d+)", re.I)],
+    "linkedin": [re.compile(r"px\.ads\.linkedin\.com/.*[?&]pid=(\d+)", re.I)],
+    "piano": [re.compile(r"[?&]s=(\d+)(?:&|$)", re.I)],
+    "adobe": [re.compile(r"/b/ss/([^/]+)/", re.I)],
+    "tagcommander": [re.compile(r"/tc_([A-Za-z0-9-]+)_\d+\.js", re.I)],
+    "clarity": [re.compile(r"clarity\.ms/tag/([a-z0-9]+)", re.I)],
+    "hotjar": [re.compile(r"hotjar-(\d+)\.js", re.I)],
+    "tiktok": [re.compile(r"[?&]sdkid=([A-Z0-9]+)", re.I)],
+}
+
+
+def runtime_vendor_ids(runtime_result) -> dict:
+    """Vendor → IDs observed in the live browser: from the collection
+    requests each vendor actually sent, and from the IDs its library loaded
+    (google_tag_manager keys, fbq pixels, LinkedIn partner ids)."""
+    out: dict = {}
+    if runtime_result is None or not getattr(runtime_result, "available", False):
+        return out
+
+    def add(key, value):
+        if value:
+            lst = out.setdefault(key, [])
+            if str(value) not in lst:
+                lst.append(str(value))
+
+    for key, vendor in (runtime_result.vendors or {}).items():
+        add(key, getattr(vendor, "identifier", None))
+        for url in getattr(vendor, "request_urls", None) or []:
+            for rx in _RUNTIME_ID_PATTERNS.get(key, []):
+                for m in rx.finditer(url):
+                    add(key, m.group(1))
+    g = runtime_result.page_globals or {}
+    for tid in g.get("google_tag_ids") or []:
+        if tid.upper().startswith("GTM-"):
+            add("gtm", tid)
+        elif tid.upper().startswith("G-"):
+            add("ga4", tid)
+    for pid in g.get("meta_pixel_ids") or []:
+        add("meta_pixel", pid)
+    for pid in g.get("linkedin_partner_ids") or []:
+        add("linkedin", pid)
+    for name in g.get("tagcommander_containers") or []:
+        add("tagcommander", name)
+    if g.get("piano_site"):
+        add("piano", g.get("piano_site"))
+    return out
 
 
 def _drop_static_warnings_disproved_at_runtime(findings: List[dict], runtime_result) -> List[dict]:

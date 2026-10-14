@@ -620,13 +620,14 @@ def _record_inventory(result: ConsentRuntimeResult, inv: BannerInventory) -> Non
         result.controls = list(inv.controls)
 
 
-async def _open_preferences(page, handles, inv: BannerInventory, result: ConsentRuntimeResult, url: str):
+async def _open_preferences(page, handles, inv: BannerInventory, result: ConsentRuntimeResult, url: str,
+                            leg: int = 1):
     """Click the detected Manage/Personalize control and verify a preference panel actually appeared."""
     manage = inv.first(tuple(MANAGE_ACTIONS))
     if manage is None:
         return None, {}
     if not await _click_control(page, handles, manage):
-        result.leg_log.append(f"leg 1: could not click '{manage.label}'")
+        result.leg_log.append(f"leg {leg}: could not click '{manage.label}'")
         return None, {}
     await page.wait_for_timeout(CLICK_SETTLE_MS)
     result.manage_clicked = True
@@ -652,7 +653,7 @@ async def _open_preferences(page, handles, inv: BannerInventory, result: Consent
         panel_handles.get(CONTAINER_HANDLE) if panel.banner_detected else None,
     )
     result.leg_log.append(
-        f"leg 1: clicked '{manage.label}' → preference panel "
+        f"leg {leg}: clicked '{manage.label}' → preference panel "
         + ("appeared" if result.personalize_exposes_controls else "did not appear"))
     return panel, panel_handles
 
@@ -686,13 +687,20 @@ async def _run_leg_one(browser, url: str, hostname: str, result: ConsentRuntimeR
         first_layer_reject = inv.first(REJECT_CLICK_ORDER)
         result.reject_layer = 1 if first_layer_reject else None
 
-        # Manage / Personalize first, if the banner offers it.
-        panel, panel_handles = await _open_preferences(page, handles, inv, result, url)
+        # Test the reject a visitor actually sees: the first-layer control when
+        # the banner has one. Only when it doesn't is the preference panel
+        # opened here to reach a reject inside it (the panel itself is tested
+        # in leg 2 otherwise).
+        panel, panel_handles = (None, {})
+        if first_layer_reject is None:
+            panel, panel_handles = await _open_preferences(page, handles, inv, result, url)
 
         # Reject: prefer the reject control that is on screen now (preference
         # panel if it opened, otherwise the first layer); never invent one.
         reject, reject_handles, layer = None, handles, 1
-        if panel is not None and panel.banner_detected:
+        if first_layer_reject is not None:
+            reject, reject_handles, layer = first_layer_reject, handles, 1
+        elif panel is not None and panel.banner_detected:
             reject = panel.first(REJECT_CLICK_ORDER)
             reject_handles, layer = panel_handles, 2
         if reject is None:
@@ -749,6 +757,31 @@ async def _run_leg_two(browser, url: str, hostname: str, result: ConsentRuntimeR
         inv, handles = await _wait_for_banner(page)
         _record_inventory(result, inv)
         result.before_accept = await _state(context, page, sink)
+
+        # The preference panel, when leg 1 didn't need it: open it, record it,
+        # then reload (no choice was made) so Accept is tested from the banner.
+        if inv.banner_detected and not result.manage_clicked and inv.first(tuple(MANAGE_ACTIONS)):
+            panel, _ = await _open_preferences(page, handles, inv, result, url, leg=2)
+            if panel is not None and panel.banner_detected and result.reject_layer is None:
+                if panel.first(REJECT_CLICK_ORDER):
+                    result.reject_layer = 2
+            try:
+                await page.reload(wait_until="load", timeout=NAVIGATION_TIMEOUT_MS)
+                inv, handles = await _wait_for_banner(page)
+            except Exception as exc:  # noqa: BLE001
+                result.leg_log.append(f"leg 2: reload after preferences failed: {str(exc)[:120]}")
+                inv, handles = BannerInventory(banner_detected=False), {}
+            if not (inv.banner_detected and inv.first(ACCEPT_CLICK_ORDER)):
+                # The panel visit stored something and the banner didn't return:
+                # test Accept in a fresh context instead.
+                await context.close()
+                context = await _fresh_context(browser, result)
+                page = await context.new_page()
+                sink = []
+                page.on("request", lambda r: sink.append(_classify(r.url, r.resource_type, hostname)))
+                await page.goto(url, wait_until="load", timeout=NAVIGATION_TIMEOUT_MS)
+                inv, handles = await _wait_for_banner(page)
+                result.leg_log.append("leg 2: banner reloaded in a fresh context for the Accept test")
 
         accept = inv.first(ACCEPT_CLICK_ORDER) if inv.banner_detected else None
         if accept is None:

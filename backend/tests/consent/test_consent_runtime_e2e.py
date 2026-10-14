@@ -256,3 +256,15 @@ def test_italian_banner_and_reject_checked_on_next_page(site_server):
         assert gdpr.get("accept_control") is True
         assert gdpr.get("reject_blocks_tracking") is False
         assert gdpr.get("consent_is_granular") is True
+
+
+def test_first_layer_reject_is_the_one_tested(site_server):
+    """When the banner itself has a reject ('Continua senza accettare'), that is
+    what Reject is tested with — not the reject inside the settings panel —
+    and the settings panel is still opened and verified (in the Accept leg)."""
+    r = scan("www.assicura-esempio.it", site_server)
+    rt = r.runtime_result
+    assert (rt.reject_clicked_label or "").lower() == "continua senza accettare"
+    assert rt.reject_layer == 1
+    assert rt.manage_clicked and rt.personalize_exposes_controls is True
+    assert rt.accept_clicked and (rt.accept_clicked_label or "").lower() == "accetta tutti i cookie"

@@ -33,8 +33,13 @@ MODULE = "consent"
 CATEGORY = "preferences"
 
 _LINK_TEXT_RE = re.compile(
-    r"cookie (settings|preferences|policy)|manage (cookies|preferences|consent)|"
-    r"privacy (settings|preferences)|do not sell",
+    r"cookie (settings|preferences|policy|choices)|cookies? (settings|preferences|choices)|"
+    r"manage (cookies|preferences|consent|cookie settings)|personali[sz]e (cookies|cookie settings|your cookies)|"
+    r"(change|update|review) (your )?(cookie|consent|privacy) (settings|preferences|choices)|"
+    r"privacy (settings|preferences|choices)|your privacy choices|do not sell|"
+    r"cookie[- ]einstellungen|datenschutz[- ]einstellungen|g[ée]rer (les )?cookies|param[eè]tres (des )?cookies|"
+    r"preferenze (dei |sui )?cookie|impostazioni (dei )?cookie|scelte sui cookie|"
+    r"configuraci[óo]n de cookies|preferencias de cookies|cookie[- ]instellingen",
     re.IGNORECASE,
 )
 
@@ -75,9 +80,14 @@ def verify_preferences_runtime(detection: PreferencesDetection, runtime_result=N
 def detect_preferences_link(page: ParsedPage) -> PreferencesDetection:
     result = PreferencesDetection()
 
-    for tag in page.anchor_tags:
-        text = tag.get_text(strip=True)
-        if text and _LINK_TEXT_RE.search(text):
+    # Links *and* buttons: many sites re-open the consent panel from a footer
+    # <button> ("Personalise Cookies") wired up by JavaScript.
+    from consent.buttons import MANAGE_PREFERENCES, classify_label
+    for tag in page.soup.find_all(["a", "button"]) + page.soup.find_all(attrs={"role": "button"}):
+        text = tag.get_text(" ", strip=True) or tag.get("aria-label") or ""
+        if not text or len(text) > 80:
+            continue
+        if _LINK_TEXT_RE.search(text) or classify_label(text) == MANAGE_PREFERENCES:
             result.link_found = True
             result.link_text = text
             result.link_href = tag.get("href")

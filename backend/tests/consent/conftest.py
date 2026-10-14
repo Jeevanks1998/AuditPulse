@@ -37,6 +37,7 @@ SITES = {
     "plain.example.com": ("no_banner.html", []),
     "boutique.example.fr": ("continue_only.html", []),
     "www.assicura-esempio.it": ("it_trustcommander.html", []),
+    "www.lifeeurope-example.ie": ("ie_onetrust_nonessential.html", []),
 }
 
 

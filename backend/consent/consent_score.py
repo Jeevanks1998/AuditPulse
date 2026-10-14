@@ -585,11 +585,21 @@ def build_gdpr_assessment(
         else "No privacy policy or notice link was found.",
     ))
 
-    withdrawal_ok = preferences.link_found or preferences.trigger_found
+    live_reopens = getattr(runtime_result, "withdrawal_reopens", None) if runtime_result is not None else None
+    live_label = getattr(runtime_result, "withdrawal_control_label", None) if runtime_result is not None else None
+    withdrawal_ok = bool(preferences.link_found or preferences.trigger_found or live_reopens)
+    if live_reopens:
+        withdrawal_detail = (f"Verified in a live browser: after accepting, '{live_label}' on the page re-opened "
+                             "the cookie settings.")
+    elif withdrawal_ok:
+        withdrawal_detail = ("A persistent control to revisit cookie preferences was found"
+                             + (f" ('{preferences.link_text}')." if preferences.link_text else "."))
+    else:
+        withdrawal_detail = ("No persistent footer/nav link, button or CMP trigger was found for withdrawing "
+                             "consent later" + (" — checked live after accepting, too." if live_reopens is False else "."))
     checks.append(GdprCheck(
         "consent_withdrawal_available", GDPR_CHECK_LABELS["consent_withdrawal_available"], withdrawal_ok,
-        "A persistent link or CMP trigger to revisit cookie preferences was found." if withdrawal_ok
-        else "No persistent footer/nav link or CMP trigger was found for withdrawing consent later.",
+        withdrawal_detail,
     ))
 
     if runtime_result is None or runtime_result.reject_blocks_tracking is None:

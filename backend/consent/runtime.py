@@ -380,6 +380,10 @@ class ConsentRuntimeResult:
 
     # Verdicts — None means "not tested" and must never be treated as a pass.
     reject_blocks_tracking: Optional[bool] = None
+    # Consent withdrawal, verified live: after Accept (banner gone), a control
+    # on the page that re-opens the cookie settings — and whether it did.
+    withdrawal_control_label: Optional[str] = None
+    withdrawal_reopens: Optional[bool] = None
     accept_allows_tracking: Optional[bool] = None
     personalize_exposes_controls: Optional[bool] = None
 
@@ -747,6 +751,73 @@ async def _run_leg_one(browser, url: str, hostname: str, result: ConsentRuntimeR
         await context.close()
 
 
+# Candidates for "change my cookie choice later": every link/button on the
+# page (the banner is gone after Accept), with its label and whether it would
+# navigate away. Classified in Python with the same rules as banner buttons.
+_WITHDRAWAL_CANDIDATES_JS = r"""
+() => {
+  const TRIGGER = /ot-sdk-btn|ot-sdk-show-settings|optanon-show-settings|CookiebotWidget|cky-btn-revisit|osano-cm-widget|qc-cmp2-toggle-link|iubenda-cs-preferences-link|cmplz-manage|didomi.*preferences|tc_privacy_center|privacy-center|uc-privacy-button|cookie-?settings|cookie-?preferences/i;
+  const out = [];
+  const els = Array.from(document.querySelectorAll('a, button, [role=button], [onclick]'));
+  els.forEach((el, i) => {
+    const label = (el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '').replace(/\s+/g, ' ').trim();
+    const hint = (el.id || '') + ' ' + (typeof el.className === 'string' ? el.className : '') + ' ' + (el.getAttribute('onclick') || '') + ' ' + (el.getAttribute('href') || '');
+    if (!label && !TRIGGER.test(hint)) return;
+    if (label.length > 80) return;
+    const href = el.tagName === 'A' ? (el.getAttribute('href') || '') : '';
+    const navigates = !!href && !/^(#|javascript:)/i.test(href);
+    el.setAttribute('data-ap-withdraw', String(i));
+    out.push({ i, label, trigger: TRIGGER.test(hint), navigates });
+  });
+  return out.slice(0, 600);
+}
+"""
+
+
+async def _check_withdrawal(page, result: ConsentRuntimeResult) -> None:
+    """After Accept: find a control that re-opens the cookie settings and
+    click it; withdrawal is verified when a consent banner/panel appears."""
+    from consent.buttons import MANAGE_PREFERENCES, classify_label
+    from consent.preferences import _LINK_TEXT_RE
+
+    cands = await page.evaluate(_WITHDRAWAL_CANDIDATES_JS) or []
+
+    def score(c):
+        if c.get("navigates"):
+            return 0                     # a link to the cookie *policy* page is not a way to withdraw
+        lbl = c.get("label") or ""
+        if c.get("trigger"):
+            return 3
+        if classify_label(lbl) == MANAGE_PREFERENCES or _LINK_TEXT_RE.search(lbl):
+            return 2
+        return 0
+
+    ranked = sorted((c for c in cands if score(c) > 0), key=lambda c: -score(c))
+    if not ranked:
+        result.withdrawal_reopens = False
+        result.leg_log.append("leg 2: no control to re-open the cookie settings was found after accepting")
+        return
+    for c in ranked[:3]:
+        loc = page.locator(f'[data-ap-withdraw="{c["i"]}"]').first
+        try:
+            try:
+                await loc.click(timeout=3_000)
+            except Exception:  # noqa: BLE001 — hidden/covered: DOM click
+                await loc.evaluate("el => el.click()")
+        except Exception:  # noqa: BLE001
+            continue
+        await page.wait_for_timeout(CLICK_SETTLE_MS)
+        inv, _ = await inventory_banner(page)
+        if inv.banner_detected and (inv.toggle_count or any(ct.action in CONSENT_ACTIONS for ct in inv.controls)):
+            result.withdrawal_control_label = c.get("label") or "cookie settings trigger"
+            result.withdrawal_reopens = True
+            result.leg_log.append(f"leg 2: clicked '{result.withdrawal_control_label}' after accepting → cookie settings re-opened")
+            return
+    result.withdrawal_control_label = ranked[0].get("label")
+    result.withdrawal_reopens = False
+    result.leg_log.append(f"leg 2: '{result.withdrawal_control_label}' was clicked but no cookie settings appeared")
+
+
 async def _run_leg_two(browser, url: str, hostname: str, result: ConsentRuntimeResult) -> None:
     context = await _fresh_context(browser, result)
     try:
@@ -803,6 +874,10 @@ async def _run_leg_two(browser, url: str, hostname: str, result: ConsentRuntimeR
         result.after_accept = await _state(context, page, sink[mark:])
         result.accept_screenshot = await _capture(page, url, "consent_accept", result.scan_id)
         result.leg_log.append(f"leg 2: fresh context, clicked '{accept.label}' ({accept.action})")
+        try:
+            await _check_withdrawal(page, result)
+        except Exception as exc:  # noqa: BLE001 — never lose the accept evidence over this
+            result.leg_log.append(f"leg 2: withdrawal check failed: {str(exc)[:120]}")
     finally:
         await context.close()
 

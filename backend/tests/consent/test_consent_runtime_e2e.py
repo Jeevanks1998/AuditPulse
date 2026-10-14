@@ -268,3 +268,21 @@ def test_first_layer_reject_is_the_one_tested(site_server):
     assert rt.reject_layer == 1
     assert rt.manage_clicked and rt.personalize_exposes_controls is True
     assert rt.accept_clicked and (rt.accept_clicked_label or "").lower() == "accetta tutti i cookie"
+
+
+# --- "Accept/Reject Non-Essential Cookies" + footer "Personalise Cookies" ------
+def test_non_essential_wording_and_live_withdrawal(site_server):
+    """'Accept Non-Essential Cookies' is an accept (not a necessary-only reject),
+    and consent withdrawal is verified live: after accepting, the footer
+    'Personalise Cookies' <button> re-opens the cookie settings."""
+    r = scan("www.lifeeurope-example.ie", site_server)
+    rt, s = r.runtime_result, r.summary
+    controls = _controls(r)
+    assert controls["Accept Non-Essential Cookies"] == "accept_all"
+    assert controls["Reject Non-Essential Cookies"] == "reject_non_essential"
+    assert controls["Manage Cookie Settings"] == "manage_preferences"
+    assert rt.accept_clicked_label == "Accept Non-Essential Cookies"
+    assert rt.withdrawal_reopens is True and rt.withdrawal_control_label == "Personalise Cookies"
+    assert s.gdpr_checks["accept_control"] is True
+    assert s.gdpr_checks["reject_parity"] is True
+    assert s.gdpr_checks["consent_withdrawal_available"] is True

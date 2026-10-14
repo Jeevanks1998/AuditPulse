@@ -188,10 +188,35 @@ def _has(word_re: str, text: str) -> bool:
     return re.search(rf"(?:^|\s){word_re}(?:\s|$)", text) is not None
 
 
+# "Non-essential", "not necessary", "optional"… name the cookies that NEED
+# consent — the opposite of "necessary only".
+_W_OPTIONAL = (r"(?:optional|optionnels?|facoltativ\w*|opcional\w*|zus[äa]tzlich\w*|additional|marketing|analytics?"
+               r"|analitic\w*|profilazione|statisti\w*|advertising|pubblicit\w*|publicit\w*|werbung)")
+
+
+def _negated_necessary(norm: str) -> bool:
+    return (re.search(rf"(?:^|\s)(?:non ?|not |nicht |no |pas |nie ){_W_NECESSARY}(?:\s|$)", norm) is not None
+            or re.search(r"(?:^|\s)non(?:essential|necessary)\w*", norm) is not None
+            or _has(_W_OPTIONAL, norm))
+
+
 def _classify_by_words(norm: str) -> str:
     if len(norm.split()) > 10:
         return UNCLASSIFIED                    # a sentence, not a button
     accept, reject = _has(_W_ACCEPT, norm), _has(_W_REJECT, norm)
+    if _negated_necessary(norm):
+        # Judge accept/reject without the "non-essential" phrase itself ("non"
+        # is also a refusal word in French/Italian).
+        rest = re.sub(rf"(?:^|\s)(?:non ?|not |nicht |no |pas |nie ){_W_NECESSARY}(?=\s|$)", " ", norm)
+        rest = re.sub(r"(?:^|\s)non(?:essential|necessary)\w*", " ", rest).strip()
+        accept, reject = _has(_W_ACCEPT, rest), _has(_W_REJECT, rest)
+        # "Accept non-essential cookies" accepts the optional ones;
+        # "Reject non-essential cookies" keeps only the necessary ones.
+        if reject or _has(_W_WITHOUT, norm):
+            return REJECT_NON_ESSENTIAL
+        if accept and _only_cookie_words(norm, _W_ACCEPT, _W_OPTIONAL, r"non", r"not", r"nicht",
+                                          r"(?:non)?(?:essential|necessary)\w*", _W_NECESSARY):
+            return ACCEPT_ALL
     if _has(_W_WITHOUT, norm) and (accept or "cookie" in norm or "consent" in norm):
         return REJECT_NON_ESSENTIAL            # "continua senza accettare", "continuer sans accepter"
     if _has(_W_NECESSARY, norm) and (_has(_W_ONLY, norm) or accept or reject or len(norm.split()) <= 3):

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en-IE"><head><meta charset="utf-8"><title>Life Europe Example</title></head>
+<body>
+<main><h1>Life Europe</h1><p>Insurance for Ireland.</p></main>
+<footer>
+  <a href="/cookies">Cookies</a> <a href="/ireland-privacy-notice">Data Privacy Notice (Ireland)</a>
+  <button type="button" id="footer-personalise">Personalise Cookies</button>
+</footer>
+<script>
+function choice() { return /OptanonAlertBoxClosed=/.test(document.cookie); }
+function showBanner() {
+  if (document.getElementById('onetrust-banner-sdk')) return;
+  var b = document.createElement('div');
+  b.id = 'onetrust-banner-sdk';
+  b.setAttribute('role', 'region'); b.setAttribute('aria-label', 'Cookie banner');
+  b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;background:#333;color:#fff;padding:24px';
+  b.innerHTML = '<button class="onetrust-close-btn-handler banner-close-button">Continue without Accepting</button>' +
+    '<h2>Cookies</h2><p>We use some essential cookies. We would also like to use non-essential cookies for audience measurement. <a class="ot-cookie-policy-link" href="/cookies">Cookie Policy.</a></p>' +
+    '<button id="onetrust-pc-btn-handler">Manage Cookie Settings</button>' +
+    '<button id="onetrust-reject-all-handler">Reject Non-Essential Cookies</button>' +
+    '<button id="onetrust-accept-btn-handler">Accept Non-Essential Cookies</button>';
+  document.body.appendChild(b);
+  var close = function () { document.cookie = 'OptanonAlertBoxClosed=1; path=/'; b.remove(); };
+  document.getElementById('onetrust-accept-btn-handler').onclick = function () {
+    close(); var i = document.createElement('img');
+    i.src = 'http://www.google-analytics.com:PORT/g/collect?v=2&tid=G-LIFE123&en=page_view'; document.body.appendChild(i);
+  };
+  document.getElementById('onetrust-reject-all-handler').onclick = close;
+  b.querySelector('.banner-close-button').onclick = close;
+  document.getElementById('onetrust-pc-btn-handler').onclick = function () {
+    b.innerHTML = '<div role="dialog" aria-label="Cookie preferences"><h2>Privacy preference centre</h2>' +
+      '<label><input type="checkbox" checked disabled> Essential</label> <label><input type="checkbox"> Audience measurement</label>' +
+      '<button id="save">Confirm My Choices</button> <button id="rej">Reject All</button></div>';
+    document.getElementById('save').onclick = document.getElementById('rej').onclick = close;
+  };
+}
+document.getElementById('footer-personalise').addEventListener('click', function () { showBanner(); });
+if (!choice()) setTimeout(showBanner, 1500);
+</script>
+</body></html>

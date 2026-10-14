@@ -358,6 +358,10 @@ class ConsentRuntimeResult:
 
     before_consent: ConsentStateCapture = field(default_factory=ConsentStateCapture)
     after_reject: ConsentStateCapture = field(default_factory=ConsentStateCapture)
+    # The next page view after Reject (page reloaded with the reject choice
+    # stored). Most tags fire on page load, so a reject that only stops the
+    # current page's banner but lets the next page track is caught here.
+    after_reject_reload: ConsentStateCapture = field(default_factory=ConsentStateCapture)
     # Leg 2's own initial state (fresh context, before Accept) — the
     # baseline the after-accept capture is compared against.
     before_accept: ConsentStateCapture = field(default_factory=ConsentStateCapture)
@@ -718,6 +722,19 @@ async def _run_leg_one(browser, url: str, hostname: str, result: ConsentRuntimeR
         result.after_reject = await _state(context, page, sink[mark:])
         result.reject_screenshot = await _capture(page, url, "consent_reject", result.scan_id)
         result.leg_log.append(f"leg 1: clicked '{reject.label}' ({reject.action})")
+
+        # The next page view, with the reject choice stored: tags that fire on
+        # page load would not show up in the few seconds after the click.
+        mark = len(sink)
+        try:
+            await page.reload(wait_until="load", timeout=NAVIGATION_TIMEOUT_MS)
+            await page.wait_for_timeout(SETTLE_MS + CLICK_SETTLE_MS)
+            result.after_reject_reload = await _state(context, page, sink[mark:])
+            n = len(result.after_reject_reload.tracker_requests)
+            result.leg_log.append(f"leg 1: reloaded the page after reject — {n} tracking request(s) on the next page view")
+        except Exception as exc:  # noqa: BLE001 — the click-time capture still stands on its own
+            result.after_reject_reload = ConsentStateCapture(available=False, error=str(exc)[:200])
+            result.leg_log.append(f"leg 1: reload after reject failed: {str(exc)[:120]}")
     finally:
         await context.close()
 
@@ -808,11 +825,11 @@ def _derive_verdicts(result: ConsentRuntimeResult) -> None:
     before_names = {(c.name, c.domain) for c in result.before_consent.consent_required_cookies}
 
     if result.after_reject.available:
-        new_cookies = [c for c in result.after_reject.consent_required_cookies
+        captures = [result.after_reject] + ([result.after_reject_reload] if result.after_reject_reload.available else [])
+        trackers = [r for cap in captures for r in cap.tracker_requests]
+        new_cookies = [c for cap in captures for c in cap.consent_required_cookies
                        if (c.name, c.domain) not in before_names]
-        result.reject_blocks_tracking = (
-            len(result.after_reject.tracker_requests) == 0 and not new_cookies
-        )
+        result.reject_blocks_tracking = not trackers and not new_cookies
 
     if result.after_accept.available:
         new_trackers = len(result.after_accept.tracker_requests) > 0
@@ -827,9 +844,30 @@ def _derive_verdicts(result: ConsentRuntimeResult) -> None:
         summary["before_consent"] = summarize_requests(result.before_consent.requests)
     if result.after_reject.available:
         summary["after_reject"] = summarize_requests(result.after_reject.requests)
+    if result.after_reject_reload.available:
+        summary["after_reject_next_page"] = summarize_requests(result.after_reject_reload.requests)
     if result.after_accept.available:
         summary["after_accept"] = summarize_requests(result.after_accept.requests)
     result.network_summary = summary
+
+
+def reject_tracking_evidence(result: "ConsentRuntimeResult") -> dict:
+    """What was still tracked after Reject: right after the click and on the
+    next page view. Used for the finding and the GDPR/CCPA check evidence."""
+    before_names = {(c.name, c.domain) for c in result.before_consent.consent_required_cookies}
+    click = result.after_reject.tracker_requests if result.after_reject.available else []
+    reload = result.after_reject_reload.tracker_requests if result.after_reject_reload.available else []
+    caps = [c for c in (result.after_reject, result.after_reject_reload) if c.available]
+    new_cookies = sorted({c.name for cap in caps for c in cap.consent_required_cookies
+                          if (c.name, c.domain) not in before_names})
+    reqs = click + reload
+    return {
+        "vendors": sorted({r.vendor or r.domain for r in reqs}),
+        "requests": sorted({r.short() for r in reqs})[:10],
+        "new_cookies": new_cookies,
+        "on_next_page_only": bool(reload) and not click,
+        "next_page_checked": result.after_reject_reload.available,
+    }
 
 
 def check_runtime_consent(
@@ -861,13 +899,12 @@ def check_runtime_consent(
         return findings  # banner.py's own finding covers "no banner"; nothing to click-test
 
     if result.reject_clicked and result.reject_blocks_tracking is False:
-        after = result.after_reject
-        names = sorted({r.vendor or r.domain for r in after.tracker_requests})
-        before_names = {(c.name, c.domain) for c in result.before_consent.consent_required_cookies}
-        new_cookies = sorted({c.name for c in after.consent_required_cookies if (c.name, c.domain) not in before_names})
+        ev = reject_tracking_evidence(result)
+        names, new_cookies = ev["vendors"], ev["new_cookies"]
         evidence = []
         if names:
-            evidence.append(f"collection requests from {', '.join(names)}")
+            evidence.append(f"collection requests from {', '.join(names)}"
+                            + (" (on the next page view)" if ev["on_next_page_only"] else ""))
         if new_cookies:
             evidence.append(f"new analytics/marketing cookies {', '.join(new_cookies[:5])}")
         findings.append(_finding(

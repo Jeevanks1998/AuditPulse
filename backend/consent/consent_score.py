@@ -182,6 +182,35 @@ class GdprCheck:
     evidence: Optional[dict] = None
 
 
+def _reject_detail_and_evidence(runtime_result, ok: bool, control: str):
+    """Detail text + evidence for the 'reject actually blocks tracking' checks,
+    built from what the live pass saw after the click and on the next page."""
+    try:
+        from consent.runtime import reject_tracking_evidence
+        ev = reject_tracking_evidence(runtime_result)
+    except Exception:  # noqa: BLE001
+        ev = {"vendors": [], "requests": [], "new_cookies": [], "on_next_page_only": False, "next_page_checked": False}
+    label = getattr(runtime_result, "reject_clicked_label", None)
+    clicked = f"Clicked '{label}'" if label else f"Clicked {control}"
+    where = "right after the click and on the next page view" if ev["next_page_checked"] else "right after the click"
+    if ok:
+        return (f"{clicked}: no analytics/advertising collection requests and no new analytics/marketing "
+                f"cookies were seen {where}.", None)
+    parts = []
+    if ev["vendors"]:
+        parts.append(f"collection requests from {', '.join(ev['vendors'])}"
+                     + (" on the next page view" if ev["on_next_page_only"] else ""))
+    if ev["new_cookies"]:
+        parts.append(f"new analytics/marketing cookies ({', '.join(ev['new_cookies'][:5])})")
+    detail = f"{clicked}, but tracking continued: " + ("; ".join(parts) or "tracking activity") + "."
+    if "Piano Analytics" in ev["vendors"]:
+        detail += (" Note: Piano Analytics can run in a consent-exempt audience-measurement mode; "
+                   "if it is configured that way, confirm with your DPO that the exemption applies.")
+    evidence = {"summary": f"Checked {where}.", "items": ev["requests"] + [f"cookie: {c}" for c in ev["new_cookies"][:5]],
+                "items_label": "Still sent after reject"} if (ev["requests"] or ev["new_cookies"]) else None
+    return detail, evidence
+
+
 @dataclass
 class GdprAssessment:
     """
@@ -573,9 +602,7 @@ def build_gdpr_assessment(
         ok = runtime_result.reject_blocks_tracking
         reject_runtime_check = GdprCheck(
             "reject_blocks_tracking", GDPR_CHECK_LABELS["reject_blocks_tracking"], ok,
-            "Clicking Reject actually stopped tracker requests and further non-essential cookies." if ok
-            else "Clicking Reject did not stop tracker requests/non-essential cookies — the control "
-                 "doesn't do what it claims.",
+            *_reject_detail_and_evidence(runtime_result, ok, "Reject"),
         )
     checks.append(reject_runtime_check)
 
@@ -712,11 +739,7 @@ def build_ccpa_assessment(
         ok = runtime_result.reject_blocks_tracking
         opt_out_behavior_check = CcpaCheck(
             "opt_out_behavior_verified", CCPA_CHECK_LABELS["opt_out_behavior_verified"], ok,
-            "Clicking the opt-out control actually stopped tracker requests and further "
-            "non-essential cookies." if ok
-            else "Clicking the opt-out control did not stop tracker requests/non-essential "
-                 "cookies — the same live pass used for GDPR's reject check found tracking "
-                 "still active afterward.",
+            _reject_detail_and_evidence(runtime_result, ok, "the opt-out control")[0],
         )
     checks.append(opt_out_behavior_check)
 

@@ -140,6 +140,73 @@ def normalize_label(label: str) -> str:
     return text
 
 
+# ---- word-based fallback ------------------------------------------------------
+# The exact-phrase rules above are precise but can't list every wording a
+# banner uses ("Accetta tutti i cookie", "Personalizza preferenze", "Alle
+# Cookies akzeptieren und weiter"…). When none of them matches, the label is
+# classified from the *kinds* of words it contains, in many languages:
+# accept / reject / "without accepting" / necessary-only / manage / save,
+# plus "all". Order matters: refusing wordings win over accept words
+# ("continua senza accettare" contains "accettare").
+_W_ALL = r"(?:all|alle|alles|tutti|tutte|tutto|tout|tous|toutes|todo|todos|todas|tudo|wszystk\w*|allt|alla|kaikki|toate|v[šs]echny|minden)"
+_W_ACCEPT = (r"(?:(?:j'|j)?accept\w*|accett\w*|acept\w*|aceit\w*|akzept\w*|akcept\w*|zustimm\w*|einverstanden|allow\w*|agree\w*"
+             r"|consent\w*|consenti\w*|acconsent\w*|autoriz\w*|autoris\w*|permit\w*|godk[äa]nn\w*|accepteer\w*|akkoord"
+             r"|zgadzam|zgoda|hyv[äa]ksy\w*|elfogad\w*|souhlas\w*|sí|si|yes|ja|oui)")
+_W_REJECT = (r"(?:reject\w*|rifiut\w*|refus\w*|rechaz\w*|rejeit\w*|recus\w*|ablehn\w*|verweiger\w*|weiger\w*|decline\w*"
+             r"|deny|denied|disagree|odrzu\w*|avvis\w*|afvis\w*|avsl[åa]\w*|hylk\w*|elutas\w*|odm[íi]t\w*|nego\w*|nein|non|no)")
+_W_WITHOUT = r"(?:without|senza|sans|sin|sem|ohne|zonder|bez|utan|uden|uten|ilman|n[ée]lk[üu]l)"
+_W_NECESSARY = (r"(?:necessar\w*|n[ée]cessaire\w*|necesari\w*|essential\w*|essenzial\w*|essentiel\w*|esencial\w*|notwendig\w*"
+                r"|erforderlich\w*|noodzakelijk\w*|n[øo]dvendig\w*|n[öo]dv[äa]ndig\w*|niezb[ęe]dn\w*|tecnic\w*|technique\w*"
+                r"|t[ée]cnic\w*|technisch\w*|required|strictly|functional\w*|funzional\w*)")
+_W_ONLY = r"(?:only|solo|soltanto|solamente|nur|uniquement|seulement|alleen|kun|endast|tylko|apenas|somente|pouze|csak)"
+_W_SAVE = (r"(?:save|salva\w*|speicher\w*|enregistr\w*|guard\w*|opslaan|zapisz|confirm\w*|conferm\w*|best[äa]tig\w*"
+           r"|selection|selezion\w*|auswahl|s[ée]lection|selecci[óo]n|sele[çc][ãa]o|selected|selezionati)")
+_W_MANAGE = (r"(?:manage|personali[sz]\w*|personnalis\w*|customi[sz]\w*|gestisci|gestion\w*|g[ée]rer|verwalt\w*|einstellung\w*"
+             r"|anpass\w*|preferen\w*|pr[ée]f[ée]renc\w*|impostazion\w*|settings?|param[eèé]tr\w*|configur\w*|opzion\w*"
+             r"|options?|ajust\w*|voorkeur\w*|instelling\w*|beheer\w*|scegli|choose|choices?|scelte|purposes|finalit\w*"
+             r"|ustawienia|inst[äa]llningar|indstillinger|innstillinger)")
+
+
+# Words a plain accept/reject button may contain besides the verb and "all"
+# ("Accetta tutti i cookie", "Alle Cookies akzeptieren und weiter"). Any other
+# word ("Accept order", "Accept terms") means it isn't a cookie choice.
+_W_FILLER = (r"(?:cookies?|cookie|consent|the|i|il|lo|la|le|les|los|las|gli|de|des|du|di|del|dei|delle|der|die|das|den|dem"
+             r"|and|e|ed|et|y|und|en|og|och|a|al|au|aux|to|my|mi|mes|mes|je|j'|ich|io|me|moi|nous|we|for|per|pour|para|f[üu]r"
+             r"|continue|continua|continuer|continuar|weiter|proceed|close|chiudi|fermer|cerrar|schlie[sß]en|now|ora|maintenant"
+             r"|tracking|traceurs|tracker|terms|it|this|sur|on)")
+
+
+def _only_cookie_words(norm: str, *word_res: str) -> bool:
+    for tok in norm.split():
+        if any(re.fullmatch(w, tok) for w in word_res + (_W_ALL, _W_FILLER)):
+            continue
+        return False
+    return True
+
+
+def _has(word_re: str, text: str) -> bool:
+    return re.search(rf"(?:^|\s){word_re}(?:\s|$)", text) is not None
+
+
+def _classify_by_words(norm: str) -> str:
+    if len(norm.split()) > 10:
+        return UNCLASSIFIED                    # a sentence, not a button
+    accept, reject = _has(_W_ACCEPT, norm), _has(_W_REJECT, norm)
+    if _has(_W_WITHOUT, norm) and (accept or "cookie" in norm or "consent" in norm):
+        return REJECT_NON_ESSENTIAL            # "continua senza accettare", "continuer sans accepter"
+    if _has(_W_NECESSARY, norm) and (_has(_W_ONLY, norm) or accept or reject or len(norm.split()) <= 3):
+        return REJECT_NON_ESSENTIAL            # "solo cookie tecnici", "nur notwendige"
+    if reject and not accept and _only_cookie_words(norm, _W_REJECT):
+        return REJECT_ALL if _has(_W_ALL, norm) else REJECT
+    if _has(_W_SAVE, norm):
+        return SAVE_PREFERENCES                # "salva preferenze", "accetta selezionati"
+    if _has(_W_MANAGE, norm):
+        return MANAGE_PREFERENCES              # "personalizza preferenze", "gestisci opzioni"
+    if accept and not reject and _only_cookie_words(norm, _W_ACCEPT):
+        return ACCEPT_ALL if _has(_W_ALL, norm) else ACCEPT
+    return UNCLASSIFIED
+
+
 def classify_label(label: str) -> str:
     """Semantic action for one control's visible label. Never raises."""
     norm = normalize_label(label)
@@ -148,7 +215,7 @@ def classify_label(label: str) -> str:
     for action, pattern in _RULES:
         if pattern.match(norm):
             return action
-    return UNCLASSIFIED
+    return _classify_by_words(norm)
 
 
 # ---- container detection ---------------------------------------------------
@@ -171,6 +238,7 @@ CONSENT_CONTAINER_SELECTORS: List[str] = [
     ".moove-gdpr-info-bar-container", "#BorlabsCookieBox", "#tarteaucitronRoot",
     ".fc-consent-root", "[id^='sp_message_container']", "#cmpbox", "#cmpwrapper",
     "#termly-code-snippet-support",
+    "#footer_tc_privacy", "#tc-privacy-wrapper", "[class*='tc-privacy-banner']",  # TrustCommander (Commanders Act)
     # generic, attribute-based
     "[role='dialog'][aria-label*='cookie' i]", "[role='dialog'][aria-label*='consent' i]",
     "[role='dialog'][aria-label*='privacy' i]", "[role='alertdialog'][aria-label*='cookie' i]",

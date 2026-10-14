@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><title>Assicurazioni Esempio</title>
+<script>
+// Piano Analytics loaded by the tag manager on EVERY page view, whatever the
+// visitor chose (the axa.it behaviour this fixture reproduces).
+setTimeout(function () {
+  fetch('http://logs1412.xiti.com:PORT/event?s=631723&idclient=abc123', {method: 'POST', body: '{"events":[{"name":"page.display"}]}'}).catch(function(){});
+}, 300);
+</script>
+</head><body>
+<header><nav><a href="/">Home</a> <a href="/auto">Auto</a> <a href="/privacy">Privacy</a></nav></header>
+<main><h1>Assicurazioni Auto, Casa e Salute</h1><p>Benvenuto.</p></main>
+<footer><a href="#" onclick="tC.privacyCenter.showPrivacyCenter();return false;">Rivedi le tue scelte sui Cookie</a> · <a href="/cookie-policy">Cookie Policy</a></footer>
+<script>
+window.tC = {privacyCenter: {showPrivacyCenter: function () { showBanner(); }}};
+function choice() { var m = document.cookie.match(/TC_PRIVACY_4389=([a-z]+)/); return m ? m[1] : null; }
+function hide() { var b = document.getElementById('footer_tc_privacy'); if (b) b.remove(); }
+function showBanner() {
+  var b = document.createElement('div');
+  b.id = 'footer_tc_privacy';
+  b.className = 'tc-reset-css tc-privacy-banner tc-privacy-bar tc-privacy-footer';
+  b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;background:#fff;padding:24px;z-index:9999';
+  b.innerHTML = '<button id="close" style="text-transform:uppercase">Continua senza accettare</button>' +
+    '<h2>Proteggiamo tutte le cose a cui tieni, come la tua privacy</h2>' +
+    '<p>Questo sito utilizza cookie o altri strumenti tecnici e potrà, previa acquisizione del tuo consenso, utilizzare cookie analitici e di profilazione. <a id="tc_info2" href="/cookie-policy">Cookie Policy</a></p>' +
+    '<button id="footer_tc_privacy_button_2" class="tc-privacy-button" style="text-transform:uppercase">Personalizza preferenze</button>' +
+    '<button id="footer_tc_privacy_button" class="tc-privacy-button" style="text-transform:uppercase">Accetta tutti i cookie</button>';
+  document.body.appendChild(b);
+  document.getElementById('close').onclick = function () { document.cookie = 'TC_PRIVACY_4389=reject; path=/'; hide(); };
+  document.getElementById('footer_tc_privacy_button').onclick = function () {
+    document.cookie = 'TC_PRIVACY_4389=accept; path=/'; hide();
+    var s = document.createElement('img'); s.src = 'http://www.google-analytics.com:PORT/g/collect?v=2&tid=G-TEST123&en=page_view'; document.body.appendChild(s);
+  };
+  document.getElementById('footer_tc_privacy_button_2').onclick = function () {
+    b.innerHTML = '<div role="dialog" aria-label="Preferenze cookie"><h2>Preferenze cookie</h2>' +
+      '<label><input type="checkbox" checked disabled> Tecnici</label> <label><input type="checkbox"> Analitici</label> <label><input type="checkbox"> Profilazione</label>' +
+      '<button id="save">Salva preferenze</button> <button id="rejall">Rifiuta tutti</button></div>';
+    document.getElementById('save').onclick = document.getElementById('rejall').onclick =
+      function () { document.cookie = 'TC_PRIVACY_4389=reject; path=/'; hide(); };
+  };
+}
+if (!choice()) setTimeout(showBanner, 2500);
+</script>
+</body></html>

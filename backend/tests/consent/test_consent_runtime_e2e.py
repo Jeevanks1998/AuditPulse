@@ -234,3 +234,25 @@ def test_leg_one_order_and_banner_clip(site_server):
     # The initial screenshot is clipped to the detected banner, not the full viewport.
     w, h = Image.open(r.summary.banner_screenshot_path).size
     assert h < 400 and w > 600
+
+
+# --- Italian TrustCommander-style banner (the axa.it setup) -------------------
+def test_italian_banner_and_reject_checked_on_next_page(site_server):
+    """'Accetta tutti i cookie' / 'Personalizza preferenze' / 'Continua senza
+    accettare' are recognised from their words, and a tag that keeps firing on
+    the next page view after Reject fails 'Reject actually blocks tracking'."""
+    r = scan("www.assicura-esempio.it", site_server)
+    rt = r.runtime_result
+    controls = {k.lower(): v for k, v in _controls(r).items()}
+    assert controls.get("accetta tutti i cookie") == "accept_all"
+    assert controls.get("personalizza preferenze") == "manage_preferences"
+    assert controls.get("continua senza accettare") == "reject_non_essential"
+    assert rt.accept_clicked and rt.reject_clicked and rt.manage_clicked
+    assert rt.after_reject_reload.available
+    assert any("xiti.com" in x.domain for x in rt.after_reject_reload.tracker_requests)
+    assert rt.reject_blocks_tracking is False
+    gdpr = r.summary.gdpr_checks if hasattr(r.summary, "gdpr_checks") else None
+    if gdpr is not None:
+        assert gdpr.get("accept_control") is True
+        assert gdpr.get("reject_blocks_tracking") is False
+        assert gdpr.get("consent_is_granular") is True

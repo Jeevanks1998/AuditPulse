@@ -115,6 +115,7 @@ for _d, _v in [
     ("consentmanager.net", "consentmanager.net"), ("privacy-mgmt.com", "Sourcepoint"),
     ("sourcepoint.com", "Sourcepoint"), ("fundingchoicesmessages.google.com", "Google Funding Choices"),
     ("axept.io", "Axeptio"), ("cookiefirst.com", "CookieFirst"), ("termly.io", "Termly"),
+    ("trustcommander.net", "TrustCommander (Commanders Act)"),
 ]:
     _r(_d, None, CMP, _v, INFRASTRUCTURE)
 
@@ -153,6 +154,8 @@ _r("crazyegg.com", None, ANALYTICS, "Crazy Egg")
 _r("omtrdc.net", None, ANALYTICS, "Adobe Analytics", COLLECTION)
 _r("2o7.net", None, ANALYTICS, "Adobe Analytics", COLLECTION)
 _r("xiti.com", None, ANALYTICS, "Piano Analytics", COLLECTION)
+_r("pa-cd.com", None, ANALYTICS, "Piano Analytics", COLLECTION)
+_r("aticdn.net", None, ANALYTICS, "Piano Analytics", LOADER)
 _r("at-o.net", None, ANALYTICS, "Piano Analytics")
 _r("piano.io", None, ANALYTICS, "Piano Analytics")
 _r("scorecardresearch.com", None, ANALYTICS, "Comscore")
@@ -171,6 +174,10 @@ _r("quantummetric.com", None, ANALYTICS, "Quantum Metric")
 _r("optimizely.com", None, ANALYTICS, "Optimizely")
 _r("qualtrics.com", None, ANALYTICS, "Qualtrics")
 _r("kampyle.com", None, ANALYTICS, "Medallia")
+_r("medallia.eu", r"/api/web/events|/events?\b", ANALYTICS, "Medallia", COLLECTION)
+_r("medallia.eu", None, ANALYTICS, "Medallia", LOADER)
+_r("medallia.com", r"/api/web/events|/events?\b", ANALYTICS, "Medallia", COLLECTION)
+_r("medallia.com", None, ANALYTICS, "Medallia", LOADER)
 _r("matomo.org", None, ANALYTICS, "Matomo")
 
 # --- Advertising ---
@@ -246,6 +253,9 @@ for _d, _v in [
 # First-party / server-side GA4 hit: `/g/collect?v=2&tid=G-…` on any host.
 _GA4_COLLECT_PATH_RE = re.compile(r"/g/collect$", re.IGNORECASE)
 _GA4_COLLECT_QUERY_RE = re.compile(r"(^|&)tid=G-", re.IGNORECASE)
+# Piano Analytics / AT Internet through a site's own (CNAME) collect domain:
+# /event or /hit.xiti with a numeric site id and Piano's visitor id.
+_PIANO_COLLECT_PATH_RE = re.compile(r"/(event|hit\.xiti)$", re.IGNORECASE)
 
 # Back-compat: the old domain -> display-name table, derived from the rules
 # above (consent.runtime and older callers imported this name).
@@ -416,6 +426,9 @@ def _classify(request_url: str, resource_type: str, first_party_hostname: str) -
         if _GA4_COLLECT_PATH_RE.search(path) and _GA4_COLLECT_QUERY_RE.search(parsed.query or ""):
             # Server-side / first-party GA4 tagging still sends a GA4 hit.
             category, vendor, activity = ANALYTICS, "Google Analytics", COLLECTION
+        elif _PIANO_COLLECT_PATH_RE.search(path) and re.search(r"(^|&)s=\d+(&|$)", parsed.query or "") \
+                and "idclient=" in (parsed.query or ""):
+            category, vendor, activity = ANALYTICS, "Piano Analytics", COLLECTION
         elif not domain:
             category, activity = UNKNOWN, CONTENT
         elif not third_party:

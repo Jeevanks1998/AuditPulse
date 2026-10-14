@@ -36,6 +36,7 @@ SITES = {
     "shop.example.co.uk": ("ack_only.html", []),
     "plain.example.com": ("no_banner.html", []),
     "boutique.example.fr": ("continue_only.html", []),
+    "www.assicura-esempio.it": ("it_trustcommander.html", []),
 }
 
 

@@ -168,6 +168,8 @@ DISCOVER_JS = r"""
     '#axeptio_overlay', '#tarteaucitronRoot', '.osano-cm-window', '#cmpbox', '#cmpwrapper', '.cc-window',
     '#cookie-law-info-bar', '#cookiescript_injected', '#iubenda-cs-banner', '#termly-code-snippet-support',
     '#sp_message_container', '[id^="sp_message_container"]', '.fc-consent-root', '#gdpr-consent-tool-wrapper',
+    '#tc-privacy-wrapper', '#footer_tc_privacy', '[class*="tc-privacy"]', '#privacy-iframe', '#usercentrics-cmp-ui',
+    '#axeptio_main_button', '#cmpbox2', '#uc-center-container',
     '[id*="cookie-banner" i]', '[class*="cookie-banner" i]', '[id*="cookie-consent" i]', '[class*="cookie-consent" i]',
     '[id*="consent-banner" i]', '[class*="consent-banner" i]', '[id*="cookie-notice" i]', '[class*="cookie-notice" i]',
     '[role=dialog][aria-label*="cookie" i]', '[role=dialog][aria-label*="consent" i]', '[role=dialog][aria-label*="privacy" i]',
@@ -453,6 +455,7 @@ async def scan_site(
     on_page_scanned=None,
     capture=None,
     deadline: Optional[float] = None,
+    out: Optional[dict] = None,
 ) -> ScanResult:
     """
     Breadth-first scan of the rendered site in an existing browser context
@@ -469,6 +472,8 @@ async def scan_site(
     host = urlparse(start_url).hostname or ""
     limit, levels = page_limit_for(depth, max_pages)
     result = ScanResult(start_url=start_url, page_limit=limit)
+    if out is not None:
+        out["scan"] = result   # the caller keeps the pages found so far if the scan is cut short
 
     queue: List[Tuple[str, int, Optional[str], Optional[str], Optional[str]]] = [
         (normalize_url(start_url), 0, None, None, None)]

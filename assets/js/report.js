@@ -541,12 +541,30 @@
       renderConsent(results[1]);
       renderAnalytics(results[2]);
       renderJourney(results[3]);
+      showTabsForModulesRun({ consent: results[1], analytics: results[2], journey: results[3] });
       document.title = 'Audit Report — ' + U.hostnameOf(currentReport.url) + ' — AuditPulse';
     }).catch(function (err) {
       window.Notifications.error('Couldn\'t load report', err.message || 'This report may not exist or may still be running.');
     });
 
     /* ------------------------------- renderers ------------------------------- */
+
+    /* Show only the tabs of modules this audit ran. The score grid alone
+       isn't enough: a module can run without producing a score (a Journey
+       Map scan with no tested interaction), and then every tab was shown
+       and Consent opened with "This audit didn't include the consent module". */
+    function showTabsForModulesRun(moduleResults) {
+      var ran = DETAIL_TABS.filter(function (m) {
+        return !!moduleResults[m] || (currentReport.scoreGrid || []).some(function (c) { return c.module === m; });
+      });
+      if (!ran.length) return;
+      DETAIL_TABS.forEach(function (m) {
+        var tab = document.querySelector('.rp-tab[data-tab="' + m + '"]');
+        if (tab) tab.hidden = ran.indexOf(m) === -1;
+      });
+      var current = document.querySelector('.rp-tab[aria-selected="true"]');
+      if (!current || current.hidden) selectModuleTab(ran[0], false);
+    }
 
     function renderJourney(journey) {
       var chipEl = document.getElementById('journeyScoreChip');
@@ -580,6 +598,14 @@
       if (favicon) favicon.textContent = U.faviconLetter(report.url);
       if (urlEl) urlEl.textContent = host;
       if (metaEl) metaEl.textContent = 'Completed ' + U.formatRelativeTime(new Date(report.generatedAt).getTime());
+      // No module produced a score (e.g. a Journey Map audit where no
+      // interaction could be tested): show "Not scored", never a fake 0.
+      if (!(report.scoreGrid || []).length) {
+        if (label) label.textContent = '–';
+        if (circle) U.setRingProgress(circle, 0);
+        if (bandEl) { bandEl.textContent = 'Not scored'; bandEl.removeAttribute('data-band'); }
+        return;
+      }
       if (label) label.textContent = report.overall;
       if (ring) U.setRingBand(ring, report.overall);
       if (circle) U.setRingProgress(circle, report.overall);
@@ -634,7 +660,7 @@
               '<span class="rp-mod__sub">' + U.escapeHtml(sub) + '</span></span>' +
             '<span class="rp-mod__bar" aria-hidden="true"><i style="width:' + Math.max(0, Math.min(100, cell.score)) + '%"></i></span>' +
           '</' + (clickable ? 'button' : 'div') + '>';
-        }).join('') || '<p class="rp-muted">No module scores for this audit.</p>';
+        }).join('') || '<p class="rp-muted">Not scored: no module produced a score in this run. Open the module details below to see why.</p>';
         U.qsa('.rp-mod[data-module]', scoreGrid).forEach(function (btn) {
           U.on(btn, 'click', function () { selectModuleTab(btn.dataset.module, true); });
         });

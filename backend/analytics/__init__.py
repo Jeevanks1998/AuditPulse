@@ -320,8 +320,15 @@ async def analyze_site(url: str, page: ParsedPage, enable_runtime_checks: bool =
     # A dataLayer created at runtime by a tag manager never appears in
     # markup; the browser pass reads window.dataLayer directly.
     globals_ = (runtime_result.page_globals or {}) if runtime_result is not None else {}
-    if not data_layer.present and isinstance(globals_.get("dataLayer"), int) and globals_["dataLayer"] > 0:
+    _CMP_EVENT = re.compile(r"onetrust|optanon|cookiebot|didomi|usercentrics|axeptio|tc_privacy|consent|cmp", re.I)
+    meaningful = globals_.get("dataLayer_meaningful", globals_.get("dataLayer"))
+    if not data_layer.present and isinstance(meaningful, int) and meaningful > 0:
         data_layer.present = True
+    elif (data_layer.present and isinstance(meaningful, int) and meaningful == 0
+          and all(_CMP_EVENT.search(n or "") for n in data_layer.event_names)):
+        # Only the cookie banner writes to dataLayer (OneTrustLoaded, …):
+        # that is consent bookkeeping, not an analytics data layer.
+        data_layer.present = False
     if not tagcommander.detected and globals_.get("tagcommander"):
         tagcommander.detected = True
         tagcommander.tc_api_found = True
@@ -408,6 +415,26 @@ async def analyze_site(url: str, page: ParsedPage, enable_runtime_checks: bool =
                     merged.append(i)
             summary.vendor_configs[key] = merged
 
+    # Nothing anywhere — page code, the live browser after accepting cookies,
+    # loaded tracking libraries: the site has no analytics. That is the most
+    # important analytics finding there is, never a perfect score.
+    if not summary.trackers_detected:
+        consent_note = ""
+        if runtime_result is not None and getattr(runtime_result, "available", False):
+            consent_note = f" The live browser check ran (cookie banner: {runtime_result.consent_state or 'n/a'})."
+        no_analytics = {
+            "module": "analytics", "category": "presence", "severity": "critical",
+            "title": "No analytics tracking found",
+            "description": f"{url}: no analytics or tag-manager tag was found in the page code or in the live "
+                           f"browser, including after accepting cookies.{consent_note} Visits, conversions and "
+                           "campaigns on this site are not being measured.",
+            "recommendation": "Install the organisation's analytics (e.g. via its tag manager) and gate it behind "
+                              "the cookie banner, or confirm that measurement is intentionally absent.",
+        }
+        findings = findings + [no_analytics]
+        score = score_analytics(findings)
+        score.overall = 0
+        summary.analytics_score = 0
     return AnalyticsAuditResult(findings=findings, score=score, summary=summary,
                                 tags_injected_by_js=raw_detected == 0 and bool(summary.trackers_detected))
 

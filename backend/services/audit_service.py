@@ -27,6 +27,7 @@ from typing import List, Optional
 from urllib.parse import urlparse
 
 import asyncio
+import time
 import dataclasses
 import httpx
 from sqlalchemy import select, update as sa_update
@@ -95,7 +96,8 @@ async def compute_stats(db: AsyncSession, user: User) -> AuditStatsOut:
         )
 
     latest = completed[0]
-    avg_overall = round(sum(a.overall_score or 0 for a in completed) / len(completed))
+    scored = [a.overall_score for a in completed if a.overall_score is not None]
+    avg_overall = round(sum(scored) / len(scored)) if scored else 0
     seo_issues = 0  # SEO module removed; retained for API backward compatibility.
     critical_issues = sum(
         1 for a in completed for f in (a.findings or []) if f.get("severity") == "critical"
@@ -345,7 +347,8 @@ async def run_audit_pipeline(audit_id: int) -> None:
                     db,
                     audit_user_id,
                     HistoryEventType.AUDIT_COMPLETED,
-                    description=f"Audit of {audit_url} completed — overall {overall}",
+                    description=(f"Audit of {audit_url} completed — overall {overall}" if overall is not None
+                                 else f"Audit of {audit_url} completed — not scored"),
                     audit_id=audit_id,
                     meta={"overall_score": overall},
                 )
@@ -437,7 +440,7 @@ async def run_audit_pipeline(audit_id: int) -> None:
                     logger.exception(f"Audit {audit_id}: could not even persist minimal failure state")
 
 
-def _compute_overall_score(breakdown: dict) -> int:
+def _compute_overall_score(breakdown: dict) -> Optional[int]:
     """
     Weighted overall score per requirements §6.1: Analytics and Consent
     (backed by real runtime/browser evidence, not just markup detection —
@@ -449,7 +452,9 @@ def _compute_overall_score(breakdown: dict) -> int:
     missing module as 0.
     """
     if not breakdown:
-        return 0
+        # Nothing could be scored (e.g. a Journey Map audit where no
+        # interaction could be tested): "not scored", never a fake 0/100.
+        return None
     total_weight = 0.0
     weighted_sum = 0.0
     for module, score in breakdown.items():
@@ -601,14 +606,27 @@ async def _run_journey_checks(audit: Audit) -> tuple:
     import journey as journey_module
     from consent.runtime import new_scan_id
 
+    from journey.run_lock import journey_slot
+
     scan_id = f"a{audit.id}-{new_scan_id()}"
+    hard_timeout = int(getattr(settings, "JOURNEY_HARD_TIMEOUT_S", 480))
     try:
-        result = await asyncio.wait_for(
-            journey_module.run_customer_journey(
-                audit.url, max_pages=audit.max_pages or 10, depth=audit.depth or "homepage", scan_id=scan_id,
-            ),
-            timeout=int(getattr(settings, "JOURNEY_HARD_TIMEOUT_S", 480)),
-        )
+        # One journey browser at a time on this container: two at once (two
+        # audits started together) ran Chromium out of memory and both scans
+        # came back empty. The time limit starts once this scan has the slot.
+        async with journey_slot(max_wait_s=int(getattr(settings, "JOURNEY_LOCK_WAIT_S", 900))) as waited:
+            if waited > 1:
+                logger.info(f"_run_journey_checks: waited {waited:.0f}s for another journey scan to finish")
+            # The runner stops itself shortly before the hard limit and keeps
+            # what it found; the outer wait_for is only a last-resort guard.
+            soft_deadline = time.monotonic() + hard_timeout - 40
+            result = await asyncio.wait_for(
+                journey_module.run_customer_journey(
+                    audit.url, max_pages=audit.max_pages or 10, depth=audit.depth or "homepage", scan_id=scan_id,
+                    deadline=soft_deadline,
+                ),
+                timeout=hard_timeout + 60,
+            )
         data = result.as_dict()
         row = Journey(
             audit_id=audit.id, available=result.available, error=(result.error or None),
@@ -630,8 +648,13 @@ async def _run_journey_checks(audit: Audit) -> tuple:
         } for f in result.findings]
         return row, findings, result.score
     except Exception as exc:  # noqa: BLE001 — a failed journey scan shouldn't fail the whole audit
-        logger.warning(f"_run_journey_checks: journey scan failed for {audit.url}: {exc}")
-        return Journey(audit_id=audit.id, available=False, error=str(exc)[:500], scan_id=scan_id), [], None
+        logger.warning(f"_run_journey_checks: journey scan failed for {audit.url}: {exc!r}")
+        if isinstance(exc, asyncio.TimeoutError):
+            message = (f"The journey scan did not finish within {round((hard_timeout + 60) / 60)} minutes "
+                       "(the site was too slow to respond). Please run the audit again.")
+        else:
+            message = str(exc) or f"{type(exc).__name__} (no details)"
+        return Journey(audit_id=audit.id, available=False, error=message[:500], scan_id=scan_id), [], None
 
 
 async def _run_analytics_checks_site(
@@ -743,6 +766,8 @@ async def _run_analytics_checks_site(
         score_val = site_score.overall
     else:
         score_val = result.score.overall
+    if not any(p.trackers_detected for p in page_results):
+        score_val = 0      # no analytics anywhere on the site: nothing is measured
 
     site_coverage = analytics_module.compute_site_coverage(page_results, cross_page_findings) if len(page_results) > 1 else {}
 

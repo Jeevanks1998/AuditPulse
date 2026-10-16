@@ -29,6 +29,8 @@ async def generate_executive_summary(
     findings: Optional[List[dict]] = None,
 ) -> str:
     """Returns a short natural-language executive summary for the audit."""
+    if not breakdown:
+        return _unscored_summary(url, findings or [])
     try:
         return await _summary_from_ai(url, overall, breakdown, findings or [])
     except AIProviderError as exc:
@@ -51,6 +53,17 @@ async def _summary_from_ai(url: str, overall: int, breakdown: Dict[str, int], fi
     )
     text = await call_ai(prompt, max_tokens=300)
     return text.strip()
+
+
+def _unscored_summary(url: str, findings: List[dict]) -> str:
+    """No module produced a score in this run — say so instead of "0/100, weak"."""
+    sentence = (f"{url} could not be scored in this run: no audited module produced a score "
+                "(for a Journey Map audit this means no interaction could be tested — see the "
+                "Journey Map section for the reason).")
+    real = [f for f in findings if f.get("severity") in ("critical", "warning")]
+    if real:
+        sentence += f" {len(real)} issue{'s' if len(real) != 1 else ''} were still found and are listed below."
+    return sentence
 
 
 # --------------------------------------------------------------------------

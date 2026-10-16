@@ -87,12 +87,18 @@ PER_TEST_TIMEOUT_S = 60
 
 
 async def _accept_consent_if_present(page, result: JourneyResult) -> None:
-    """Accept the cookie banner once so interactions are clickable and tags may fire."""
+    """Accept the cookie banner once so interactions are clickable and tags may fire.
+
+    Many CMPs (TrustCommander on axa.it, OneTrust, Usercentrics...) render
+    the banner a few seconds after the page loads, so this waits for a
+    late banner the same way the Consent module does instead of checking
+    only once. After the click it waits until the banner is really gone.
+    """
     try:
         from consent.buttons import ACCEPT_CLICK_ORDER
-        from consent.runtime import _click_control, inventory_banner
+        from consent.runtime import _click_control, _wait_for_banner, inventory_banner
 
-        inv, handles = await inventory_banner(page)
+        inv, handles = await _wait_for_banner(page)
         if not inv.banner_detected:
             result.consent_state = "no_banner"
             return
@@ -102,6 +108,13 @@ async def _accept_consent_if_present(page, result: JourneyResult) -> None:
             return
         ok = await _click_control(page, handles, accept)
         await page.wait_for_timeout(1_200)
+        if ok:
+            # Banner still showing (click swallowed by an animation): try once more.
+            inv2, handles2 = await inventory_banner(page)
+            again = inv2.first(ACCEPT_CLICK_ORDER) if inv2.banner_detected else None
+            if again is not None:
+                await _click_control(page, handles2, again)
+                await page.wait_for_timeout(1_200)
         result.consent_state = f"accepted ({accept.label})" if ok else "accept_click_failed"
     except Exception as exc:  # noqa: BLE001
         result.consent_state = f"not_handled ({str(exc)[:80]})"
@@ -115,7 +128,11 @@ async def run_customer_journey(
     max_tested: Optional[int] = None,
     max_tested_per_page: Optional[int] = None,
     test_interactions: Optional[bool] = None,
+    deadline: Optional[float] = None,
 ) -> JourneyResult:
+    """`deadline` (time.monotonic()) is a hard stop: when it is reached the
+    browser work is cancelled but everything found so far (pages,
+    interactions, tests already run) is still turned into a result."""
     result = JourneyResult(scan_id=scan_id, start_url=url, started_at=datetime.now(timezone.utc).isoformat())
     max_tested = max_tested if max_tested is not None else int(getattr(settings, "JOURNEY_MAX_TESTED_INTERACTIONS", 30))
     per_page = max_tested_per_page if max_tested_per_page is not None else int(
@@ -133,10 +150,10 @@ async def run_customer_journey(
 
     evidence = EvidenceWriter(scan_id)
     capture = TrackingCapture()
-    scan: Optional[ScanResult] = None
-    interactions: List[Interaction] = []
+    scan_box: dict = {}
+    state: dict = {"interactions": [], "tests_started": False}
 
-    try:
+    async def _work() -> None:
         async with JourneyBrowser(capture=capture, viewport=DEFAULT_VIEWPORT) as session:
             async def on_first(page, _url):
                 await _accept_consent_if_present(page, result)
@@ -147,23 +164,37 @@ async def run_customer_journey(
 
             scan_budget = int(getattr(settings, "JOURNEY_SCAN_BUDGET_S", 180))
             test_budget = int(getattr(settings, "JOURNEY_TEST_BUDGET_S", 180))
+            now = time.monotonic()
+            scan_deadline = now + scan_budget
+            if deadline is not None:
+                # Leave time for the interaction tests, but never starve the scan.
+                remaining = max(0.0, deadline - now)
+                scan_deadline = min(scan_deadline, now + max(remaining * 0.45, remaining - test_budget))
             scan = await scan_site(session, url, max_pages, depth, on_page_loaded=on_first,
                                    on_page_scanned=on_scanned, capture=capture,
-                                   deadline=time.monotonic() + scan_budget)
+                                   deadline=scan_deadline, out=scan_box)
             result.available = True
             interactions = build_interactions(scan.elements, scan.forms, host)
+            state["interactions"] = interactions
             analytics_present = bool(site_vendor_summary(capture)["analytics_present"])
 
             if do_tests:
+                state["tests_started"] = True
                 # Start the tests in a fresh Chromium: the scan's memory is
-                # released, and the consent cookies carry over.
-                await session.restart("fresh browser for interaction tests")
+                # released, and the consent cookies carry over. If a fresh
+                # browser can't be launched, keep testing in the current one.
+                try:
+                    await session.restart("fresh browser for interaction tests")
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(f"journey: fresh browser for tests failed ({exc}); reusing the scan browser")
                 session.restarts = 0  # the planned restart doesn't count against crash recovery
                 page = await session.new_page()
                 tc = TestContext(context=session.context, page=page, capture=capture, evidence=evidence,
                                  host=host, analytics_present=analytics_present)
                 prefixes = {normalize_url(p.url): f"p{n + 1}e" for n, p in enumerate(scan.pages)}
                 tests_deadline = time.monotonic() + test_budget
+                if deadline is not None:
+                    tests_deadline = min(tests_deadline, deadline - PER_TEST_TIMEOUT_S)
                 for n, it in enumerate(select_for_testing(interactions, max_tested, per_page)):
                     if time.monotonic() > tests_deadline:
                         logger.info(f"journey: test time budget reached after {n} interaction(s)")
@@ -180,7 +211,10 @@ async def run_customer_journey(
                         dead = not session.alive() or is_browser_dead_error(it.observed)
                         if dead:
                             if not await session.restart(it.observed or "browser died during test"):
-                                break
+                                result.error = ("The test browser kept crashing (out of memory?) — "
+                                                f"stopped after {n} interaction test(s).")
+                                result.tests_stopped_early = True
+                                return
                         if dead or tc.page.is_closed() or (n + 1) % 6 == 0:
                             # New tab (and context after a restart); recycle every
                             # few tests so one tab doesn't accumulate memory.
@@ -196,17 +230,39 @@ async def run_customer_journey(
                         # Chromium died mid-test: run this interaction again once.
                         it.status, it.observed, it.outcome = "not_tested", "", None
                         it.screenshots = {}
-                # Carry the tested result to repeats of the same element on other pages.
-                by_index = {i.index: i for i in interactions}
-                for it in interactions:
-                    if it.duplicate_of is not None:
-                        src = by_index.get(it.duplicate_of)
-                        if src is not None and src.tested:
-                            it.status = "same_as_first"
-                            it.tracking = {"status": (src.tracking or {}).get("status"), "same_as": src.index}
+
+    try:
+        if deadline is not None:
+            await asyncio.wait_for(_work(), timeout=max(30.0, deadline - time.monotonic()))
+        else:
+            await _work()
+    except asyncio.TimeoutError:
+        logger.warning(f"journey: time limit reached for {url}; keeping the results found so far")
+        if state["tests_started"]:
+            result.tests_stopped_early = True
+        result.error = ("Time limit reached — the site was slow to respond, so the scan stopped early. "
+                        "Results below cover what was scanned and tested before the limit.")
     except Exception as exc:  # noqa: BLE001 — a failed journey scan never breaks the audit
-        logger.warning(f"journey: customer journey scan failed for {url}: {exc}")
-        result.error = str(exc)[:500]
+        logger.warning(f"journey: customer journey scan failed for {url}: {exc!r}")
+        result.error = (str(exc) or type(exc).__name__)[:500]
+
+    scan: Optional[ScanResult] = scan_box.get("scan")
+    interactions: List[Interaction] = state["interactions"]
+    if scan is not None and (scan.pages or not result.error):
+        result.available = True
+        if not interactions:
+            interactions = build_interactions(scan.elements, scan.forms, host)
+        # Carry the tested result to repeats of the same element on other pages.
+        by_index = {i.index: i for i in interactions}
+        for it in interactions:
+            if it.duplicate_of is not None:
+                src = by_index.get(it.duplicate_of)
+                if src is not None and src.tested:
+                    it.status = "same_as_first"
+                    it.tracking = {"status": (src.tracking or {}).get("status"), "same_as": src.index}
+    else:
+        scan = None
+        result.available = False
 
     if scan is None:
         result.finished_at = datetime.now(timezone.utc).isoformat()

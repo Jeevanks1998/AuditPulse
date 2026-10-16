@@ -470,7 +470,42 @@ async def _reset_to(tc: TestContext, page_url: str, prefix: str) -> None:
 
     await goto_page(tc.page, page_url, load_wait_ms=3_000)
     await tc.page.wait_for_timeout(600)
-    await tc.page.evaluate(DISCOVER_JS, {"maxElements": 400, "idPrefix": prefix})
+    return await tc.page.evaluate(DISCOVER_JS, {"maxElements": 1_000, "idPrefix": prefix}) or {}
+
+
+def _raw_signature(it: Interaction) -> str:
+    """The element's DOM signature (tag|href / tag|text) without the classification prefix."""
+    return (it.signature or "").split("|", 1)[1] if "|" in (it.signature or "") else ""
+
+
+def relocate_element(it: Interaction, data: dict) -> Optional[str]:
+    """
+    Find the interaction's element again on the freshly reloaded page.
+
+    Element ids are numbered in DOM order, and on real sites that order
+    changes between two loads of the same page (carousels, reviews widgets,
+    personalised blocks, a late cookie banner): on axa.it the order differed
+    from element #274 on. So the id from the scan can point at a different
+    element, or at nothing. Match by what the element is instead — its
+    signature (tag + link target, or tag + text) — picking the occurrence
+    closest to where it was on the page. Returns the new data-journey-id.
+    """
+    raw = _raw_signature(it)
+    pool = (data.get("forms") or []) if it.tag == "form" else (data.get("elements") or [])
+    if raw:
+        same = [e for e in pool if e.get("signature") == raw]
+        if same:
+            y0 = (it.position or {}).get("y", 0)
+            x0 = (it.position or {}).get("x", 0)
+            same.sort(key=lambda e: (not e.get("visible", True),
+                                     abs((e.get("position") or {}).get("y", 0) - y0)
+                                     + abs((e.get("position") or {}).get("x", 0) - x0)))
+            return same[0].get("id")
+    if it.selector:
+        for e in pool:
+            if e.get("selector") == it.selector:
+                return e.get("id")
+    return None
 
 
 async def _http_check(tc: TestContext, url: str) -> Tuple[Optional[int], Optional[str], Optional[int]]:
@@ -491,7 +526,17 @@ async def test_interaction(tc: TestContext, it: Interaction, page_prefix: str) -
     sel = f'[data-journey-id="{it.element_id}"]'
     page = tc.page
     try:
-        await _reset_to(tc, it.page_url, page_prefix)
+        data = await _reset_to(tc, it.page_url, page_prefix)
+        found = relocate_element(it, data if isinstance(data, dict) else {})
+        if found:
+            sel = f'[data-journey-id="{found}"]'
+        elif it.selector:
+            # Not in the fresh discovery (e.g. beyond its element cap): try the CSS path.
+            try:
+                if await page.locator(it.selector).count() == 1:
+                    sel = it.selector
+            except Exception:  # noqa: BLE001 — invalid selector on this page
+                pass
         loc = page.locator(sel).first
         if not await loc.count():
             it.status, it.observed = "failed", "Element no longer present after reloading the page."

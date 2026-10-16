@@ -337,6 +337,17 @@ class AnalyticsRuntimeResult:
 # Read after load. Only booleans/counts — never page content.
 _PAGE_GLOBALS_JS = r"""() => ({
   dataLayer: Array.isArray(window.dataLayer) ? window.dataLayer.length : null,
+  // Entries that are not the cookie banner's own consent bookkeeping
+  // (OneTrustLoaded, OptanonLoaded, cookie_consent_update, gtag('consent', …)).
+  dataLayer_meaningful: Array.isArray(window.dataLayer) ? window.dataLayer.filter(e => {
+    try {
+      if (e && typeof e === 'object' && e.length !== undefined && e[0] === 'consent') return false;
+      const ev = e && typeof e.event === 'string' ? e.event : '';
+      if (/onetrust|optanon|cookiebot|didomi|usercentrics|axeptio|tc_privacy|consent|cmp/i.test(ev)) return false;
+      if (ev === '' && e && typeof e === 'object' && Object.keys(e).every(k => /onetrust|optanon|consent|cmp/i.test(k))) return false;
+      return true;
+    } catch (x) { return true; }
+  }).length : null,
   google_tag_manager: !!window.google_tag_manager,
   gtag: typeof window.gtag === 'function',
   // TagCommander = a Commanders Act *tag container* (tC.container_<site>_<n>

@@ -416,13 +416,22 @@
       return null;
     }
     if (!view.available) {
-      if (empty) { empty.textContent = 'The journey map scan could not run: ' + (view.error || 'unknown error'); empty.style.display = ''; }
+      if (empty) { empty.textContent = 'The journey map scan could not run: ' + (view.error || 'the scan stopped without an error message (most likely the time limit). Please run the audit again.'); empty.style.display = ''; }
       if (content) content.style.display = 'none';
       return view;
     }
     if (empty) empty.style.display = 'none';
     content.style.display = '';
-    set(ids.health, renderHealth(view));
+    var notice = '';
+    var tested = ((view.counts || {}).interactions_tested) || 0;
+    if (view.error) {
+      notice = '<p class="jr-muted" role="status" style="margin:0 0 10px;padding:10px 12px;border-radius:8px;background:var(--color-warning-bg, #FFF7E6);color:inherit;">' +
+        '<strong>Scan note:</strong> ' + esc(view.error) + '</p>';
+    } else if (!tested && ((view.counts || {}).interactions_discovered || 0) > 0) {
+      notice = '<p class="jr-muted" role="status" style="margin:0 0 10px;padding:10px 12px;border-radius:8px;background:var(--color-warning-bg, #FFF7E6);color:inherit;">' +
+        '<strong>Scan note:</strong> interactions were found but none could be executed in this run, so no Journey Health score was calculated. Please run the audit again.</p>';
+    }
+    set(ids.health, notice + renderHealth(view));
     set(ids.summary, renderSummary(view));
     var mapEl = get(ids.map), detailEl = get(ids.detail);
     mapEl.innerHTML = renderMap(view);

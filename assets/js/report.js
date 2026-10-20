@@ -1252,6 +1252,19 @@
       return '<span class="cev-chip' + (cls ? ' cev-chip--' + cls : '') + '">' + U.escapeHtml(text) + '</span>';
     }
 
+    /* The exact requests behind a tile (e.g. Tracking before consent):
+       vendor + the address the browser called, nothing generic. */
+    function tileDetails(items) {
+      if (!items || !items.length) return '';
+      var row = function (i) {
+        return '<li><strong>' + U.escapeHtml(i.vendor || i.category || '') + '</strong>' +
+          (i.kind === 'observation' ? ' <em>(loaded, ' + U.escapeHtml((i.note || 'not tracking by itself').toLowerCase()) + ')</em>' : '') +
+          (i.request ? '<br><code>' + U.escapeHtml(i.request) + '</code>' : '') + '</li>';
+      };
+      return '<details class="cev-tile__details"><summary>Show the ' + items.length +
+        (items.length === 1 ? ' request' : ' requests') + '</summary><ul>' + items.map(row).join('') + '</ul></details>';
+    }
+
     function renderConsentDashboard(view) {
       var st = view.status || {};
       var html = '<div class="cev-status">' +
@@ -1267,6 +1280,7 @@
           '<span class="cev-tile__label">' + U.escapeHtml(t.label) + '</span>' +
           '<span class="cev-tile__value">' + U.escapeHtml(t.value) + '</span>' +
           (t.sub ? '<span class="cev-tile__sub">' + U.escapeHtml(t.sub) + '</span>' : '') +
+          tileDetails(t.details) +
           '</div>';
       }).join('') + '</div>';
       return html;

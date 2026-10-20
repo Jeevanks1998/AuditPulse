@@ -14,6 +14,7 @@ Business logic behind api/history.py's two related but distinct views:
     audit runs.
 """
 
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import HTTPException, status
@@ -36,8 +37,11 @@ async def list_history(
     status_filter: Optional[str] = None,
     page: int = 1,
     page_size: int = 20,
+    deleted: bool = False,
 ) -> HistoryPageOut:
-    filters = [Audit.user_id == user.id]
+    # deleted=False: the normal history; deleted=True: the "Deleted audits" bin.
+    filters = [Audit.user_id == user.id,
+               Audit.deleted_at.is_not(None) if deleted else Audit.deleted_at.is_(None)]
     if q:
         like = f"%{q.lower()}%"
         filters.append(or_(func.lower(Audit.url).like(like), func.lower(Audit.label).like(like)))
@@ -49,7 +53,7 @@ async def list_history(
     result = await db.execute(
         select(Audit)
         .where(*filters)
-        .order_by(Audit.created_at.desc())
+        .order_by((Audit.deleted_at.desc() if deleted else Audit.created_at.desc()))
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
@@ -91,13 +95,35 @@ async def get_history_item(audit_id: int, db: AsyncSession, user: User) -> Audit
 
 
 async def delete_history_item(audit_id: int, db: AsyncSession, user: User) -> None:
+    """Move an audit to "Deleted audits" (soft delete) — it can be restored."""
     audit = await get_history_item(audit_id, db, user)
-
-    await log_event(
-        db,
-        user.id,
-        HistoryEventType.AUDIT_DELETED,
-        description=f"Deleted audit of {audit.url} from history",
-    )
-    await db.delete(audit)
+    if audit.status in ("queued", "running"):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="This audit is still running — wait for it to finish before deleting it.")
+    if audit.deleted_at is None:
+        audit.deleted_at = datetime.now(timezone.utc)
+        await log_event(
+            db,
+            user.id,
+            HistoryEventType.AUDIT_DELETED,
+            description=f"Deleted audit of {audit.url} (can be restored)",
+            audit_id=audit.id,
+        )
     await db.commit()
+
+
+async def restore_history_item(audit_id: int, db: AsyncSession, user: User) -> Audit:
+    """Bring a deleted audit back into History / Recent Audits."""
+    audit = await get_history_item(audit_id, db, user)
+    if audit.deleted_at is not None:
+        audit.deleted_at = None
+        await log_event(
+            db,
+            user.id,
+            HistoryEventType.AUDIT_RESTORED,
+            description=f"Restored audit of {audit.url}",
+            audit_id=audit.id,
+        )
+    await db.commit()
+    await db.refresh(audit)
+    return audit

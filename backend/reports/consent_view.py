@@ -174,10 +174,52 @@ def _network_rows(summary: Optional[dict]) -> List[dict]:
             "tracking_count": e.get("tracking_count", 0),
             "vendors": e.get("vendors") or [],
             "samples": e.get("samples") or [],
+            "tracking_samples": e.get("tracking_samples") or [],
             "kind": kind,
             "note": note,
         })
     return rows
+
+
+def _before_consent_evidence(rows: List[dict]) -> tuple:
+    """
+    The actual requests behind the "Tracking before consent" tile: every
+    data-collection request (vendor + address) and every tag/library that
+    loaded without collecting data yet — never a generic "e.g. tag manager".
+    Returns (one-line summary, detail items).
+    """
+    items: List[dict] = []
+    for r in rows:
+        if not r.get("tracking_count"):
+            continue
+        tracked = r.get("tracking_samples")
+        if tracked:
+            for t in tracked:
+                vendor, _, url = t.partition("|")
+                items.append({"kind": "tracking", "vendor": vendor, "category": r.get("label"), "request": url})
+        else:  # audits saved before tracking_samples existed
+            vendors = ", ".join(r.get("vendors") or []) or r.get("label")
+            for url in (r.get("samples") or [])[: r.get("tracking_count") or 1]:
+                items.append({"kind": "tracking", "vendor": vendors, "category": r.get("label"), "request": url})
+    for r in rows:
+        if r.get("kind") != "observation":
+            continue
+        vendors = ", ".join(r.get("vendors") or []) or r.get("label")
+        sample = (r.get("samples") or [None])[0]
+        items.append({"kind": "observation", "vendor": vendors, "category": r.get("label"), "request": sample,
+                      "note": r.get("note")})
+
+    tracking = [i for i in items if i["kind"] == "tracking"]
+    loaded = [i for i in items if i["kind"] == "observation"]
+    parts = []
+    if tracking:
+        by_vendor: Dict[str, int] = {}
+        for i in tracking:
+            by_vendor[i["vendor"]] = by_vendor.get(i["vendor"], 0) + 1
+        parts.append("Sent to " + ", ".join(f"{v} ({n})" if n > 1 else v for v, n in by_vendor.items()))
+    if loaded:
+        parts.append("Also loaded before consent: " + ", ".join(dict.fromkeys(i["vendor"] for i in loaded)))
+    return " · ".join(parts), items
 
 
 def build_consent_view(consent: Optional[dict]) -> Optional[dict]:
@@ -271,7 +313,7 @@ def build_consent_view(consent: Optional[dict]) -> Optional[dict]:
     }
     before_rows = network.get("before_consent") or []
     tracking_before = sum(r["tracking_count"] for r in before_rows)
-    observations_before = [r for r in before_rows if r["kind"] == "observation"]
+    before_summary, before_items = _before_consent_evidence(before_rows)
 
     # ---- cookies ----------------------------------------------------------
     ck = ts.get("cookies_before_consent") or {}
@@ -294,7 +336,8 @@ def build_consent_view(consent: Optional[dict]) -> Optional[dict]:
          "value": ("None observed" if checks.get("trackers_blocked_pre_consent") is True
                    else f"{tracking_before} request(s)" if checks.get("trackers_blocked_pre_consent") is False
                    else "Not tested"),
-         "sub": (f"{len(observations_before)} observation(s), e.g. tag manager" if observations_before else ""),
+         "sub": before_summary,
+         "details": before_items,
          "state": _state(checks.get("trackers_blocked_pre_consent"))},
         {"key": "reject", "label": "Reject works",
          "value": {True: "Blocks tracking", False: "Tracking continues", None: "Not tested"}[rr.get("reject_blocks_tracking")],

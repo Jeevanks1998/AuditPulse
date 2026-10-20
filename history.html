@@ -118,8 +118,15 @@
       <div class="card card__pad animate-in">
         <div class="card__head">
           <h3 data-icon="history" data-icon-tone="primary">Audit History</h3>
-          <span class="card__head-sub" data-audit-table-count>— audits</span>
+          <div class="history-head-right">
+            <div class="history-view-toggle" role="tablist" aria-label="Which audits to show">
+              <button type="button" class="history-view-toggle__btn is-active" role="tab" aria-selected="true" data-history-view="active">All audits</button>
+              <button type="button" class="history-view-toggle__btn" role="tab" aria-selected="false" data-history-view="deleted">Deleted <span data-deleted-count></span></button>
+            </div>
+            <span class="card__head-sub" data-audit-table-count>— audits</span>
+          </div>
         </div>
+        <p class="text-tertiary history-deleted-note" id="historyDeletedNote" hidden>Deleted audits keep their full report. Restore one to put it back in Audit history and Recent Audits.</p>
         <div class="table-wrap">
           <table class="dtable" id="auditTable">
             <thead>

@@ -35,11 +35,12 @@ async def list_history(
     status_filter: Optional[str] = Query(default=None, alias="status"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    deleted: bool = Query(default=False, description="True lists deleted audits (restorable)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     return await history_service.list_history(
-        db, current_user, q=q, status_filter=status_filter, page=page, page_size=page_size
+        db, current_user, q=q, status_filter=status_filter, page=page, page_size=page_size, deleted=deleted
     )
 
 
@@ -72,3 +73,12 @@ async def delete_history_item(
     current_user: User = Depends(get_current_user),
 ):
     await history_service.delete_history_item(audit_id, db, current_user)
+
+
+@router.post("/{audit_id}/restore", response_model=AuditOut)
+async def restore_history_item(
+    audit_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await history_service.restore_history_item(audit_id, db, current_user)

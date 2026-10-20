@@ -345,6 +345,10 @@ def summarize_requests(requests: List[NetworkRequest], max_items: int = 8) -> di
             "vendors": vendors[:max_items],
             "tracking_count": sum(1 for r in reqs if r.is_tracking),
             "samples": [r.short() for r in reqs[:max_items]],
+            # The actual data-collection requests (not loaders) — what the
+            # report names under "Tracking before consent".
+            "tracking_samples": [f"{r.vendor or CATEGORY_LABELS.get(cat, cat)}|{r.short()}"
+                                 for r in reqs if r.is_tracking][:max_items],
         }
     return summary
 

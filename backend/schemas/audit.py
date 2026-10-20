@@ -73,6 +73,7 @@ class AuditOut(BaseModel):
     target_region: Optional[str] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -297,18 +297,40 @@
         // actually returned one — no empty placeholder row for audits
         // that don't have a label.
         return '' +
-          '<a class="row-item" href="report.html?id=' + encodeURIComponent(audit.id) + '" style="text-decoration:none; color:inherit;">' +
-            '<div class="row-item__favicon">' + U.escapeHtml(U.faviconLetter(audit.url)) + '</div>' +
-            '<div class="row-item__body">' +
-              '<div class="row-item__title">' + U.escapeHtml(audit.url) + '</div>' +
-              (audit.label ? '<div class="row-item__meta">' + U.escapeHtml(audit.label) + '</div>' : '') +
-            '</div>' +
-            '<div class="row-item__right">' +
-              '<div class="row-item__right-top">' + scoreChip + statusBadgeHtml(audit.status) + '</div>' +
-              (dateStr ? '<span class="row-item__date">' + U.escapeHtml(dateStr) + '</span>' : '') +
-            '</div>' +
-          '</a>';
+          '<div class="row-item">' +
+            '<a class="row-item__link" href="report.html?id=' + encodeURIComponent(audit.id) + '">' +
+              '<div class="row-item__favicon">' + U.escapeHtml(U.faviconLetter(audit.url)) + '</div>' +
+              '<div class="row-item__body">' +
+                '<div class="row-item__title">' + U.escapeHtml(audit.url) + '</div>' +
+                (audit.label ? '<div class="row-item__meta">' + U.escapeHtml(audit.label) + '</div>' : '') +
+              '</div>' +
+              '<div class="row-item__right">' +
+                '<div class="row-item__right-top">' + scoreChip + statusBadgeHtml(audit.status) + '</div>' +
+                (dateStr ? '<span class="row-item__date">' + U.escapeHtml(dateStr) + '</span>' : '') +
+              '</div>' +
+            '</a>' +
+            ((audit.status === 'running' || audit.status === 'queued') ? '' :
+              '<button type="button" class="row-item__delete" data-delete-audit="' + U.escapeHtml(String(audit.id)) + '"' +
+                ' data-host="' + U.escapeHtml(U.hostnameOf(audit.url)) + '"' +
+                ' title="Delete this audit (you can restore it from Audit history)" aria-label="Delete audit of ' + U.escapeHtml(U.hostnameOf(audit.url)) + '">' +
+                '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>' +
+              '</button>') +
+          '</div>';
       }).join('');
+
+      if (!recentList.dataset.deleteWired) {
+        recentList.dataset.deleteWired = '1';
+        recentList.addEventListener('click', function (e) {
+          var btn = e.target.closest('[data-delete-audit]');
+          if (!btn || !window.Components || !window.Components.deleteAudit) return;
+          e.preventDefault();
+          btn.disabled = true;
+          window.Components.deleteAudit(btn.getAttribute('data-delete-audit'), btn.getAttribute('data-host'), function () {
+            loadRecentAudits();
+            loadStats();
+          }).catch(function () { btn.disabled = false; });
+        });
+      }
 
       // Point the "Download PDF" quick-action card at the most recent
       // audit's report so it's a real link rather than the static

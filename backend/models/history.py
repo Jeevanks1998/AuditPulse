@@ -35,6 +35,7 @@ class HistoryEventType(str, Enum):
     AUDIT_COMPLETED = "audit_completed"
     AUDIT_FAILED = "audit_failed"
     AUDIT_DELETED = "audit_deleted"
+    AUDIT_RESTORED = "audit_restored"
     REPORT_SHARED = "report_shared"
     SCHEDULE_CREATED = "schedule_created"
     SCHEDULE_UPDATED = "schedule_updated"

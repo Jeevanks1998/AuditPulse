@@ -35,19 +35,21 @@ window.Components = window.Components || {};
     );
   }
 
+  var ICON_TRASH = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>';
+  var ICON_RESTORE = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>';
+
   // Mirrors components/audit-table.html's row shape (a <tr> for #auditTableBody).
-  function renderAuditRow(audit) {
+  // opts.deleted: row in the "Deleted audits" list (Restore instead of Delete).
+  function renderAuditRow(audit, opts) {
+    opts = opts || {};
     var host = U.hostnameOf(audit.url);
 
     // audit.overallScore (not .score — the API returns overall_score,
     // camelCased by api.js's toCamel) is only meaningful once the audit has
-    // actually finished. A running/failed/queued audit has overallScore
-    // === null/undefined; previously that was interpolated as-is, printing
-    // the literal text "undefined" in a red "bad" chip (Number(undefined)
-    // is NaN, which fails every score-band check and falls through to
-    // 'bad'). Show a neutral dash instead, same pattern dashboard.js's
-    // Recent Audits panel already uses.
-    var hasScore = audit.status === 'completed' && audit.overallScore !== null && audit.overallScore !== undefined
+    // actually finished. A running/failed/queued audit has no score: show a
+    // neutral dash (or Failed / Running…) instead.
+    var isCompleted = audit.status === 'completed';
+    var hasScore = isCompleted && audit.overallScore !== null && audit.overallScore !== undefined
       && !isNaN(Number(audit.overallScore));
     var scoreCell;
     if (hasScore) {
@@ -55,13 +57,25 @@ window.Components = window.Components || {};
       var chipClass = band === 'good' ? 'score-chip--good' : (band === 'mid' ? 'score-chip--mid' : 'score-chip--bad');
       scoreCell = '<span class="score-chip ' + chipClass + '">' + audit.overallScore + '</span>';
     } else {
-      scoreCell = '<span class="score-chip score-chip--neutral">' + (audit.status === 'failed' ? 'Failed' : audit.status === 'running' ? 'Running…' : '–') + '</span>';
+      scoreCell = '<span class="score-chip score-chip--neutral">' + (audit.status === 'failed' ? 'Failed' : audit.status === 'running' ? 'Running…' : isCompleted ? 'Not scored' : '–') + '</span>';
     }
 
-    var completedLabel = audit.completedAt ? U.formatRelativeTime(audit.completedAt) : '—';
+    var whenLabel = opts.deleted
+      ? (audit.deletedAt ? 'Deleted ' + U.formatRelativeTime(audit.deletedAt) : 'Deleted')
+      : (audit.completedAt ? U.formatRelativeTime(audit.completedAt) : '—');
+    var busy = audit.status === 'running' || audit.status === 'queued';
+
+    var actions = (isCompleted
+      ? '<a href="report.html?id=' + encodeURIComponent(audit.id) + '" class="btn btn--ghost btn--sm">View report</a>'
+      : '<span class="text-tertiary" style="font-size:13px;">Not available</span>');
+    if (opts.deleted) {
+      actions += '<button type="button" class="btn btn--ghost btn--sm audit-action" data-restore-audit="' + U.escapeHtml(String(audit.id)) + '" title="Restore this audit">' + ICON_RESTORE + '<span>Restore</span></button>';
+    } else if (!busy) {
+      actions += '<button type="button" class="btn btn--ghost btn--sm audit-action audit-action--danger" data-delete-audit="' + U.escapeHtml(String(audit.id)) + '" title="Delete this audit (you can restore it later)" aria-label="Delete audit of ' + U.escapeHtml(host) + '">' + ICON_TRASH + '<span>Delete</span></button>';
+    }
 
     return (
-      '<tr>' +
+      '<tr data-audit-row="' + U.escapeHtml(String(audit.id)) + '">' +
         '<td>' +
           '<div style="display:flex; align-items:center; gap:10px;">' +
             '<div class="row-item__favicon">' + U.escapeHtml(U.faviconLetter(audit.url)) + '</div>' +
@@ -70,15 +84,69 @@ window.Components = window.Components || {};
         '</td>' +
         '<td>' + U.escapeHtml(audit.label || '') + '</td>' +
         '<td>' + scoreCell + '</td>' +
-        '<td class="text-tertiary">' + U.escapeHtml(completedLabel) + '</td>' +
-        '<td>' + (hasScore
-          ? '<a href="report.html?id=' + encodeURIComponent(audit.id) + '" class="btn btn--ghost btn--sm">View report</a>'
-          : '<span class="text-tertiary" style="font-size:13px;">Not available</span>') + '</td>' +
+        '<td class="text-tertiary">' + U.escapeHtml(whenLabel) + '</td>' +
+        '<td><div class="audit-actions">' + actions + '</div></td>' +
       '</tr>'
     );
   }
 
+  /* Delete an audit (soft delete) with an "Undo" in the toast; onChange()
+     runs after the delete and again after an undo so the caller re-renders. */
+  function deleteAudit(auditId, host, onChange) {
+    if (window.Modal && window.Modal.confirm) {
+      return new Promise(function (resolve, reject) {
+        window.Modal.confirm({
+          title: 'Delete this audit?',
+          body: (host ? host + ' — ' : '') + 'it will be moved to Deleted audits with its full report. You can restore it from Audit history at any time.',
+          confirmLabel: 'Delete',
+          cancelLabel: 'Cancel',
+          dangerous: true,
+          onConfirm: function () { doDelete(auditId, host, onChange).then(resolve, reject); },
+          onCancel: function () { reject(new Error('cancelled')); }
+        });
+      });
+    }
+    return doDelete(auditId, host, onChange);
+  }
+
+  function doDelete(auditId, host, onChange) {
+    return window.Api.history.remove(auditId).then(function () {
+      if (onChange) onChange();
+      var toast = window.Notifications.success('Audit deleted',
+        (host ? host + ' was moved to Deleted audits. ' : 'Moved to Deleted audits. ') + 'You can restore it from Audit history.', 8000);
+      var body = toast && toast.querySelector('.toast__body');
+      if (body) {
+        var undo = document.createElement('button');
+        undo.type = 'button';
+        undo.className = 'btn btn--ghost btn--sm';
+        undo.style.cssText = 'margin-top:6px;align-self:flex-start;';
+        undo.textContent = 'Undo';
+        undo.addEventListener('click', function () {
+          undo.disabled = true;
+          restoreAudit(auditId, host, onChange);
+          if (toast.parentNode) toast.parentNode.removeChild(toast);
+        });
+        body.appendChild(undo);
+      }
+    }).catch(function (err) {
+      window.Notifications.error('Couldn\'t delete the audit', (err && err.message) || 'Please try again.');
+      throw err;
+    });
+  }
+
+  function restoreAudit(auditId, host, onChange) {
+    return window.Api.history.restore(auditId).then(function () {
+      window.Notifications.success('Audit restored', (host ? host + ' is' : 'It is') + ' back in Audit history and Recent Audits.');
+      if (onChange) onChange();
+    }).catch(function (err) {
+      window.Notifications.error('Couldn\'t restore the audit', (err && err.message) || 'Please try again.');
+      throw err;
+    });
+  }
+
   Components.renderScoreCard = renderScoreCard;
   Components.renderAuditRow = renderAuditRow;
+  Components.deleteAudit = deleteAudit;
+  Components.restoreAudit = restoreAudit;
 
 })(window.Components);

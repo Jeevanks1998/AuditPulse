@@ -436,6 +436,7 @@ window.Api = (function () {
       var parts = [];
       if (params.q) parts.push('q=' + encodeURIComponent(params.q));
       if (params.status) parts.push('status=' + encodeURIComponent(params.status));
+      if (params.deleted) parts.push('deleted=true');
       parts.push('page=' + (params.page || 1));
       parts.push('page_size=' + (params.pageSize || 25));
       return get('/history/?' + parts.join('&'));
@@ -451,7 +452,9 @@ window.Api = (function () {
     },
 
     get: function (auditId) { return get('/history/' + auditId); },
-    remove: function (auditId) { return del('/history/' + auditId); }
+    // Soft delete: the audit moves to "Deleted audits" and can be restored.
+    remove: function (auditId) { return del('/history/' + auditId); },
+    restore: function (auditId) { return post('/history/' + auditId + '/restore', {}); }
   };
 
   /* ------------------------------- scheduler ------------------------------ */

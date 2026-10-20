@@ -72,6 +72,9 @@ class Audit(Base):
     )
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Soft delete: a deleted audit is hidden from History / Recent Audits /
+    # the dashboard but kept (with its report) so it can be restored.
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
     # ----------------------------------------------------------------
     # Relationships

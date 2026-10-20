@@ -70,14 +70,16 @@ EMPTY_BREAKDOWN = {
 # --------------------------------------------------------------------------
 async def get_recent_audits(db: AsyncSession, user: User, limit: int = 25) -> List[Audit]:
     result = await db.execute(
-        select(Audit).where(Audit.user_id == user.id).order_by(Audit.created_at.desc()).limit(limit)
+        select(Audit).where(Audit.user_id == user.id, Audit.deleted_at.is_(None))
+        .order_by(Audit.created_at.desc()).limit(limit)
     )
     return list(result.scalars().all())
 
 
 async def get_all_audits(db: AsyncSession, user: User) -> List[Audit]:
     result = await db.execute(
-        select(Audit).where(Audit.user_id == user.id).order_by(Audit.created_at.desc())
+        select(Audit).where(Audit.user_id == user.id, Audit.deleted_at.is_(None))
+        .order_by(Audit.created_at.desc())
     )
     return list(result.scalars().all())
 

@@ -297,3 +297,42 @@ def test_consent_view_legacy_row():
     assert view["legacy"] is True
     assert [f["key"] for f in view["frameworks"] if f["applicable"]] == ["gdpr", "ccpa"]
     assert next(f for f in view["frameworks"] if f["key"] == "gdpr")["status"] == "fail"
+
+
+def test_tracking_before_consent_names_actual_requests():
+    """The tile lists the real vendors and request addresses, never "e.g. tag manager"."""
+    from reports.consent_view import build_consent_view
+    view = build_consent_view({
+        "has_cookie_banner": True, "gdpr_checks": {}, "ccpa_checks": {},
+        "technical_scan": {"network": {"before_consent": {
+            "TAG_MANAGER": {"label": "Tag manager", "count": 1, "tracking_count": 0, "vendors": ["Google Tag Manager"],
+                            "samples": ["www.googletagmanager.com/gtm.js"]},
+            "ANALYTICS": {"label": "Analytics", "count": 3, "tracking_count": 3, "vendors": ["Piano Analytics"],
+                          "samples": ["tag.aticdn.net/piano.js", "xyz.pa-cd.com/event", "xyz.pa-cd.com/event"],
+                          "tracking_samples": ["Piano Analytics|xyz.pa-cd.com/event",
+                                               "Piano Analytics|xyz.pa-cd.com/event",
+                                               "Medallia|resources.digital-cloud.medallia.eu/events"]}}},
+            "checks": {"trackers_blocked_pre_consent": False}},
+        "runtime_result": {},
+    })
+    tile = next(t for t in view["tiles"] if t["key"] == "tracking")
+    assert tile["value"] == "3 request(s)"
+    assert "e.g." not in tile["sub"]
+    assert "Piano Analytics (2)" in tile["sub"] and "Medallia" in tile["sub"] and "Google Tag Manager" in tile["sub"]
+    reqs = [(d["kind"], d["vendor"], d["request"]) for d in tile["details"]]
+    assert ("tracking", "Piano Analytics", "xyz.pa-cd.com/event") in reqs
+    assert ("observation", "Google Tag Manager", "www.googletagmanager.com/gtm.js") in reqs
+    assert len([r for r in reqs if r[0] == "tracking"]) == 3
+
+
+def test_summarize_requests_keeps_tracking_samples():
+    from consent.network import ANALYTICS, COLLECTION, LOADER, NetworkRequest, summarize_requests
+    reqs = [
+        NetworkRequest(url="https://tag.aticdn.net/piano.js", domain="tag.aticdn.net", resource_type="script",
+                       is_third_party=True, category=ANALYTICS, vendor="Piano Analytics", activity=LOADER),
+        NetworkRequest(url="https://xyz.pa-cd.com/event?s=1", domain="xyz.pa-cd.com", resource_type="xhr",
+                       is_third_party=True, category=ANALYTICS, vendor="Piano Analytics", activity=COLLECTION),
+    ]
+    out = summarize_requests(reqs)[ANALYTICS]
+    assert out["tracking_count"] == 1
+    assert out["tracking_samples"] == ["Piano Analytics|xyz.pa-cd.com/event"]

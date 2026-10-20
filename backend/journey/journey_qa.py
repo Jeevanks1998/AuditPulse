@@ -75,6 +75,29 @@ def _finding(severity: str, category: str, title: str, it: Optional[Interaction]
     }
 
 
+def _path(url: Optional[str]) -> str:
+    from urllib.parse import urlparse
+    if not url:
+        return ""
+    p = urlparse(url)
+    return (p.path or "/") if p.scheme in ("http", "https") else url
+
+
+def _names(interactions: List[Interaction]) -> Dict[int, str]:
+    """Readable, unique names: “Scopri di più → /cat-nat” when several
+    controls share the same text, so findings are not identical lines."""
+    counts: Dict[str, int] = {}
+    for it in interactions:
+        counts[it.label] = counts.get(it.label, 0) + 1
+    names = {}
+    for it in interactions:
+        name = it.label or CLASS_LABELS.get(it.classification, "Element")
+        if counts.get(it.label, 0) > 1 and it.destination and it.classification != FORM:
+            name = f"{name} → {_path(it.destination)}"
+        names[it.index] = name
+    return names
+
+
 def _events_text(it: Interaction) -> str:
     evs = (it.tracking or {}).get("events") or []
     if not evs:
@@ -138,6 +161,7 @@ def build_findings(interactions: List[Interaction], pages_meta: List[dict], anal
     findings: List[dict] = []
     unique = [i for i in interactions if i.duplicate_of is None]
     tested = [i for i in unique if i.tested]
+    names = _names(unique)
     conv_tested = [i for i in tested if i.classification in CONVERSION_CLASSES or i.classification == FORM]
 
     if not analytics_present and conv_tested:
@@ -154,23 +178,27 @@ def build_findings(interactions: List[Interaction], pages_meta: List[dict], anal
         status = tr.get("status")
         kind = it.classification
         label = CLASS_LABELS.get(kind, kind)
+        name = names.get(it.index, it.label)
 
         # Broken / inaccessible
         if it.status == "failed":
             if kind == DOWNLOAD:
                 findings.append(_finding(
-                    "critical", "downloads", f"Download inaccessible: {it.label}", it,
+                    "critical", "downloads", f"Download inaccessible: {name}", it,
                     f"The download “{it.label}” on {it.page_url} points to {it.destination}, which "
                     + (f"responded HTTP {it.http_status}." if it.http_status else "could not be reached."),
                     "Fix the file URL or remove the link.", tracking=_events_text(it)))
             elif kind in (CTA, SIGNUP, APPOINTMENT, LOGIN) or it.importance >= 3:
                 findings.append(_finding(
-                    "critical", "cta", f"Broken important {label}: {it.label}", it,
-                    f"“{it.label}” on {it.page_url} was clicked but did not work: {it.observed}",
-                    "Fix the control's destination/handler so it completes its action.", tracking=_events_text(it)))
+                    "critical", "cta", f"Important {label} does not work: {name}", it,
+                    f"“{it.label}” on {it.page_url} was clicked in a real browser. {it.observed}",
+                    (f"The link leads to an error page (HTTP {it.http_status}): fix the destination or remove the link."
+                     if it.outcome == "broken_destination" else
+                     "Open the page and click it yourself: if it really does nothing, fix its link or click "
+                     "handler so it takes the visitor where it promises."), tracking=_events_text(it)))
             elif it.outcome == "no_visible_effect":
                 findings.append(_finding(
-                    "info", "verification", f"Interaction difficult to verify: {it.label}", it,
+                    "info", "verification", f"Interaction difficult to verify: {name}", it,
                     f"“{it.label}” ({label}) on {it.page_url} was clicked but produced no observable "
                     "navigation, dialog, expansion or content change.",
                     "Check whether the control is functional; give it a clear, observable result.",
@@ -179,45 +207,48 @@ def build_findings(interactions: List[Interaction], pages_meta: List[dict], anal
 
         if it.outcome == "unexpected_navigation":
             findings.append(_finding(
-                "warning", "navigation", f"Unexpected navigation: {it.label}", it,
-                f"“{it.label}” on {it.page_url}: {it.observed}",
-                "Confirm the redirect is intended and that tracking follows the final URL.",
+                "info", "navigation", f"Link lands on a different page than its address: {name}", it,
+                f"“{it.label}” on {it.page_url} links to {_path(it.destination)} but the visitor ends up on "
+                f"{_path(it.final_url)} (moved by the site's own scripts). {it.observed}",
+                "Point the link straight at the final page so visitors and analytics see one consistent URL.",
                 tracking=_events_text(it)))
 
         if status == "not_tracked" and it.status == "success":
             if kind in _CRITICAL_GAP_CLASSES:
                 findings.append(_finding(
-                    "critical", "tracking", f"No analytics detected for conversion interaction: {it.label}", it,
-                    f"Tracking gap: “{it.label}” ({label}) on {it.page_url} was discovered and successfully "
-                    "tested, but no corresponding analytics event was observed.",
+                    "critical", "tracking", f"Not tracked: {label} “{name}”", it,
+                    f"“{it.label}” ({label}) on {it.page_url} was clicked and worked, but no analytics tool "
+                    "received anything for the click and no dataLayer event was pushed.",
                     f"Add an analytics event for this {label.lower()} (e.g. a GA4 event via GTM) and verify it fires on click.",
                     tracking=_events_text(it)))
             elif kind in (PHONE, EMAIL, LOGIN):
                 findings.append(_finding(
-                    "warning", "tracking", f"No analytics detected for {label.lower()} interaction: {it.label}", it,
+                    "warning", "tracking", f"Not tracked: {label} “{name}”", it,
                     f"“{it.label}” on {it.page_url} was activated, but no analytics event was observed.",
                     f"Track {label.lower()} clicks as a lead/engagement event.", tracking=_events_text(it)))
             elif kind == FORM:
                 findings.append(_finding(
-                    "warning", "forms", f"No analytics detected for form interaction: {it.label}", it,
-                    f"The form “{it.label}” on {it.page_url} was focused and typed into, but no form_start / "
-                    "form interaction event was observed.",
+                    "warning", "forms", f"Form start not tracked: {name}", it,
+                    f"The form “{it.label}” on {it.page_url} was clicked and typed into (not submitted), but "
+                    "no form_start / form interaction event was sent.",
                     "Track form starts (GA4 enhanced measurement or a GTM form trigger).", tracking=_events_text(it)))
 
         if status == "tracked" and it.status == "success" and analytics_present \
                 and (kind in CONVERSION_CLASSES or kind == FORM):
             sources = {e.get("source") for e in (tr.get("events") or [])}
             if sources == {"dataLayer"}:
+                dl_events = sorted({e.get("event") for e in (tr.get("events") or []) if e.get("event")})
                 findings.append(_finding(
-                    "info", "tracking", f"DataLayer event only, no analytics hit: {it.label}", it,
-                    f"Activating “{it.label}” ({label}) on {it.page_url} pushed a dataLayer event, but no "
-                    "analytics request (GA4, Adobe, Piano, Meta…) was observed in the same window.",
+                    "info", "tracking", f"Click reaches the dataLayer only: {name}", it,
+                    f"Clicking “{it.label}” ({label}) on {it.page_url} pushed "
+                    f"{', '.join(dl_events[:3]) or 'a dataLayer event'} to the dataLayer, but no analytics tool "
+                    "(GA4, Adobe, Piano, Meta…) received a request for it within a few seconds.",
                     "Check that a tag in your tag manager forwards this dataLayer event to your analytics tool.",
                     tracking=_events_text(it)))
 
         if status == "duplicate":
             findings.append(_finding(
-                "warning", "tracking", f"Duplicate event: {it.label}", it,
+                "warning", "tracking", f"Counted twice: {name}", it,
                 f"One activation of “{it.label}” on {it.page_url} sent the same event more than once: "
                 f"{', '.join(tr.get('duplicates') or [])}.",
                 "Remove the duplicate tag/trigger so each interaction is counted once.", tracking=_events_text(it)))
@@ -226,7 +257,7 @@ def build_findings(interactions: List[Interaction], pages_meta: List[dict], anal
             ga4 = [e for e in tr.get("events") or [] if e.get("vendor") == "ga4"]
             if ga4 and not any(any(p in (e.get("params") or {}) for p in _GA4_DOWNLOAD_PARAMS) for e in ga4):
                 findings.append(_finding(
-                    "info", "tracking", f"Missing optional parameter on download event: {it.label}", it,
+                    "info", "tracking", f"Missing optional parameter on download event: {name}", it,
                     f"The GA4 event for “{it.label}” carries none of {', '.join(_GA4_DOWNLOAD_PARAMS)}.",
                     "Send file_name / file_extension / link_url with download events.", tracking=_events_text(it)))
 
@@ -234,6 +265,8 @@ def build_findings(interactions: List[Interaction], pages_meta: List[dict], anal
     for it in unique:
         if it.classification == FORM_SUBMIT:
             form = forms_by_id.get(it.form_id or "") or {}
+            if not it.visible or (form and not form.get("visible", True)):
+                continue          # hidden form (e.g. a template or a closed panel): not a visitor journey
             hints = form.get("tracking_hints") or []
             findings.append(_finding(
                 "info", "forms", f"Form submission tracking not verifiable without submitting: {it.label}", it,
@@ -253,9 +286,9 @@ def build_findings(interactions: List[Interaction], pages_meta: List[dict], anal
         if groups.get("t") and groups.get("n") and kind in CONVERSION_CLASSES | {FORM}:
             findings.append(_finding(
                 "warning", "tracking", f"Tracking inconsistency across {CLASS_LABELS.get(kind, kind)} interactions", None,
-                f"{len(groups['t'])} {CLASS_LABELS.get(kind, kind)} interaction(s) have analytics detected "
-                f"({', '.join(i.label for i in groups['t'][:3])}) but {len(groups['n'])} have none "
-                f"({', '.join(i.label for i in groups['n'][:3])}).",
+                f"{len(groups['t'])} {CLASS_LABELS.get(kind, kind)} interaction(s) are tracked "
+                f"({', '.join(names.get(i.index, i.label) for i in groups['t'][:3])}) but {len(groups['n'])} send nothing "
+                f"({', '.join(names.get(i.index, i.label) for i in groups['n'][:3])}).",
                 "Apply the same tracking to every interaction of this type.",
                 observed="Mixed: analytics detected / not detected", tracking="Inconsistent", page=groups["n"][0].page_url))
 

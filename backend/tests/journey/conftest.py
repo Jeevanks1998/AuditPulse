@@ -27,6 +27,7 @@ ROUTES = {
     "/": "index.html", "/services": "services.html", "/services/product": "product.html",
     "/resources": "resources.html", "/quote": "quote.html", "/contact": "contact.html",
     "/account/login": "login.html",
+    "/widgets": "widgets.html",   # not linked from the shop: only tests/journey/test_journey_widgets.py scans it
 }
 FILES = {"/files/brochure.pdf": ("application/pdf", b"%PDF-1.4\n% fixture\n"),
          "/files/specs.docx": ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", b"PK\x03\x04docx")}

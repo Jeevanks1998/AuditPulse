@@ -404,6 +404,34 @@
     }).join('') + '</ul>';
   }
 
+  /* Plain-language summary at the top: what the audit did, what it found,
+     what to fix first, and how complete the scan was. */
+  function renderOverview(view) {
+    var o = view.overview;
+    if (!o) return '';
+    var results = (o.results || []).map(function (r) {
+      return '<div class="jr-ov__result" data-state="' + esc(r.state || 'neutral') + '">' +
+        '<span class="jr-ov__value">' + esc(r.value) + '</span>' +
+        '<span class="jr-ov__label">' + esc(r.label) + '</span>' +
+        '<span class="jr-ov__detail">' + esc(r.detail || '') + '</span></div>';
+    }).join('');
+    var fix = (o.fix_first || []).map(function (f) {
+      return '<li>' + chip(SEV_CHIP[f.severity], f.severity) + '<span><strong>' + esc(f.title) + '</strong>' +
+        (f.recommendation ? '<br><span class="jr-muted">' + esc(f.recommendation) + '</span>' : '') + '</span></li>';
+    }).join('');
+    return '<div class="jr-ov">' +
+      '<p class="jr-ov__headline">' + esc(o.headline) + '</p>' +
+      '<div class="jr-ov__cols">' +
+        '<div><p class="jr-ov__h">What the audit did</p><ol class="jr-ov__did">' +
+          (o.did || []).map(function (d) { return '<li>' + esc(d) + '</li>'; }).join('') + '</ol></div>' +
+        '<div><p class="jr-ov__h">What it found</p><div class="jr-ov__results">' + results + '</div></div>' +
+      '</div>' +
+      (fix ? '<p class="jr-ov__h">Fix first</p><ul class="jr-recs">' + fix + '</ul>' : '<p class="jr-ov__h">Fix first</p><p class="jr-muted">Nothing urgent: no critical issues or warnings in this scan.</p>') +
+      ((o.coverage || []).length ? '<p class="jr-ov__coverage"><strong>How complete is this scan?</strong> ' + esc(o.coverage.join(' ')) + '</p>' : '') +
+      '<p class="jr-muted" style="margin-top:8px;">' + esc(o.score_explained || '') + '</p>' +
+    '</div>';
+  }
+
   /* ------------------------------ public ------------------------------ */
   function renderReport(journey, ids) {
     var get = function (id) { return document.getElementById(id); };
@@ -431,6 +459,7 @@
       notice = '<p class="jr-muted" role="status" style="margin:0 0 10px;padding:10px 12px;border-radius:8px;background:var(--color-warning-bg, #FFF7E6);color:inherit;">' +
         '<strong>Scan note:</strong> interactions were found but none could be executed in this run, so no Journey Health score was calculated. Please run the audit again.</p>';
     }
+    set(ids.overview, renderOverview(view));
     set(ids.health, notice + renderHealth(view));
     set(ids.summary, renderSummary(view));
     var mapEl = get(ids.map), detailEl = get(ids.detail);

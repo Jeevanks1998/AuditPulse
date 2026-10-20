@@ -101,11 +101,23 @@ def _test_label(status: Optional[str]) -> str:
             "consent_control": "Consent control (tested in Consent)"}.get(status or "", status or "")
 
 
+_NOISE_EVENT_RE = re.compile(r"^(gtag:(get|set|config|js|consent)|consent_(update|default)|gtm\.(elementVisibility|timer)|"
+                             r"onetrust|optanon|cookiebot|didomi|usercentrics|tc_|tcf|trustcommander|axeptio|cmp)", re.I)
+
+
+def _is_noise(event: Optional[str]) -> bool:
+    return bool(event) and bool(_NOISE_EVENT_RE.search(event))
+
+
 def analytics_result(i: dict) -> dict:
     """What tracking was actually observed for one interaction."""
     tr = i.get("tracking") or {}
     st = tr.get("status")
-    events = tr.get("events") or []
+    # Scans saved before the noise filter existed stored gtag get/set and
+    # cookie-banner events as "interaction" events: ignore those here too.
+    events = [e for e in (tr.get("events") or []) if not _is_noise(e.get("event"))]
+    if st in ("tracked", "duplicate") and not events and (tr.get("events") or []):
+        st = "not_tracked"
     net = any(e.get("source") == "network" for e in events)
     dl = any(e.get("source") == "dataLayer" for e in events)
     reason = ""
@@ -205,9 +217,10 @@ def _interaction_row(i: dict) -> dict:
         "test_label": _test_label(i.get("status")),
         "outcome": i.get("outcome"),
         "observed": i.get("observed"),
-        "tracking_status": tr.get("status"),
+        "tracking_status": ("not_tracked" if ar["key"] == "not_detected" else tr.get("status")),
         "tracking_label": ar["label"],
-        "tracking_events": [f"{e.get('vendor_label')}: {e.get('event')}" for e in (tr.get("events") or [])][:8],
+        "tracking_events": [f"{e.get('vendor_label')}: {e.get('event')}" for e in (tr.get("events") or [])
+                            if not _is_noise(e.get("event"))][:8],
         "tracking_note": tr.get("note"),
         "analytics_result": ar["key"],
         "analytics_label": ar["label"],
@@ -236,6 +249,119 @@ def _path(url: Optional[str]) -> str:
 
     p = urlparse(url)
     return (p.path or "/") + (("?" + p.query) if p.query else "")
+
+
+def _sentence(text: str) -> str:
+    return (text[:1].upper() + text[1:] + ".") if text else ""
+
+
+def _plural(n: int, one: str, many: Optional[str] = None) -> str:
+    return f"{n} {one if n == 1 else (many or one + 's')}"
+
+
+def _overview(journey: dict, counts: dict, rows: List[dict], tested: List[dict], successful: List[dict],
+              findings: List[dict], score: Optional[int]) -> dict:
+    """
+    The plain-language summary at the top of the Journey Map section: what
+    the audit did, what it found, what to fix first and how complete the
+    scan was — every number taken from this scan, written for someone who
+    has never seen the tool.
+    """
+    from urllib.parse import urlparse
+
+    pages = journey.get("pages") or []
+    host = urlparse(((pages[0] if pages else None) or {}).get("url") or journey.get("start_url") or "").hostname or "the site"
+    limits = journey.get("limits") or {}
+    consent = journey.get("consent_state") or ""
+    n_pages = counts.get("pages_scanned", len(pages))
+    n_found = counts.get("interactions_discovered", 0)
+    n_tested = len(tested)
+    n_ok = len(successful)
+    n_failed = len([r for r in tested if r["test_status"] == "failed"])
+    hit = [r for r in tested if r["test_status"] == "success" and r["analytics_hit"]]
+    dl_only = [r for r in tested if r["test_status"] == "success" and not r["analytics_hit"] and r["datalayer_event"]]
+    nothing = [r for r in tested if r["test_status"] == "success" and r["tracking_status"] == "not_tracked"]
+    skipped = len([r for r in rows if r["safety_status"] == "not_executed"])
+
+    consent_line = ""
+    if consent.startswith("accepted"):
+        consent_line = f" The cookie banner was accepted first ({consent[len('accepted'):].strip(' ()')}), so tags could load."
+    elif consent == "no_banner":
+        consent_line = " No cookie banner was shown."
+    elif consent:
+        consent_line = f" Cookie banner: {consent}."
+
+    did = [
+        f"Visited {_plural(n_pages, 'page')} of {host} in a real browser, like a visitor would.{consent_line}",
+        f"Found {_plural(n_found, 'different clickable element')} (links, buttons, tabs, forms, downloads…).",
+        f"Clicked the {_plural(n_tested, 'most important one')} to check that they work and that analytics "
+        "records them. Forms are only typed into, never submitted; nothing is bought or booked"
+        + (f" ({skipped} such {'action was' if skipped == 1 else 'actions were'} left untouched)." if skipped else "."),
+    ]
+
+    results = [
+        {"key": "worked", "label": "Worked when clicked", "value": f"{n_ok} of {n_tested}",
+         "state": "pass" if n_tested and not n_failed else ("fail" if n_failed else "neutral"),
+         "detail": (f"{_plural(n_failed, 'interaction')} did nothing or failed." if n_failed else
+                    "Every tested interaction did what it should." if n_tested else "Nothing could be tested.")},
+        {"key": "analytics", "label": "Sent to an analytics tool", "value": f"{len(hit)} of {n_ok}",
+         "state": "pass" if n_ok and len(hit) == n_ok else ("info" if hit else "fail" if n_ok else "neutral"),
+         "detail": "A real request reached GA4 / Adobe / Piano / Meta… for the click."},
+        {"key": "datalayer", "label": "Reached the dataLayer only", "value": f"{len(dl_only)} of {n_ok}",
+         "state": "info" if dl_only else "neutral",
+         "detail": "Your tag manager saw the click, but no analytics tool received it."},
+        {"key": "nothing", "label": "Not tracked at all", "value": f"{len(nothing)} of {n_ok}",
+         "state": "fail" if nothing else "pass",
+         "detail": "Nothing at all was recorded for the click."},
+    ]
+
+    if score is None:
+        headline = ("No interaction could be tested in this run, so there is no Journey score. "
+                    "Run the audit again.")
+    else:
+        problems = []
+        if n_failed:
+            problems.append(f"{_plural(n_failed, 'interaction')} did not work")
+        if nothing:
+            problems.append(f"{_plural(len(nothing), 'working click')} {'is' if len(nothing) == 1 else 'are'} not tracked")
+        if dl_only:
+            problems.append(f"{len(dl_only)} only reach{'es' if len(dl_only) == 1 else ''} the dataLayer")
+        headline = (f"Journey score {score}/100. "
+                    + (_sentence("; ".join(problems)) if problems else
+                       "Every tested interaction worked and was tracked."))
+
+    fix_first, seen = [], set()
+    for f in findings:
+        if f.get("severity") not in ("critical", "warning"):
+            continue
+        key = (f.get("severity"), (f.get("title") or "").split(":")[0])
+        if key in seen and len(fix_first) >= 2:
+            continue
+        seen.add(key)
+        fix_first.append({"severity": f.get("severity"), "title": f.get("title"),
+                          "recommendation": f.get("recommendation"),
+                          "interaction_index": (f.get("journey") or {}).get("interaction_index")})
+        if len(fix_first) == 3:
+            break
+
+    coverage = []
+    if limits.get("scan_stopped_by_time_budget"):
+        coverage.append(f"The page scan reached its time limit after {_plural(n_pages, 'page')} "
+                        f"(up to {limits.get('page_limit') or limits.get('max_pages')} allowed).")
+    if limits.get("tests_stopped_by_time_budget"):
+        coverage.append(f"Interaction tests reached their time limit after {n_tested} of up to "
+                        f"{limits.get('max_tested_interactions')} planned tests.")
+    if journey.get("error"):
+        coverage.append(str(journey.get("error")))
+    if coverage:
+        coverage.append("Results cover what was scanned; run the audit again or audit a specific section "
+                        "for more coverage.")
+
+    return {"headline": headline, "did": did, "results": results, "fix_first": fix_first,
+            "coverage": coverage,
+            "score_explained": ("The Journey score combines three measurements from this scan: did the tested "
+                                "interactions work (35%), are the important ones tracked (45%), and is there "
+                                "screenshot evidence (20%).")}
 
 
 def build_journey_view(journey: Optional[dict]) -> Optional[dict]:
@@ -447,6 +573,7 @@ def build_journey_view(journey: Optional[dict]) -> Optional[dict]:
         "findings": findings,
         "recommendations": recs[:20],
         "limits": journey.get("limits") or {},
+        "overview": _overview(journey, counts, rows, tested, successful, findings, score),
         "started_at": journey.get("started_at"),
         "finished_at": journey.get("finished_at"),
     }

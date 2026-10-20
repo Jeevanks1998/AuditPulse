@@ -181,8 +181,8 @@ def main() -> int:
     journeys = (v.get("map") or {}).get("journeys") or []
     check("journey map has the quote journey", any(x["name"].endswith("Request a quote") for x in journeys))
     titles = [f["title"] for f in v.get("findings") or []]
-    check("finding: conversion not tracked", "No analytics detected for conversion interaction: Request a quote" in titles)
-    check("finding: broken CTA", "Broken important CTA: See the offer" in titles)
+    check("finding: conversion not tracked", "Not tracked: CTA “Request a quote”" in titles)
+    check("finding: broken CTA", "Important CTA does not work: See the offer" in titles)
 
     audit = api("GET", f"/audits/{audit_id}").json()
     check("journey score in audit breakdown", "journey" in (audit.get("breakdown") or {}), str(audit.get("breakdown")))

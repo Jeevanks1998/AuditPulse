@@ -45,7 +45,7 @@ FULL_DEPTH_PAGE_CAP = 25
 FULL_DEPTH_LEVELS = 3
 PAGE_SETTLE_MS = 1_200
 MAX_HTML_BYTES = 4_000_000
-MAX_ELEMENTS_PER_PAGE = 400
+MAX_ELEMENTS_PER_PAGE = 800   # mega-menus alone can hold 300+ links
 MAX_CRAWL_DELAY_S = 5.0
 
 # Runs in the rendered page. Collects every interactive element and every
@@ -55,6 +55,9 @@ MAX_CRAWL_DELAY_S = 5.0
 DISCOVER_JS = r"""
 (args) => {
   const { maxElements, idPrefix } = args;
+  // lite: only what's needed to find an element again before a test
+  // (id, signature, position, visibility) — much faster on big pages.
+  const lite = !!args.lite;
   const CANDIDATES = [
     'a[href]', 'button', 'input[type=submit]', 'input[type=button]', 'input[type=image]', 'input[type=reset]',
     '[role=button]', '[role=link]', '[role=tab]', '[role=menuitem]', '[role=switch]', '[role=option]',
@@ -126,7 +129,7 @@ DISCOVER_JS = r"""
       if (k === 'style' || k.startsWith('on') && k !== 'onclick') continue;
       if (k === 'class' || k === 'id' || k === 'name' || k === 'type' || k === 'href' || k === 'download' ||
           k === 'target' || k === 'rel' || k === 'title' || k === 'alt' || k === 'action' || k === 'method' ||
-          k === 'src' || k === 'role' || k === 'tabindex' || k === 'onclick' || k.startsWith('aria-') || k.startsWith('data-')) {
+          k === 'src' || k === 'role' || k === 'tabindex' || k === 'onclick' || k === 'disabled' || k.startsWith('aria-') || k.startsWith('data-')) {
         keep[k] = (a.value || '').slice(0, 200);
       }
       if (Object.keys(keep).length >= 24) break;
@@ -191,6 +194,11 @@ DISCOVER_JS = r"""
     if (el.matches('[tabindex="0"]') && !el.matches('a,button,input,select,summary,[role],[onclick]') &&
         getComputedStyle(el).cursor !== 'pointer') continue;
     const r = el.getBoundingClientRect();
+    if (lite) {
+      out.push({ id: tag(el), tag: tagName, signature: signature(el), visible: isVisible(el), selector: cssPath(el),
+                 position: { x: Math.round(r.left + scrollX), y: Math.round(r.top + scrollY) } });
+      continue;
+    }
     const formEl = el.closest('form');
     let dest = null;
     if (tagName === 'a') dest = el.href || null;
@@ -209,6 +217,14 @@ DISCOVER_JS = r"""
     });
   }
 
+  if (lite) {
+    const liteForms = [...document.querySelectorAll('form')].slice(0, 30).map((f) => {
+      const r = f.getBoundingClientRect();
+      return { id: tag(f), signature: signature(f), visible: isVisible(f), selector: cssPath(f),
+               position: { x: Math.round(r.left + scrollX), y: Math.round(r.top + scrollY) } };
+    });
+    return { elements: out, forms: liteForms, final_url: location.href };
+  }
   const forms = [...document.querySelectorAll('form')].slice(0, 30).map((f) => {
     const r = f.getBoundingClientRect();
     const fields = [...f.querySelectorAll('input, select, textarea')].map((i) => {
@@ -326,13 +342,24 @@ class ScanResult:
         return asdict(self)
 
 
+_TRACKING_PARAM_RE = re.compile(r"^(utm_[a-z]+|gclid|gbraid|wbraid|fbclid|msclkid|dclid|mc_[a-z]+|_ga|_gl|"
+                                r"at_[a-z_]+|xtor|cmp|cid|icid|ref|referrer|source)$", re.I)
+
+
 def normalize_url(url: str) -> str:
+    """One canonical form per page: no #fragment, no trailing slash, no
+    campaign/tracking parameters (utm_*, gclid, xtor…), so the same page
+    reached through two differently-tagged links is scanned once."""
     url, _ = urldefrag(url)
     p = urlparse(url)
     path = p.path or "/"
     if path != "/" and path.endswith("/"):
         path = path[:-1]
-    return p._replace(path=path, params="").geturl()
+    query = p.query
+    if query:
+        kept = [kv for kv in query.split("&") if kv and not _TRACKING_PARAM_RE.match(kv.split("=", 1)[0])]
+        query = "&".join(kept)
+    return p._replace(path=path, params="", query=query).geturl()
 
 
 def _same_site(url: str, host: str) -> bool:
@@ -500,6 +527,7 @@ async def scan_site(
         page = await _new_page()
         first = True
         pages_on_tab = 0
+        scanned_final: Set[str] = set()
         while queue and len(result.pages) < limit:
             if deadline is not None and time.monotonic() > deadline:
                 logger.info(f"journey: scan time budget reached after {len(result.pages)} page(s)")
@@ -538,6 +566,13 @@ async def scan_site(
                     pages_on_tab = 1
                     resp = await goto_page(page, url)
                 scan.status = resp.status if resp else None
+                landed = normalize_url(page.url)
+                if landed != url and landed in scanned_final:
+                    # Redirected to a page already scanned (e.g. /a and /a/ or a
+                    # tagged link): one page, scanned once.
+                    result.pages.remove(scan)
+                    continue
+                scanned_final.add(landed)
                 await page.wait_for_timeout(PAGE_SETTLE_MS)
                 if first and on_page_loaded is not None:
                     await on_page_loaded(page, url)

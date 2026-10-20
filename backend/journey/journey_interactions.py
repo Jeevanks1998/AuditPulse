@@ -32,6 +32,7 @@ links are checked with an HTTP request instead of leaving the site.
 
 from __future__ import annotations
 
+import asyncio
 import re
 from dataclasses import asdict, dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -65,7 +66,7 @@ CLASS_LABELS = {
 
 # UI pattern (how it behaves), orthogonal to the classification (what it is for).
 PATTERN_LINK, PATTERN_BUTTON, PATTERN_TAB, PATTERN_ACCORDION, PATTERN_MODAL, PATTERN_MENU, PATTERN_FIELD, \
-    PATTERN_MEDIA = "link", "button", "tab", "accordion", "modal", "menu", "field", "media"
+    PATTERN_MEDIA, PATTERN_CAROUSEL = "link", "button", "tab", "accordion", "modal", "menu", "field", "media", "carousel"
 
 # Conversion-type interactions: an untracked one is a high-priority gap.
 CONVERSION_CLASSES = frozenset({CTA, FORM_START, FORM_SUBMIT, DOWNLOAD, SIGNUP, PURCHASE, APPOINTMENT,
@@ -90,6 +91,29 @@ _INTENT = [
     (SEARCH, re.compile(r"\b(search|suche|recherche|buscar|cerca)\b", re.I)),
 ]
 _DESTRUCTIVE_RE = re.compile(r"\b(log ?out|sign ?out|logout|signout|delete|remove|unsubscribe|deactivate|cancel (my )?(order|subscription|account))\b", re.I)
+# Slider / carousel controls (previous / next arrows, slide dots): page UI,
+# never a conversion. Recognised by the widget libraries' class names and by
+# generic "slide / next / previous" wording in several languages.
+_CAROUSEL_CLASS_RE = re.compile(r"(^|[\s_-])(slick|swiper|carousel|slider|glide|splide|owl|flickity|embla|keen-slider)"
+                                r"([\s_-]|$)", re.I)
+_CAROUSEL_WORDS_RE = re.compile(r"\b(slides?|slide \d|next|previous|prev|successiv[ao]|precedente|weiter|zur[üu]ck|"
+                                r"vorherige?|n[äa]chste|suivante?|pr[ée]c[ée]dente?|siguiente|anterior|diapositiva)\b", re.I)
+_ACTIVE_CLASS_RE = re.compile(r"(^|[\s_-])(active|is-active|selected|current)([\s_-]|$)", re.I)
+_TAB_CLASS_RE = re.compile(r"(^|[\s_-])(tab|tabs|tab-item|tablink|tab-link|nav-tab)([\s_-]|$)", re.I)
+_DISABLED_CLASS_RE = re.compile(r"(^|[\s_-])(disabled|is-disabled)([\s_-]|$)", re.I)
+
+
+def is_disabled(attrs: Dict[str, str], aria: Dict[str, str]) -> bool:
+    return ("disabled" in (attrs or {}) or (aria or {}).get("aria-disabled") == "true"
+            or bool(_DISABLED_CLASS_RE.search((attrs or {}).get("class") or "")))
+
+
+def is_already_active(attrs: Dict[str, str], aria: Dict[str, str]) -> bool:
+    """The tab / option is already the selected one: clicking it shows nothing new."""
+    return ((aria or {}).get("aria-selected") == "true" or (aria or {}).get("aria-current") in ("page", "true", "step")
+            or bool(_ACTIVE_CLASS_RE.search((attrs or {}).get("class") or "")))
+
+
 _SEARCH_FIELD_NAMES = {"q", "s", "query", "search", "keyword", "keywords", "k", "term", "searchterm"}
 
 
@@ -194,6 +218,15 @@ def classify(el: DiscoveredElement, forms: Dict[str, DiscoveredForm], host: str)
         if pattern != PATTERN_TAB:
             pattern = PATTERN_ACCORDION
             signals.append("<summary>" if tag == "summary" else "aria-expanded + aria-controls")
+    if pattern == PATTERN_BUTTON and tag != "a" and _TAB_CLASS_RE.search(attrs.get("class") or ""):
+        pattern = PATTERN_TAB
+        signals.append("tab control (class)")
+    if tag != "a" or not dest or dest.endswith("#"):
+        if _CAROUSEL_CLASS_RE.search(attrs.get("class") or "") or (
+                tag in ("button", "li", "span", "div") and not el.form_id
+                and _CAROUSEL_WORDS_RE.search(text_blob) and len(text_blob) < 60):
+            pattern = PATTERN_CAROUSEL
+            signals.append("slider / carousel control")
     toggle = (attrs.get("data-toggle") or attrs.get("data-bs-toggle") or "").lower()
     if aria.get("aria-haspopup") == "dialog" or toggle == "modal" or "modal" in (attrs.get("data-target") or attrs.get("data-bs-target") or "").lower():
         pattern = PATTERN_MODAL
@@ -224,6 +257,10 @@ def classify(el: DiscoveredElement, forms: Dict[str, DiscoveredForm], host: str)
             c.unsafe_reason = "irreversible account action (sign out / delete / unsubscribe)"
             c.signals.append("destructive wording")
         return c
+
+    # --- page UI that is never a conversion -----------------------------------
+    if pattern == PATTERN_CAROUSEL:
+        return result(OTHER, "high", 1)
 
     # --- scheme / file based ---------------------------------------------------
     if scheme == "tel":
@@ -310,7 +347,10 @@ def classify(el: DiscoveredElement, forms: Dict[str, DiscoveredForm], host: str)
         return result(NAVIGATION, "high" if in_nav else "medium", 2 if in_nav else 1, external=external)
 
     if tag in ("button", "input") or role in ("button", "link", "switch") or "onclick" in attrs:
-        if cta_score >= 2 and not in_nav:
+        # A plain <button> in the page body is not a call to action by itself:
+        # it needs to look like one (button styling or a btn/cta class).
+        looks_like_cta = any(sig in signals for sig in ("button-like styling", "button/cta class"))
+        if cta_score >= 2 and looks_like_cta and not in_nav:
             signals.append(f"prominence score {cta_score}")
             return result(CTA, "medium", 3)
         return result(OTHER, "low", 1)
@@ -379,6 +419,12 @@ _TEST_PRIORITY = {FORM: 0, SIGNUP: 1, FORM_START: 1, PURCHASE: 2, APPOINTMENT: 2
 def _worth_testing(it: Interaction) -> bool:
     if it.consent_control:
         return False
+    if is_disabled(it.attributes, it.aria):
+        return False                       # disabled control (e.g. the "previous" arrow on the first slide)
+    if it.pattern == PATTERN_CAROUSEL:
+        return False                       # slider arrows / dots: page UI, not a journey step
+    if it.pattern in (PATTERN_TAB, PATTERN_BUTTON) and it.tag != "a" and is_already_active(it.attributes, it.aria):
+        return False                       # already-selected tab / option
     if it.importance < 2 and it.classification == OTHER:
         return False
     if it.pattern == PATTERN_TAB and (it.aria or {}).get("aria-selected") == "true":
@@ -451,6 +497,32 @@ _STATE_JS = r"""
 """
 
 SETTLE_AFTER_ACTION_MS = 1_800
+ANALYTICS_EXTRA_WAIT_MS = 3_500   # analytics tools batch events: give a click hit time to leave
+
+_MUTATION_START_JS = r"""
+(sel) => {
+  const el = document.querySelector(sel);
+  window.__apMut = { count: 0, self: false, y: window.scrollY };
+  if (window.__apMutObs) window.__apMutObs.disconnect();
+  window.__apMutObs = new MutationObserver((list) => {
+    for (const m of list) {
+      if (m.target && m.target.closest && m.target.closest('[data-journey-hl]')) continue;
+      window.__apMut.count += 1;
+      if (el && (m.target === el) && m.type === 'attributes' && (m.attributeName === 'class' || m.attributeName.startsWith('aria-'))) window.__apMut.self = true;
+    }
+  });
+  window.__apMutObs.observe(document.body, { subtree: true, childList: true, attributes: true,
+                                            attributeFilter: ['class', 'style', 'hidden', 'aria-hidden', 'aria-selected', 'aria-expanded', 'aria-current'] });
+  return true;
+}
+"""
+_MUTATION_READ_JS = r"""
+() => {
+  const m = window.__apMut || { count: 0, self: false, y: window.scrollY };
+  if (window.__apMutObs) window.__apMutObs.disconnect();
+  return { count: m.count, self_changed: m.self, scrolled: Math.abs(window.scrollY - m.y) };
+}
+"""
 
 
 @dataclass
@@ -470,7 +542,7 @@ async def _reset_to(tc: TestContext, page_url: str, prefix: str) -> None:
 
     await goto_page(tc.page, page_url, load_wait_ms=3_000)
     await tc.page.wait_for_timeout(600)
-    return await tc.page.evaluate(DISCOVER_JS, {"maxElements": 1_000, "idPrefix": prefix}) or {}
+    return await tc.page.evaluate(DISCOVER_JS, {"maxElements": 1_500, "idPrefix": prefix, "lite": True}) or {}
 
 
 def _raw_signature(it: Interaction) -> str:
@@ -629,16 +701,40 @@ async def test_interaction(tc: TestContext, it: Interaction, page_prefix: str) -
             it.screenshots["after"] = await tc.evidence.viewport(page, it.page_url, it.index, "after")
         else:
             # Links, CTAs, buttons, tabs, accordions, modal triggers, menus, tel:/mailto:, iframe players.
-            response_status = {"value": None}
+            response_status = {"value": None, "redirected_from": None}
+            popups: list = []
 
             def _on_response(resp):
                 try:
                     if resp.request.is_navigation_request() and resp.request.frame == page.main_frame:
                         response_status["value"] = resp.status
+                        first = resp.request
+                        while first.redirected_from is not None:
+                            first = first.redirected_from
+                        if first is not resp.request:
+                            response_status["redirected_from"] = first.url
                 except Exception:  # noqa: BLE001
                     pass
 
+            def _on_popup(p):
+                popups.append(p)
+
             page.on("response", _on_response)
+            page.on("popup", _on_popup)
+            # Count DOM changes caused by the click (tab panels, sliders,
+            # filters, show-more…): a reliable "something happened" signal
+            # even when the amount of visible text stays the same.
+            baseline = 0
+            try:
+                await page.evaluate(_MUTATION_START_JS, sel)
+                # Background churn (auto-rotating sliders, chat widgets) is
+                # measured first so it isn't mistaken for the click's effect.
+                await page.wait_for_timeout(700)
+                baseline = int(await page.evaluate(
+                    "() => { const m = window.__apMut || {count: 0}; const b = m.count; m.count = 0; m.self = false; return b; }") or 0)
+            except Exception:  # noqa: BLE001
+                pass
+            started = tc.capture.mark()   # analytics attribution starts at the click, not before the baseline
             try:
                 if it.tag == "iframe":
                     await loc.click(timeout=4_000, position={"x": 20, "y": 20})
@@ -656,45 +752,92 @@ async def test_interaction(tc: TestContext, it: Interaction, page_prefix: str) -
             except Exception:  # noqa: BLE001
                 pass
             await page.wait_for_timeout(SETTLE_AFTER_ACTION_MS)
-            try:
-                page.remove_listener("response", _on_response)
-            except Exception:  # noqa: BLE001
-                pass
+            for name, handler in (("response", _on_response), ("popup", _on_popup)):
+                try:
+                    page.remove_listener(name, handler)
+                except Exception:  # noqa: BLE001
+                    pass
 
             after = await page.evaluate(_STATE_JS, sel) if not page.is_closed() else {}
+            mutations = {}
+            try:
+                mutations = await page.evaluate(_MUTATION_READ_JS) if not page.is_closed() else {}
+            except Exception:  # noqa: BLE001 — page navigated away
+                pass
             it.tested = True
             it.final_url = page.url
             it.http_status = response_status["value"]
             navigated = normalize_url(page.url) != normalize_url(before_state.get("url") or it.page_url)
-            if navigated:
+            if popups and not navigated:
+                # Opened in a new tab (target=_blank): a working link, not a
+                # dead click. Check where the new tab landed, then close it.
+                pop = popups[0]
+                try:
+                    await pop.wait_for_load_state("domcontentloaded", timeout=10_000)
+                except Exception:  # noqa: BLE001
+                    pass
+                pop_url = ""
+                try:
+                    pop_url = pop.url
+                except Exception:  # noqa: BLE001
+                    pass
+                status = None
+                if pop_url.startswith("http"):
+                    status, _ctype, _size = await _http_check(tc, pop_url)
+                for p_ in popups:
+                    try:
+                        await p_.close()
+                    except Exception:  # noqa: BLE001
+                        pass
+                it.final_url = pop_url or None
+                it.http_status = status
+                ok = status is None or status < 400
+                it.status = "success" if ok else "failed"
+                it.outcome = "opened_new_tab" if ok else "broken_destination"
+                it.observed = (f"Opened in a new tab: {pop_url or 'about:blank'}"
+                               + (f" (HTTP {status})" if status else "") + ".")
+            elif navigated:
                 ok = it.http_status is None or it.http_status < 400
                 it.status = "success" if ok else "failed"
                 it.outcome = "navigated" if ok else "broken_destination"
                 it.observed = (f"Navigated to {page.url}" + (f" (HTTP {it.http_status})" if it.http_status else "") + ".")
                 expected = normalize_url(dest) if dest and urlparse(dest).scheme in ("http", "https") else None
-                if ok and expected and normalize_url(page.url) != expected and it.pattern == PATTERN_LINK:
-                    it.outcome = "unexpected_navigation"
-                    it.observed += f" Expected {expected}."
+                landed = normalize_url(page.url)
+                if ok and expected and landed != expected and it.pattern == PATTERN_LINK:
+                    redirected_from = response_status.get("redirected_from")
+                    if redirected_from and normalize_url(redirected_from) == expected:
+                        # Server redirect from the linked URL to its new address: works as intended.
+                        it.outcome = "redirected"
+                        it.observed += f" The link points to {expected}, which redirects here."
+                    else:
+                        it.outcome = "unexpected_navigation"
+                        it.observed += f" Expected {expected}."
             elif (after.get("dialogs") or 0) > (before_state.get("dialogs") or 0):
                 it.status, it.outcome, it.observed = "success", "modal_opened", "A dialog/modal opened."
             elif after.get("expanded") != before_state.get("expanded") or after.get("openAttr") != before_state.get("openAttr"):
                 it.status, it.outcome = "success", "expanded" if (after.get("expanded") == "true" or after.get("openAttr")) else "collapsed"
                 it.observed = "Toggled expanded state (aria-expanded / details)."
-            elif after.get("selected") != before_state.get("selected"):
-                it.status, it.outcome, it.observed = "success", "tab_selected", "Tab selection changed."
+            elif after.get("selected") != before_state.get("selected") or mutations.get("self_changed"):
+                it.status, it.outcome, it.observed = "success", "tab_selected", "The control switched to its selected/active state."
             elif urlparse(dest or "").scheme in ("tel", "mailto"):
                 ok = bool(re.match(r"^(tel:\+?[\d\s().-]{5,}|mailto:[^@\s]+@[^@\s]+\.[^@\s]+)", dest or "", re.I))
                 it.status = "success" if ok else "failed"
                 it.outcome = "contact_link_activated"
                 it.observed = f"{'Valid' if ok else 'Malformed'} {urlparse(dest).scheme}: link activated (no app opened in the test browser)."
             elif abs((after.get("visible") or 0) - (before_state.get("visible") or 0)) > 3 \
-                    or abs((after.get("textLen") or 0) - (before_state.get("textLen") or 0)) > 5:
-                it.status, it.outcome, it.observed = "success", "content_changed", "Page content changed after the click."
+                    or abs((after.get("textLen") or 0) - (before_state.get("textLen") or 0)) > 5 \
+                    or (mutations.get("count") or 0) >= 3 + baseline * 6:
+                it.status, it.outcome = "success", "content_changed"
+                it.observed = "Page content changed after the click" + (
+                    f" ({mutations.get('count')} page updates)." if mutations.get("count") else ".")
+            elif (mutations.get("scrolled") or 0) > 80:
+                it.status, it.outcome, it.observed = "success", "scrolled", "The page scrolled to another section."
             elif it.pattern == PATTERN_LINK and dest and normalize_url(dest) == normalize_url(it.page_url):
                 it.status, it.outcome, it.observed = "success", "same_page_link", "Link points to the current page."
             else:
                 it.status, it.outcome = "failed", "no_visible_effect"
-                it.observed = "Clicked, but no navigation, dialog, expansion or content change was observed."
+                it.observed = ("Clicked, but nothing happened: no navigation, new tab, dialog, expansion or "
+                               "page change was observed.")
             if it.outcome == "modal_opened":
                 it.screenshots["after"] = await tc.evidence.viewport(page, it.page_url, it.index, "after")
                 try:
@@ -704,6 +847,14 @@ async def test_interaction(tc: TestContext, it: Interaction, page_prefix: str) -
             else:
                 it.screenshots["after"] = await tc.evidence.viewport(page, it.page_url, it.index, "after")
 
+        if it.tested and it.status == "success":
+            # Analytics tools batch events (GA4 sends a click a moment later):
+            # wait a little for a real analytics request before judging.
+            waited = 0
+            while waited < ANALYTICS_EXTRA_WAIT_MS and not any(
+                    e.source == "network" and not e.is_lifecycle for e in tc.capture.between(started)):
+                await asyncio.sleep(0.5)
+                waited += 500
         end = tc.capture.mark()
         if it.tested:
             tracking = evaluate_interaction(tc.capture, started, end, pre_window, tc.analytics_present)

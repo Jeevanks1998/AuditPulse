@@ -411,6 +411,23 @@ def build_journey_section(payload: ReportPayload) -> List[Flowable]:
          "state": "fail" if gaps_n else "pass"},
     ]
     story.append(_check_tiles(tiles))
+    ov = jv.get("overview") or {}
+    if ov.get("headline"):
+        # Same plain-language summary as the web report.
+        story.append(Spacer(1, 3 * mm))
+        story.append(Paragraph(f"<b>{esc(ov['headline'])}</b>", STYLES["Body"]))
+        lines = [f"• {esc(d)}" for d in ov.get("did") or []]
+        lines += [f"• <b>{esc(r['label'])}:</b> {esc(r['value'])} — {esc(r.get('detail') or '')}" for r in ov.get("results") or []]
+        story.append(Spacer(1, 2 * mm))
+        story.append(note_box("<br/>".join(lines)))
+        if ov.get("fix_first"):
+            story.append(Spacer(1, 2 * mm))
+            story.append(note_box("<b>Fix first</b><br/>" + "<br/>".join(
+                f"• <b>{esc(f['title'])}</b> — {esc(f.get('recommendation') or '')}" for f in ov["fix_first"]),
+                fg=ERROR_TEXT, bg=ERROR_SOFT))
+        if ov.get("coverage"):
+            story.append(Spacer(1, 2 * mm))
+            story.append(note_box("<b>How complete is this scan?</b> " + esc(" ".join(ov["coverage"]))))
     story += _journey_paths(jv)
     story += _health_breakdown(jv)
 

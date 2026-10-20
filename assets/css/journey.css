@@ -191,3 +191,22 @@
 .jr-pipeline { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: var(--fs-xs); color: var(--text-tertiary); }
 .jr-pipeline span:not(.jr-arrow) { padding: 2px 8px; border-radius: var(--radius-pill); border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); }
 .jr-note { margin: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-md); background: var(--surface-sunken); font-size: var(--fs-sm); color: var(--text-secondary); }
+
+/* ---- Plain-language overview (top of the Journey Map section) ---- */
+.jr-ov { border: 1px solid var(--border); border-radius: var(--radius-card, 12px); padding: var(--sp-4); margin-bottom: var(--sp-4); background: var(--surface); }
+.jr-ov__headline { margin: 0 0 var(--sp-3); font-size: var(--fs-lg, 18px); font-weight: 700; color: var(--text-primary); }
+.jr-ov__h { margin: var(--sp-3) 0 6px; font-size: var(--fs-sm); font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .04em; }
+.jr-ov__cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-4); }
+.jr-ov__did { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: var(--fs-sm); color: var(--text-secondary); }
+.jr-ov__results { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); }
+.jr-ov__result { border: 1px solid var(--border); border-left: 3px solid var(--border-strong, var(--border)); border-radius: var(--radius-md); padding: 8px 10px; display: grid; gap: 2px; min-width: 0; }
+.jr-ov__result[data-state="pass"] { border-left-color: var(--color-success); }
+.jr-ov__result[data-state="fail"] { border-left-color: var(--color-error); }
+.jr-ov__result[data-state="info"] { border-left-color: var(--color-primary); }
+.jr-ov__value { font-size: var(--fs-lg, 18px); font-weight: 700; color: var(--text-primary); }
+.jr-ov__result[data-state="fail"] .jr-ov__value { color: var(--color-error); }
+.jr-ov__result[data-state="pass"] .jr-ov__value { color: var(--color-success); }
+.jr-ov__label { font-size: var(--fs-sm); font-weight: 600; color: var(--text-primary); }
+.jr-ov__detail { font-size: var(--fs-xs, 12px); color: var(--text-tertiary); }
+.jr-ov__coverage { margin: var(--sp-3) 0 0; padding: 8px 12px; border-radius: var(--radius-md); background: var(--surface-sunken); font-size: var(--fs-sm); color: var(--text-secondary); }
+@media (max-width: 760px) { .jr-ov__cols, .jr-ov__results { grid-template-columns: minmax(0, 1fr); } }

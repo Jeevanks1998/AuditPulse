@@ -570,7 +570,7 @@
       var chipEl = document.getElementById('journeyScoreChip');
       if (!window.JourneyRender) return;
       var view = window.JourneyRender.renderReport(journey, {
-        content: 'journeyContent', empty: 'journeyEmpty', health: 'journeyHealth', summary: 'journeySummary',
+        content: 'journeyContent', empty: 'journeyEmpty', overview: 'journeyOverview', health: 'journeyHealth', summary: 'journeySummary',
         map: 'journeyMap', detail: 'journeyDetail', coverage: 'journeyCoverage', gaps: 'journeyGaps',
         forms: 'journeyForms', downloads: 'journeyDownloads', ctas: 'journeyCtas', evidence: 'journeyEvidence',
         recs: 'journeyRecs', interactions: 'journeyInteractions', findings: 'journeyFindings'

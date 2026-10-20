@@ -77,3 +77,28 @@ def test_unscored_summary_text():
 
     text = asyncio.run(generate_executive_summary("https://www.axa.de", 0, {}, []))
     assert "could not be scored" in text and "0/100" not in text
+
+
+def test_normalize_url_drops_campaign_parameters():
+    from journey.journey_scanner import normalize_url
+    assert normalize_url("https://www.axa.it/servizi/?utm_source=x&utm_medium=y#top") == "https://www.axa.it/servizi"
+    assert normalize_url("https://www.axa.it/p?id=7&gclid=abc") == "https://www.axa.it/p?id=7"
+
+
+def test_noise_events_are_not_interaction_tracking():
+    from journey.journey_tracking import TrackedEvent
+    for ev in ("gtag:get", "gtag:set", "OneTrustGroupsUpdated", "OptanonLoaded", "consent_update"):
+        assert TrackedEvent(t=0, source="dataLayer", vendor="dataLayer", event=ev).is_lifecycle, ev
+    assert not TrackedEvent(t=0, source="dataLayer", vendor="dataLayer", event="gtm.linkClick").is_lifecycle
+
+
+def test_plain_button_is_not_a_cta():
+    from journey.journey_interactions import CTA, classify
+    from journey.journey_scanner import DiscoveredElement
+    el = DiscoveredElement(id="e1", page_url="https://www.example.com/", tag="button", text="Carrozzerie",
+                           landmark="main", style={}, attributes={"class": "chip"}, aria={})
+    assert classify(el, {}, "www.example.com").kind != CTA
+    styled = DiscoveredElement(id="e2", page_url="https://www.example.com/", tag="button", text="Get my price",
+                               landmark="main", style={"has_background": True, "padded": True},
+                               attributes={"class": "btn btn-primary"}, aria={})
+    assert classify(styled, {}, "www.example.com").kind == CTA

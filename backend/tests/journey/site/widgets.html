@@ -1,0 +1,26 @@
+<!doctype html><html lang="en"><head><title>Journey Shop — Widgets</title><link rel="stylesheet" href="/_style.css"></head><body>
+<main>
+  <section><h1>Offers</h1>
+    <a class="btn" id="newtab" href="/quote" target="_blank">Open the offer</a>
+  </section>
+  <section class="slick-slider"><h2>Reviews</h2>
+    <button class="slick-prev slick-arrow slick-disabled" aria-disabled="true" type="button">Previous</button>
+    <div id="slides"><p>Great service</p></div>
+    <button class="slick-next slick-arrow" type="button" id="next">Next</button>
+  </section>
+  <section><h2>Find a partner</h2>
+    <div class="Tabs_root"><button class="Tabs_tab__a1 Tabs_active__b2" type="button" id="tabA">Body shops</button><button class="Tabs_tab__a1" type="button" id="tabB">Glass</button></div>
+    <ul id="list"><li>Shop A</li><li>Shop B</li></ul>
+  </section>
+  <section><h2>Dead</h2><button class="btn" type="button" id="dead">Get my price</button></section>
+</main>
+<script>
+  document.getElementById('next').onclick = function () { document.getElementById('slides').innerHTML = '<p>Second review</p>'; };
+  // Same number of items, same text length: only the content swaps.
+  document.getElementById('tabB').onclick = function () {
+    document.getElementById('tabA').className = 'Tabs_tab__a1';
+    document.getElementById('tabB').className = 'Tabs_tab__a1 Tabs_active__b2';
+    document.getElementById('list').innerHTML = '<li>Shop C</li><li>Shop D</li>';
+  };
+</script>
+</body></html>

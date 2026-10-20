@@ -35,6 +35,15 @@ from analytics.runtime import (
     event_parameters,
 )
 
+import re
+
+# Not interaction tracking: gtag commands that only read/configure, consent
+# platform (CMP) bookkeeping, GTM visibility/timer housekeeping.
+_NOISE_EVENTS = frozenset({"gtag:get", "gtag:config", "gtag:set", "gtag:js", "gtag:consent", "consent_update",
+                           "consent_default", "gtm.elementVisibility", "gtm.timer", "gtm.historyChange-v2"})
+_NOISE_EVENT_RE = re.compile(r"^(onetrust|optanon|cookiebot|didomi|usercentrics|tc_|tcf|trustcommander|axeptio|"
+                             r"cmp|consent)", re.I)
+
 TRACKED = "tracked"
 NOT_TRACKED = "not_tracked"
 DUPLICATE = "duplicate"
@@ -53,7 +62,10 @@ class TrackedEvent:
 
     @property
     def is_lifecycle(self) -> bool:
-        return (self.event or "") in LIFECYCLE_EVENTS or not self.event
+        """Page/tag bookkeeping, not a reaction to the user's action: page loads,
+        gtag config/get/set commands, consent-banner (CMP) events."""
+        ev = self.event or ""
+        return not ev or ev in LIFECYCLE_EVENTS or ev in _NOISE_EVENTS or bool(_NOISE_EVENT_RE.search(ev))
 
     def as_dict(self) -> dict:
         return {"source": self.source, "vendor": self.vendor,

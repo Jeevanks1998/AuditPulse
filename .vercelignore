@@ -1,0 +1,9 @@
+# Only the static frontend is deployed to Vercel. Without this file Vercel
+# serves the whole repository, so the backend source, tests, database SQL
+# and any committed report output were downloadable from the website.
+backend/
+supabase/
+docker-compose.yml
+*.md
+.env
+.env.*

@@ -117,7 +117,7 @@ async def sync_access(payload: AccessSyncIn, db: AsyncSession = Depends(get_db))
     """Upsert a user's name/role/access by email. Called on every
     create/update in the portal's users.py.
     """
-    result = await db.execute(select(User).where(User.email == payload.email))
+    result = await db.execute(select(User).where(func.lower(User.email) == payload.email.lower()))
     user = result.scalar_one_or_none()
     created = False
 
@@ -205,7 +205,7 @@ async def revoke_access(payload: AccessRevokeIn, db: AsyncSession = Depends(get_
     than an error, since that's a normal outcome, not a failure of the
     call.
     """
-    result = await db.execute(select(User).where(User.email == payload.email))
+    result = await db.execute(select(User).where(func.lower(User.email) == payload.email.lower()))
     user = result.scalar_one_or_none()
 
     if user is None:

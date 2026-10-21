@@ -38,6 +38,7 @@ from crawler.links import Link, extract_links, same_site_targets
 from crawler.parser import parse_html
 from crawler.robots import DEFAULT_USER_AGENT, RobotsChecker
 from crawler.sitemap import discover_sitemap_urls
+from utils.net_guard import guarded_async_client
 
 DEFAULT_CONCURRENCY = 5
 REQUEST_TIMEOUT_SECONDS = 15.0
@@ -103,7 +104,7 @@ class Crawler:
         queue: asyncio.Queue = asyncio.Queue()
         await queue.put(self.start_url)
 
-        async with httpx.AsyncClient(
+        async with guarded_async_client(
             follow_redirects=True,
             timeout=REQUEST_TIMEOUT_SECONDS,
             headers={"User-Agent": self.user_agent},

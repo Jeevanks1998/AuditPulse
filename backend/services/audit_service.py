@@ -54,6 +54,7 @@ from models.website import Website, get_or_create_website, record_audit_result
 from schemas.audit import AuditCreate, AuditStatsOut
 from reports import report_storage
 from services import ai_service
+from utils.net_guard import guarded_async_client
 
 # Only present in a given audit's real breakdown when the matching module
 # was selected in its modules (see run_audit_pipeline) — kept here at 0
@@ -212,13 +213,35 @@ async def run_audit_pipeline(audit_id: int) -> None:
         try:
             # Fresh fetch every run: no HTTP cache is used and intermediaries
             # are asked not to serve a cached copy either.
-            async with httpx.AsyncClient(
+            async with guarded_async_client(
                 follow_redirects=True, timeout=20.0,
                 headers={"User-Agent": DEFAULT_USER_AGENT, "Cache-Control": "no-cache", "Pragma": "no-cache"},
             ) as client:
                 await _advance_step(db, audit, "checkCrawl")
-                response = await client.get(audit.url)
-                if response.status_code >= 400:
+                # Re-checked at run time: DNS can change between scheduling
+                # and running (SSRF protection — utils/net_guard.py).
+                from utils.net_guard import BlockedTargetError, check_url
+                try:
+                    check_url(audit.url)
+                except BlockedTargetError as exc:
+                    raise RuntimeError(str(exc)) from exc
+
+                # Does the site let our browser in at all? Sites behind bot
+                # protection (Imperva, Cloudflare, Akamai…) can answer a cloud
+                # server with a block/challenge page; scoring that page as the
+                # website gave "no banner / no analytics / 0" for axa.ie.
+                site_block = None
+                if settings.CRAWLER_ENABLE_RUNTIME_CHECKS and any(
+                        m in (audit.modules or []) for m in ("consent", "analytics", "journey")):
+                    from utils.bot_block import browser_preflight
+                    site_block = await browser_preflight(audit.url, f"a{audit.id}-{int(time.time())}")
+                    if site_block.blocked:
+                        logger.warning(f"Audit {audit_id}: {audit.url} blocked the audit browser "
+                                       f"({site_block.vendor}, incident {site_block.incident_id})")
+                blocked = bool(site_block and site_block.blocked)
+
+                response = None if blocked else await client.get(audit.url)
+                if response is not None and response.status_code >= 400:
                     # Mirrors crawler.crawl_site's per-page status check —
                     # a non-2xx homepage fetch (site down, bot-blocking WAF,
                     # 404, 500, ...) must fail the audit outright rather than
@@ -226,7 +249,7 @@ async def run_audit_pipeline(audit_id: int) -> None:
                     raise RuntimeError(
                         f"Failed to fetch {audit.url}: HTTP {response.status_code}"
                     )
-                page = parse_html(audit.url, response.text)
+                page = parse_html(audit.url, response.text) if response is not None else None
                 hostname = urlparse(audit.url).hostname or ""
 
                 # consent/analytics/journey/ai are all optional modules
@@ -235,6 +258,9 @@ async def run_audit_pipeline(audit_id: int) -> None:
                 # when deselected.
                 breakdown: dict = {}
                 findings: list = []
+                if blocked:
+                    from utils.bot_block import block_finding
+                    findings.append(block_finding(audit.url, site_block))
 
                 # consent/analytics reuse the page + response already fetched
                 # above for checkCrawl rather than crawling the site again
@@ -244,7 +270,7 @@ async def run_audit_pipeline(audit_id: int) -> None:
                 analytics_row = None
                 consent_runtime_result = None
 
-                if "consent" in (audit.modules or []):
+                if "consent" in (audit.modules or []) and not blocked:
                     await _advance_step(db, audit, "checkConsent")
                     consent_row, consent_findings, consent_score, consent_runtime_result = await _run_consent_checks(
                         audit, page, response, hostname
@@ -252,7 +278,7 @@ async def run_audit_pipeline(audit_id: int) -> None:
                     breakdown["consent"] = consent_score
                     findings += consent_findings
 
-                if "analytics" in (audit.modules or []):
+                if "analytics" in (audit.modules or []) and not blocked:
                     await _advance_step(db, audit, "checkAnalytics")
                     analytics_row, analytics_findings, analytics_score_val = await _run_analytics_checks_site(
                         client, audit, page, consent_runtime_result=consent_runtime_result
@@ -261,7 +287,7 @@ async def run_audit_pipeline(audit_id: int) -> None:
                     findings += analytics_findings
 
                 journey_row = None
-                if "journey" in (audit.modules or []):
+                if "journey" in (audit.modules or []) and not blocked:
                     await _advance_step(db, audit, "checkJourney")
                     journey_row, journey_findings, journey_score = await _run_journey_checks(audit)
                     _backfill_analytics_from_journey(analytics_row, journey_row)
@@ -271,7 +297,7 @@ async def run_audit_pipeline(audit_id: int) -> None:
 
                 overall = _compute_overall_score(breakdown)
 
-                if "ai" in (audit.modules or []):
+                if "ai" in (audit.modules or []) and not blocked:
                     findings = findings + await ai_service.generate_ai_findings(audit.url, breakdown)
 
                 await _advance_step(db, audit, "checkReport")

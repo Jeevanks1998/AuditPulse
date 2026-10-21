@@ -49,6 +49,8 @@ _CMP_SIGNATURES = [
      re.compile(r"sdk\.privacy-center\.org|didomi\.io", re.IGNORECASE)),
     ("trustcommander", "TrustCommander (Commanders Act)", re.compile(r"tc-privacy|footer_tc_privacy|tc_privacy", re.IGNORECASE),
      re.compile(r"trustcommander\.net", re.IGNORECASE)),
+    ("evidon", "Evidon (Crownpeak)", re.compile(r"_evidon|evidon-banner|evidon-barrier", re.IGNORECASE),
+     re.compile(r"evidon\.com|betrad\.com", re.IGNORECASE)),
     ("usercentrics", "Usercentrics", re.compile(r"usercentrics|uc-center", re.IGNORECASE),
      re.compile(r"usercentrics\.eu|usercentrics\.com", re.IGNORECASE)),
     ("sourcepoint", "Sourcepoint", re.compile(r"sp_message_container", re.IGNORECASE),

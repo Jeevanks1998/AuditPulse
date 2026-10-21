@@ -557,7 +557,12 @@
       var ran = DETAIL_TABS.filter(function (m) {
         return !!moduleResults[m] || (currentReport.scoreGrid || []).some(function (c) { return c.module === m; });
       });
-      if (!ran.length) return;
+      if (!ran.length) {
+        // No module ran (e.g. the website blocked the audit): nothing to show here.
+        var sec = document.getElementById('details');
+        if (sec) sec.hidden = true;
+        return;
+      }
       DETAIL_TABS.forEach(function (m) {
         var tab = document.querySelector('.rp-tab[data-tab="' + m + '"]');
         if (tab) tab.hidden = ran.indexOf(m) === -1;

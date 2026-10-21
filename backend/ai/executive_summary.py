@@ -57,6 +57,11 @@ async def _summary_from_ai(url: str, overall: int, breakdown: Dict[str, int], fi
 
 def _unscored_summary(url: str, findings: List[dict]) -> str:
     """No module produced a score in this run — say so instead of "0/100, weak"."""
+    blocked = next((f for f in findings if f.get("module") == "site_access"), None)
+    if blocked:
+        return (f"{url} could not be audited: the website's bot protection blocked AuditPulse's browser, "
+                "so consent, analytics and journeys were not checked and nothing is scored. "
+                "Ask the site owner to allowlist AuditPulse, then run the audit again.")
     sentence = (f"{url} could not be scored in this run: no audited module produced a score "
                 "(for a Journey Map audit this means no interaction could be tested — see the "
                 "Journey Map section for the reason).")

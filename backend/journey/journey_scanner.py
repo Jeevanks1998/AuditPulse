@@ -37,6 +37,7 @@ from config.logging import logger
 from config.browser import goto_page
 from journey.browser_session import is_browser_dead_error
 from crawler.links import ASSET_EXTENSIONS, NON_CRAWLABLE_SCHEMES
+from utils.net_guard import guarded_async_client
 
 # Hard ceilings on top of the audit's own max_pages, so one audit can never
 # turn into an unbounded browser crawl.
@@ -173,6 +174,7 @@ DISCOVER_JS = r"""
     '#sp_message_container', '[id^="sp_message_container"]', '.fc-consent-root', '#gdpr-consent-tool-wrapper',
     '#tc-privacy-wrapper', '#footer_tc_privacy', '[class*="tc-privacy"]', '#privacy-iframe', '#usercentrics-cmp-ui',
     '#axeptio_main_button', '#cmpbox2', '#uc-center-container',
+    '#_evidon_banner', '#_evidon-barrier-wrapper', '[class*="evidon-banner"]',
     '[id*="cookie-banner" i]', '[class*="cookie-banner" i]', '[id*="cookie-consent" i]', '[class*="cookie-consent" i]',
     '[id*="consent-banner" i]', '[class*="consent-banner" i]', '[id*="cookie-notice" i]', '[class*="cookie-notice" i]',
     '[role=dialog][aria-label*="cookie" i]', '[role=dialog][aria-label*="consent" i]', '[role=dialog][aria-label*="privacy" i]',
@@ -439,7 +441,7 @@ async def http_fetch(context, url: str, method: str = "GET", timeout: float = 15
     except Exception:  # noqa: BLE001
         jar = {}
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=timeout, cookies=jar,
+        async with guarded_async_client(follow_redirects=True, timeout=timeout, cookies=jar,
                                      headers={"User-Agent": DEFAULT_USER_AGENT}) as client:
             if method == "HEAD":
                 r = await client.request("HEAD", url)
@@ -508,7 +510,7 @@ async def scan_site(
     robots = RobotsChecker()
     crawl_delay = 0.0
 
-    async with httpx.AsyncClient(follow_redirects=True, timeout=10.0, headers={"User-Agent": DEFAULT_USER_AGENT}) as client:
+    async with guarded_async_client(follow_redirects=True, timeout=10.0, headers={"User-Agent": DEFAULT_USER_AGENT}) as client:
         try:
             crawl_delay = min(float(await robots.crawl_delay(client, start_url) or 0.0), MAX_CRAWL_DELAY_S)
         except Exception:  # noqa: BLE001

@@ -264,6 +264,7 @@ CONSENT_CONTAINER_SELECTORS: List[str] = [
     ".fc-consent-root", "[id^='sp_message_container']", "#cmpbox", "#cmpwrapper",
     "#termly-code-snippet-support",
     "#footer_tc_privacy", "#tc-privacy-wrapper", "[class*='tc-privacy-banner']",  # TrustCommander (Commanders Act)
+    "#_evidon_banner", "#_evidon-barrier-wrapper", "[class*='evidon-banner']",  # Evidon (Crownpeak)
     # generic, attribute-based
     "[role='dialog'][aria-label*='cookie' i]", "[role='dialog'][aria-label*='consent' i]",
     "[role='dialog'][aria-label*='privacy' i]", "[role='alertdialog'][aria-label*='cookie' i]",

@@ -93,6 +93,14 @@ class Settings(BaseSettings):
     # Unset = detect from site signals; undetectable = regional compliance
     # "not assessed" (consent.region).
     CONSENT_TARGET_REGION: Optional[str] = None
+    # SSRF protection (utils/net_guard.py): audits may only contact public
+    # internet addresses. Only enable for local development/tests that serve
+    # fixture websites on 127.0.0.1 — never in production.
+    ALLOW_PRIVATE_NETWORK_TARGETS: bool = False
+
+    # Interactive API docs (/docs, /redoc, /openapi.json) list every endpoint
+    # and schema. Off unless explicitly enabled (local development only).
+    ENABLE_API_DOCS: bool = False
 
     # --- Customer Journey (journey/) ---
     # Safe interaction tests per audit / per page (each one reloads the page

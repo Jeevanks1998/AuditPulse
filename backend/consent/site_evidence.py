@@ -31,6 +31,7 @@ from typing import List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
 from config.logging import logger
+from utils.net_guard import guarded_async_client
 
 MAX_PAGES = 6
 FETCH_TIMEOUT_S = 10.0
@@ -182,7 +183,7 @@ async def gather_site_evidence(base_url: str, page) -> SiteEvidence:
             break
 
     async def run():
-        async with httpx.AsyncClient(timeout=FETCH_TIMEOUT_S, follow_redirects=True,
+        async with guarded_async_client(timeout=FETCH_TIMEOUT_S, follow_redirects=True,
                                      headers={"User-Agent": _UA, "Accept-Language": "en"}) as client:
             for url, kind in picks:
                 try:

@@ -81,7 +81,14 @@ class ScheduleEmailDeliveryOut(BaseModel):
 
 
 class ScheduleCreate(BaseModel):
-    url: str
+    url: str = Field(max_length=500)
+
+    @field_validator("url")
+    @classmethod
+    def _public_url(cls, v: str) -> str:
+        # Same rules as a one-off audit: public http(s) websites only.
+        from schemas.audit import normalize_audit_url
+        return normalize_audit_url(v)
     frequency: str = Field(default="Weekly", pattern="^(Daily|Weekly|Monthly|Yearly)$")
     time_label: str = "Mondays, 6:00 AM"
     depth: str = Field(default="homepage", pattern="^(homepage|full)$")

@@ -20,6 +20,24 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validat
 from config.constants import DEFAULT_MAX_PAGES, MAX_PAGES_LIMIT, MIN_PAGES_LIMIT
 
 
+def normalize_audit_url(v: str) -> str:
+    """Shared by one-off audits and schedules: add https://, require a host,
+    and only allow public websites (SSRF protection — utils/net_guard.py)."""
+    v = (v or "").strip()
+    if not v or len(v) > 500:
+        raise ValueError("Please provide a valid website URL.")
+    if not v.startswith(("http://", "https://")):
+        v = "https://" + v
+    if not urlparse(v).netloc:
+        raise ValueError("Please provide a valid website URL.")
+    from utils.net_guard import BlockedTargetError, check_url
+    try:
+        check_url(v)
+    except BlockedTargetError as exc:
+        raise ValueError(str(exc)) from exc
+    return v
+
+
 class AuditCreate(BaseModel):
     url: str
     depth: str = Field(default="homepage", pattern="^(homepage|full)$")
@@ -50,14 +68,7 @@ class AuditCreate(BaseModel):
     @field_validator("url")
     @classmethod
     def normalize_url(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("Please provide a valid website URL.")
-        if not v.startswith(("http://", "https://")):
-            v = "https://" + v
-        if not urlparse(v).netloc:
-            raise ValueError("Please provide a valid website URL.")
-        return v
+        return normalize_audit_url(v)
 
 
 class AuditOut(BaseModel):

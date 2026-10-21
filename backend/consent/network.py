@@ -116,6 +116,7 @@ for _d, _v in [
     ("sourcepoint.com", "Sourcepoint"), ("fundingchoicesmessages.google.com", "Google Funding Choices"),
     ("axept.io", "Axeptio"), ("cookiefirst.com", "CookieFirst"), ("termly.io", "Termly"),
     ("trustcommander.net", "TrustCommander (Commanders Act)"),
+    ("evidon.com", "Evidon (Crownpeak)"), ("betrad.com", "Evidon (Crownpeak)"),
 ]:
     _r(_d, None, CMP, _v, INFRASTRUCTURE)
 

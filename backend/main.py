@@ -50,12 +50,30 @@ from api.router import api_router
 import models  # noqa: F401
 
 
+_DEFAULT_SECRET = "change-this-to-a-long-random-string-in-production"
+
+
+def _check_secrets() -> None:
+    """Refuse to start with the sample JWT secret outside local development:
+    anyone who has read the (public) source could forge a session token
+    for any user."""
+    weak = settings.SECRET_KEY == _DEFAULT_SECRET or len(settings.SECRET_KEY) < 32
+    local_db = any(h in settings.DATABASE_URL for h in ("@localhost", "@127.0.0.1", "@db:", "@postgres:"))
+    if weak and not local_db:
+        raise RuntimeError(
+            "SECRET_KEY is missing or too weak. Set SECRET_KEY to a random value of at least 32 characters "
+            "(e.g. `python -c \"import secrets; print(secrets.token_urlsafe(48))\"`) in the environment.")
+    if weak:
+        logger.warning("SECRET_KEY is the development default — never use this in production.")
+
+
 # --------------------------------------------------------------------------
 # Lifespan
 # --------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
+    _check_secrets()
     logger.info(f"Starting {settings.APP_NAME} ({settings.APP_ENV})")
     await init_db()
     yield
@@ -70,8 +88,11 @@ app = FastAPI(
     title=settings.APP_NAME,
     description="Backend API for the AI Website Audit Platform (AuditPulse).",
     version="1.0.0",
-    docs_url="/docs" if not settings.is_production else None,
-    redoc_url="/redoc" if not settings.is_production else None,
+    # Docs are opt-in (ENABLE_API_DOCS) so a deploy that forgets APP_ENV
+    # doesn't publish the full API map.
+    docs_url="/docs" if settings.ENABLE_API_DOCS else None,
+    redoc_url="/redoc" if settings.ENABLE_API_DOCS else None,
+    openapi_url="/openapi.json" if settings.ENABLE_API_DOCS else None,
     lifespan=lifespan,
 )
 
@@ -126,16 +147,12 @@ async def serve_screenshot(key: str):
 # --------------------------------------------------------------------------
 @app.get("/health", tags=["System"])
 async def health_check():
-    return {"status": "ok", "app": settings.APP_NAME, "env": settings.APP_ENV}
+    return {"status": "ok"}
 
 
 @app.get("/", tags=["System"])
 async def root():
-    return {
-        "message": f"{settings.APP_NAME} is running",
-        "docs": "/docs",
-        "health": "/health",
-    }
+    return {"message": f"{settings.APP_NAME} is running", "health": "/health"}
 
 
 # --------------------------------------------------------------------------

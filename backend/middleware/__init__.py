@@ -42,6 +42,9 @@ from middleware.logging import add_logging_middleware
 from middleware.rate_limit import add_rate_limit_middleware
 
 
+from middleware.security_headers import add_security_headers_middleware
+
+
 def setup_middleware(app: FastAPI) -> None:
     """Wires every middleware layer + exception handler onto `app`. Call
     once from main.py, after the FastAPI() instance is created and
@@ -50,6 +53,7 @@ def setup_middleware(app: FastAPI) -> None:
     register_error_handlers(app)
 
     # Innermost -> outermost (see module docstring for why this order).
+    add_security_headers_middleware(app)
     add_auth_context_middleware(app)
     add_logging_middleware(app)
     add_rate_limit_middleware(app)

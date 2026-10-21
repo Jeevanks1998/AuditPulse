@@ -16,16 +16,18 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class EmailSendRequest(BaseModel):
-    to: List[EmailStr] = Field(min_length=1)
-    cc: List[EmailStr] = Field(default_factory=list)
-    bcc: List[EmailStr] = Field(default_factory=list)
-    subject: Optional[str] = None
-    body: Optional[str] = None
+    # Caps stop the "Send to POC" feature being used to mass-mail through
+    # our SMTP account.
+    to: List[EmailStr] = Field(min_length=1, max_length=20)
+    cc: List[EmailStr] = Field(default_factory=list, max_length=20)
+    bcc: List[EmailStr] = Field(default_factory=list, max_length=20)
+    subject: Optional[str] = Field(default=None, max_length=300)
+    body: Optional[str] = Field(default=None, max_length=20_000)
     # Keys from emailer.attachments.ATTACHMENT_CHOICES, e.g.
     # ["pdf", "consent_screenshots", "analytics_runtime", "cookie_evidence",
     #  "network_evidence", "evidence_zip"]. Defaults to just the PDF if
     # the caller sends nothing — never silently attaches everything.
-    attachments: List[str] = Field(default_factory=lambda: ["pdf"])
+    attachments: List[str] = Field(default_factory=lambda: ["pdf"], max_length=10)
 
     @field_validator("attachments")
     @classmethod

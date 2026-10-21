@@ -24,6 +24,7 @@ from config.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from config.database import get_db
 from schemas.audit import AuditOut
 from schemas.history import ActivityPageOut, HistoryPageOut
+from config.permissions import require_module
 from services import history_service
 
 router = APIRouter()
@@ -70,7 +71,7 @@ async def get_history_item(
 async def delete_history_item(
     audit_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_module("audits")),
 ):
     await history_service.delete_history_item(audit_id, db, current_user)
 
@@ -79,6 +80,6 @@ async def delete_history_item(
 async def restore_history_item(
     audit_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_module("audits")),
 ):
     return await history_service.restore_history_item(audit_id, db, current_user)

@@ -126,7 +126,7 @@
     function readForm() {
       return {
         name: els.name.value.trim(),
-        email: els.email.value.trim(),
+        // email is read-only: it's the sign-in identity, managed in the Access Portal
         company: els.company.value.trim(),
         aiProvider: els.aiProvider.value,
         notifyAuditCompleted: els.notifyAuditCompleted.checked,

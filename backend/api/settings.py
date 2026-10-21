@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import User, generate_api_key, get_current_user
@@ -45,17 +45,22 @@ class SettingsOut(BaseModel):
 
 
 class SettingsUpdate(BaseModel):
-    name: Optional[str] = None
-    email: Optional[EmailStr] = None
-    company: Optional[str] = None
-    ai_provider: Optional[str] = None
+    # No `email`: it is the sign-in identity and the key the Access Portal
+    # uses to update or revoke access. Letting a user change it would let
+    # them escape an offboarding revoke (the portal would no longer find
+    # them). Email changes go through the Access Portal only.
+    model_config = ConfigDict(extra="ignore")
+
+    name: Optional[str] = Field(default=None, max_length=120)
+    company: Optional[str] = Field(default=None, max_length=120)
+    ai_provider: Optional[str] = Field(default=None, max_length=60)
     notify_audit_completed: Optional[bool] = None
     notify_critical_issue: Optional[bool] = None
     notify_weekly_summary: Optional[bool] = None
-    theme: Optional[str] = None
-    language: Optional[str] = None
-    schedule_frequency: Optional[str] = None
-    schedule_time: Optional[str] = None
+    theme: Optional[str] = Field(default=None, pattern="^(light|dark|system)$")
+    language: Optional[str] = Field(default=None, max_length=40)
+    schedule_frequency: Optional[str] = Field(default=None, max_length=40)
+    schedule_time: Optional[str] = Field(default=None, max_length=80)
 
 
 class ApiKeyOut(BaseModel):

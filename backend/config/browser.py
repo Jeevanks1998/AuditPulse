@@ -47,6 +47,9 @@ CHROMIUM_ARGS: List[str] = [
     "--js-flags=--max-old-space-size=512",
     "--disable-backgrounding-occluded-windows",
     "--autoplay-policy=user-gesture-required",   # no auto-playing hero videos
+    # Don't announce "controlled by automation" (navigator.webdriver): the
+    # audit should see the same page a visitor's Chrome gets.
+    "--disable-blink-features=AutomationControlled",
 ]
 
 # Optional extra flags without a code change, e.g. CHROMIUM_EXTRA_ARGS="--no-sandbox".
@@ -57,10 +60,36 @@ def chromium_args() -> List[str]:
     return CHROMIUM_ARGS + _EXTRA
 
 
+def _use_regular_chrome_identity(browser) -> None:
+    """Headless Chromium's user agent says "HeadlessChrome", which many sites
+    and bot filters treat differently from a visitor's browser. Use the
+    regular Chrome user agent of the same version (plus an AuditPulse token
+    the site owner can allowlist) unless a caller sets its own."""
+    try:
+        version = browser.version
+    except Exception:  # noqa: BLE001
+        return
+    ua = (f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+          f"Chrome/{version} Safari/537.36 AuditPulse/1.0")
+    orig = browser.new_context
+
+    async def new_context(*a, **k):
+        k.setdefault("user_agent", ua)
+        k.setdefault("locale", "en-GB")
+        return await orig(*a, **k)
+
+    browser.new_context = new_context
+
+
 async def launch_chromium(pw, **kwargs):
     """`await launch_chromium(pw)` instead of `await pw.chromium.launch()`."""
     args = list(kwargs.pop("args", []) or []) + chromium_args()
-    return await pw.chromium.launch(args=args, **kwargs)
+    browser = await pw.chromium.launch(args=args, **kwargs)
+    _use_regular_chrome_identity(browser)
+    # Every context this browser opens refuses private / internal network
+    # addresses (SSRF protection — see utils/net_guard.py).
+    from utils.net_guard import install_browser_guard
+    return install_browser_guard(browser)
 
 
 async def goto_page(page, url: str, timeout: int = 25_000, load_wait_ms: int = 8_000):

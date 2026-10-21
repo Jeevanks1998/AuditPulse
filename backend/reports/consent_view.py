@@ -91,6 +91,7 @@ _CMP_HINTS = (
     ("termly", "Termly"), ("trustarc", "TrustArc"), ("cookielaw", "OneTrust"),
     ("tc-privacy", "TrustCommander (Commanders Act)"), ("footer_tc_privacy", "TrustCommander (Commanders Act)"),
     ("trustcommander", "TrustCommander (Commanders Act)"), ("cookiehub", "CookieHub"), ("klaro", "Klaro"),
+    ("_evidon", "Evidon (Crownpeak)"), ("evidon", "Evidon (Crownpeak)"),
     ("cookie-script", "CookieScript"), ("cookiescript", "CookieScript"), ("ketch", "Ketch"),
 )
 

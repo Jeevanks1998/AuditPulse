@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en-IE"><head><meta charset="utf-8"><title>Insurance Example Ireland</title>
+<script id="evidon-settings" src="http://c.evidon.com:PORT/sitenotice/evidon-sitenotice-tag.js"></script>
+</head><body>
+<header><nav><a href="/">Home</a> <a href="/car">Car insurance</a> <a href="/home">Home insurance</a></nav></header>
+<main><h1>Protect what matters most</h1><p>Quotes for car and home insurance.</p></main>
+<footer><a href="/privacy">Privacy notice</a> · <a href="#" id="evidon-cookie-options" onclick="showBanner();return false;">Cookie options</a></footer>
+<script>
+// Evidon (Crownpeak) banner, same structure as axa.ie: REJECT / ACCEPT / CUSTOMISE.
+function hide() { ['_evidon_banner', '_evidon-background'].forEach(function (id) { var e = document.getElementById(id); if (e) e.remove(); }); }
+function showBanner() {
+  var bg = document.createElement('div'); bg.id = '_evidon-background';
+  bg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9998';
+  var b = document.createElement('div'); b.id = '_evidon_banner'; b.className = 'evidon-banner';
+  b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;background:#fff;padding:24px;z-index:9999';
+  b.innerHTML = '<div id="_evidon-title" class="evidon-banner-title">About cookies on this website</div>' +
+    '<div id="_evidon-message" class="evidon-banner-message">We use cookies to ensure our website is operating as expected, to improve how it works and to show you relevant advertising. <a href="/privacy">Privacy notice</a></div>' +
+    '<button id="_evidon-decline-button" class="evidon-banner-declinebutton">REJECT</button>' +
+    '<button id="_evidon-accept-button" class="evidon-banner-acceptbutton">ACCEPT</button>' +
+    '<button id="_evidon-option-button" class="evidon-banner-optionbutton">CUSTOMISE</button>';
+  document.body.appendChild(bg); document.body.appendChild(b);
+  document.getElementById('_evidon-decline-button').onclick = function () { document.cookie = '_evidon_consent_ls_1=reject; path=/'; hide(); };
+  document.getElementById('_evidon-accept-button').onclick = function () {
+    document.cookie = '_evidon_consent_ls_1=accept; path=/'; hide();
+    var s = document.createElement('img'); s.src = 'http://www.google-analytics.com:PORT/g/collect?v=2&tid=G-IETEST1&en=page_view'; document.body.appendChild(s);
+  };
+  document.getElementById('_evidon-option-button').onclick = function () {
+    var p = document.createElement('div'); p.id = '_evidon-option-panel'; p.setAttribute('role', 'dialog');
+    p.innerHTML = '<h2>Cookie preferences</h2><label><input type="checkbox" checked disabled> Essential</label><label><input type="checkbox"> Analytics</label><label><input type="checkbox"> Advertising</label><button id="_evidon-save">Save</button>';
+    p.style.cssText = 'position:fixed;top:40px;left:40px;background:#fff;padding:20px;z-index:10000';
+    document.body.appendChild(p);
+  };
+}
+if (!/_evidon_consent_ls_1=/.test(document.cookie)) setTimeout(showBanner, 800);
+if (/_evidon_consent_ls_1=accept/.test(document.cookie)) { var s = document.createElement('img'); s.src = 'http://www.google-analytics.com:PORT/g/collect?v=2&tid=G-IETEST1&en=page_view'; document.body.appendChild(s); }
+</script>
+</body></html>

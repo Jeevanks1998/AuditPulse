@@ -286,3 +286,19 @@ def test_non_essential_wording_and_live_withdrawal(site_server):
     assert s.gdpr_checks["accept_control"] is True
     assert s.gdpr_checks["reject_parity"] is True
     assert s.gdpr_checks["consent_withdrawal_available"] is True
+
+
+def test_evidon_banner_axa_ie_structure(site_server):
+    """Evidon (Crownpeak) banner as on axa.ie: REJECT / ACCEPT / CUSTOMISE are
+    found, the vendor is named Evidon, and accept/reject are tested live."""
+    from reports.consent_view import banner_vendor
+
+    r = scan("www.insurance-example.ie", site_server)
+    rt = r.runtime_result
+    controls = _controls(r)
+    assert controls.get("REJECT") in ("reject", "reject_all")
+    assert controls.get("ACCEPT") in ("accept", "accept_all")
+    assert controls.get("CUSTOMISE") == "manage_preferences"
+    assert rt.accept_clicked and rt.reject_clicked
+    ts = r.summary.technical_scan
+    assert "Evidon" in (banner_vendor(ts.get("banner") or {}, ts.get("network")) or "")

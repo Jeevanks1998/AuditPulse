@@ -49,7 +49,7 @@ async def _block_media(route) -> None:
         if route.request.resource_type == "media":
             await route.abort()
         else:
-            await route.continue_()
+            await route.fallback()   # hand over to the network guard (utils/net_guard.py)
     except Exception:  # noqa: BLE001 — page navigated away / context closing
         pass
 

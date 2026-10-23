@@ -1,0 +1,85 @@
+# ==============================================================================
+# AuditPulse + Access portal on one Oracle Cloud "Always Free" server.
+#
+#   caddy       HTTPS (free Let's Encrypt certificates) on ports 80/443
+#   auditpulse  AuditPulse API + Celery worker/beat (same start command as Railway)
+#   access      Access portal API
+#   redis       Celery broker / results (internal only)
+#
+# Folder layout on the server (setup.sh creates it):
+#   /opt/auditpulse/AuditPulse          <- this repo
+#   /opt/auditpulse/AuditPulse-Access   <- Access portal repo
+#   /opt/auditpulse/env/auditpulse.env  <- secrets (never in git)
+#   /opt/auditpulse/env/access.env      <- secrets (never in git)
+#   /opt/auditpulse/AuditPulse/deploy/oracle/.env  <- API_HOST / ACCESS_HOST (setup.sh writes it)
+# ==============================================================================
+name: auditpulse
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    restart: unless-stopped
+
+  auditpulse:
+    build:
+      context: ../../backend
+    env_file: /opt/auditpulse/env/auditpulse.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      PORT: "8000"
+    # Same as railway.json: migrate, then worker+beat and the API in one container
+    # (they share the screenshots / reports folders).
+    command: >
+      sh -c "alembic upgrade head &&
+             (celery -A workers.celery_worker worker --beat --loglevel=info --concurrency=2 &
+              uvicorn main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*')"
+    shm_size: "1gb"          # Chromium needs more than Docker's 64 MB default
+    depends_on: [redis]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 90s
+      retries: 3
+
+  access:
+    build:
+      context: ../../../AuditPulse-Access/backend
+      dockerfile_inline: |
+        FROM python:3.11-slim-bookworm
+        ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+        WORKDIR /app
+        COPY requirements.txt .
+        RUN pip install -r requirements.txt
+        COPY . .
+        RUN useradd -m appuser && chown -R appuser:appuser /app
+        USER appuser
+        EXPOSE 8010
+        CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8010", "--proxy-headers", "--forwarded-allow-ips=*"]
+    env_file: /opt/auditpulse/env/access.env
+    environment:
+      # Talk to AuditPulse over the private Docker network.
+      AUDITPULSE_BASE_URL: http://auditpulse:8000
+    depends_on: [auditpulse]
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports: ["80:80", "443:443"]
+    environment:
+      API_HOST: ${API_HOST:?run setup.sh first}
+      ACCESS_HOST: ${ACCESS_HOST:?run setup.sh first}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [auditpulse, access]
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

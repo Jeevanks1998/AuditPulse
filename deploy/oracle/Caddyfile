@@ -1,0 +1,11 @@
+# Free HTTPS for both APIs. Host names come from deploy/oracle/.env
+# (setup.sh: <name>-<ip-with-dashes>.sslip.io, which always resolves to the server).
+{$API_HOST} {
+	encode gzip
+	reverse_proxy auditpulse:8000
+}
+
+{$ACCESS_HOST} {
+	encode gzip
+	reverse_proxy access:8010
+}

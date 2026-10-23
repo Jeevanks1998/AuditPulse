@@ -7,3 +7,9 @@ backend/reports_output/
 backend/screenshots/
 backend/logs/
 *.log
+
+# Oracle deployment secrets (never commit)
+deploy/oracle/.env
+deploy/oracle/*.env
+oracle-secrets/
+*.pem

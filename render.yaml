@@ -21,9 +21,7 @@ services:
     rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    dockerCommand: >-
-      sh -c "alembic upgrade head || echo 'alembic upgrade failed, continuing';
-      exec uvicorn main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"
+    dockerCommand: sh render-start.sh
     healthCheckPath: /health
     autoDeploy: true
     envVars:

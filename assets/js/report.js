@@ -349,7 +349,18 @@
     wireModuleAccordions();
 
     if (!auditId) {
-      window.Notifications.error('No report selected', 'Open a report from your dashboard or history so we know which audit to show.');
+      // Opened from a sidebar link (e.g. "Cookie Scanner" -> report.html#cookies)
+      // without an audit id: jump to the most recent completed audit.
+      window.Api.audits.getRecent().then(function (list) {
+        var done = (list || []).filter(function (a) { return a.status === 'completed'; })[0];
+        if (done) {
+          window.location.replace('report.html?id=' + encodeURIComponent(done.id) + (window.location.hash || ''));
+        } else {
+          window.Notifications.error('No report yet', 'Run an audit first. Its report (and Cookie Scanner) will open here.');
+        }
+      }).catch(function () {
+        window.Notifications.error('No report selected', 'Open a report from your dashboard or history so we know which audit to show.');
+      });
       return;
     }
 

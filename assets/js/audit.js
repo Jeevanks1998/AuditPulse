@@ -115,6 +115,20 @@
       U.on(cb, 'change', refreshModuleCount);
     });
 
+    // Cookie Scanner runs as part of the Consent check (the live browser
+    // records every cookie before consent / after Reject / after Accept).
+    // Turning it on turns Consent on; turning Consent off turns it off.
+    var cookieToggle = moduleList ? moduleList.querySelector('input[data-module="cookies"]') : null;
+    var consentToggle = moduleList ? moduleList.querySelector('input[data-module="consent"]') : null;
+    if (cookieToggle && consentToggle) {
+      U.on(cookieToggle, 'change', function () {
+        if (cookieToggle.checked && !consentToggle.checked) { consentToggle.checked = true; refreshModuleCount(); }
+      });
+      U.on(consentToggle, 'change', function () {
+        if (!consentToggle.checked && cookieToggle.checked) { cookieToggle.checked = false; refreshModuleCount(); }
+      });
+    }
+
     // Initialize summary values from current form state
     refreshSummaryTarget();
     refreshDepthUi();
@@ -142,7 +156,8 @@
         url: urlInput.value.trim(),
         depth: (depthFull && depthFull.checked) ? 'full' : 'homepage',
         maxPages: parseInt(maxPagesInput.value, 10) || 1,
-        modules: modules
+        // "cookies" is a UI switch for the Consent check's cookie scan, not a backend module.
+        modules: modules.filter(function (m) { return m !== 'cookies'; })
       };
       var regionSelect = document.getElementById('targetRegionSelect');
       if (regionSelect && regionSelect.value && regionSelect.value !== 'auto') {

@@ -1,0 +1,100 @@
+# ==============================================================================
+# Render Blueprint (free plan): AuditPulse API + Access portal API.
+# Render dashboard -> New -> Blueprint -> pick this repo -> fill the secret
+# values it asks for (marked sync: false) -> Apply.
+#
+# Free plan notes:
+#  * 512 MB RAM; services sleep after 15 min without traffic (first request
+#    then takes ~1 min). Open the site a couple of minutes before a demo.
+#  * Audits run inside the API process (FastAPI BackgroundTasks), so no
+#    Celery worker / Redis is needed here. Scheduled audits and weekly
+#    reminders (Celery beat) are off on this plan.
+# ==============================================================================
+services:
+  - type: web
+    name: auditpulse-api
+    runtime: docker
+    plan: free
+    region: singapore
+    repo: https://github.com/Jeevanks1998/AuditPulse
+    branch: main
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: >-
+      sh -c "alembic upgrade head || echo 'alembic upgrade failed, continuing';
+      exec uvicorn main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: "8000"
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: ACCESS_PORTAL_API_KEY
+        sync: false
+      - key: CORS_ORIGINS_RAW
+        value: https://auditpulse-ala6.vercel.app,https://audit-pulse-access.vercel.app,https://audit-pulse-access-wy4c.vercel.app
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USE_TLS
+        value: "True"
+      - key: SMTP_USERNAME
+        value: mrnobody211990@gmail.com
+      - key: SMTP_FROM_EMAIL
+        value: mrnobody211990@gmail.com
+      - key: SMTP_FROM_NAME
+        value: AuditPulse
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: LOG_TO_FILE
+        value: "false"
+      # Keep the free instance inside 512 MB / reasonable time.
+      - key: CRAWLER_CONCURRENCY
+        value: "2"
+      - key: JOURNEY_MAX_TESTED_INTERACTIONS
+        value: "12"
+      - key: JOURNEY_MAX_TESTS_PER_PAGE
+        value: "5"
+
+  - type: web
+    name: auditpulse-access
+    runtime: python
+    plan: free
+    region: singapore
+    repo: https://github.com/Jeevanks1998/AuditPulse-Access
+    branch: main
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DATABASE_URL
+        sync: false
+      - key: AUDITPULSE_API_KEY
+        sync: false
+      - key: PORTAL_JWT_SECRET
+        sync: false
+      - key: AUDITPULSE_BASE_URL
+        value: https://auditpulse-api.onrender.com/api/v1
+      - key: AUDITPULSE_TIMEOUT_SECONDS
+        value: "60"
+      - key: PORTAL_ACCESS_TOKEN_TTL
+        value: "604800"
+      - key: PORTAL_BASE_URL
+        value: https://auditpulse-access.onrender.com
+      - key: FRONTEND_BASE_URL
+        value: https://audit-pulse-access.vercel.app
+      - key: CORS_ORIGINS_RAW
+        value: https://audit-pulse-access.vercel.app,https://audit-pulse-access-wy4c.vercel.app

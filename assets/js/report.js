@@ -544,7 +544,9 @@
       renderJourney(results[3]);
       renderCookies(results[4]);
       showTabsForModulesRun({ consent: results[1], analytics: results[2], journey: results[3],
-                              cookies: results[4] && results[4].available ? results[4] : null });
+                              // Cookies tab: shown whenever Consent or Journey ran, even with no
+                              // cookie data, so the tab explains why instead of being missing.
+                              cookies: (results[1] || results[3]) ? (results[4] || { available: false }) : null });
       document.title = 'Audit Report — ' + U.hostnameOf(currentReport.url) + ' — AuditPulse';
     }).catch(function (err) {
       window.Notifications.error('Couldn\'t load report', err.message || 'This report may not exist or may still be running.');

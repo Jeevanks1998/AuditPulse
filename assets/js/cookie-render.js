@@ -99,7 +99,10 @@
       content.style.display = 'none';
       if (empty) {
         empty.style.display = '';
-        empty.textContent = (inv && inv.headline) || 'No cookie data for this audit. Run an audit with the Consent or Journey Map module to scan cookies.';
+        empty.textContent = 'No cookie data was recorded for this audit. Cookies are captured by the Consent check ' +
+          '(before consent, after Reject, after Accept) and by the Journey Map on every page it visits. ' +
+          'Audits run before the Cookie Scanner was added, or where the website blocked the audit browser, have none. ' +
+          'Run a new audit with Consent (and Journey Map for all pages) to see the full cookie list.';
       }
       if (chip) chip.textContent = 'Not scanned';
       return inv || null;

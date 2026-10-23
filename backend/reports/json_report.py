@@ -31,6 +31,7 @@ def to_json_report(payload: ReportPayload) -> Dict[str, Any]:
         "consent": payload.consent,
         "consent_view": payload.consent_view,
         "journey_view": payload.journey_view,
+        "cookie_inventory": payload.cookie_inventory,
         "analytics": payload.analytics,
         "cookie_evidence": payload.cookie_evidence,
         "network_evidence": payload.network_evidence,

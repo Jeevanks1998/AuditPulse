@@ -78,6 +78,14 @@ def build_evidence_zip(payload: ReportPayload, *, pdf_bytes: bytes = None) -> by
             _dump("scan-pipeline.json", {"pipeline": view.get("pipeline", []), "legs": view.get("legs", []),
                                          "scan_id": (view.get("status") or {}).get("scan_id")})
 
+        # Cookie Scanner: full inventory as JSON + CSV.
+        if payload.cookie_inventory:
+            from reports.cookie_view import inventory_csv
+
+            zf.writestr("cookies/cookie-inventory.json",
+                        json.dumps(payload.cookie_inventory, indent=2, default=str))
+            zf.writestr("cookies/cookie-inventory.csv", inventory_csv(payload.cookie_inventory))
+
         # Customer Journey evidence (requirement §16):
         #   evidence/journey/<page>/interaction_NNN_{before,highlighted,after}.png
         jv = payload.journey_view

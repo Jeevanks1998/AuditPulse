@@ -91,6 +91,7 @@ MODULE_COLORS = {
     "consent": (colors.HexColor("#7C3AED"), colors.HexColor("#F4EBFF")),
     "analytics": (colors.HexColor("#2563EB"), colors.HexColor("#EAF2FF")),
     "journey": (colors.HexColor("#0D9488"), colors.HexColor("#E6F6F4")),
+    "cookies": (colors.HexColor("#B45309"), colors.HexColor("#FEF3E2")),
 }
 MODULE_LABELS = {"consent": "Consent", "analytics": "Analytics", "journey": "Journey Map"}
 

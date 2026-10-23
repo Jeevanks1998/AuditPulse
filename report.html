@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="assets/css/report.css">
 <link rel="stylesheet" href="assets/css/ANALYTICS_CONSENT_PHASE5.css">
 <link rel="stylesheet" href="assets/css/journey.css">
+<link rel="stylesheet" href="assets/css/cookies.css">
 <link rel="stylesheet" href="assets/css/responsive.css">
 <link rel="stylesheet" href="assets/css/theme.css">
 </head>
@@ -207,6 +208,7 @@
             <button class="rp-tab" type="button" role="tab" data-tab="consent" aria-selected="false">Consent <span class="rp-tab__score" id="tabScore-consent">–</span></button>
             <button class="rp-tab" type="button" role="tab" data-tab="analytics" aria-selected="false">Analytics <span class="rp-tab__score" id="tabScore-analytics">–</span></button>
             <button class="rp-tab" type="button" role="tab" data-tab="journey" aria-selected="false">Journey Map <span class="rp-tab__score" id="tabScore-journey">–</span></button>
+            <button class="rp-tab" type="button" role="tab" data-tab="cookies" aria-selected="false" hidden>Cookies <span class="rp-tab__score" id="tabScore-cookies">–</span></button>
           </div>
         </div>
 
@@ -451,6 +453,23 @@
             </div>
           </details>
 
+          <!-- Cookie Scanner (reports/cookie_view.py) -->
+          <details class="module-accordion" id="cookies">
+            <summary class="module-accordion__summary">
+              <span class="module-accordion__name">Cookie Scanner</span>
+              <span class="module-accordion__meta">
+                <span class="score-chip" id="cookiesCountChip">–</span>
+                <svg class="module-accordion__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </span>
+            </summary>
+            <div class="module-accordion__body">
+              <div class="card card__pad">
+                <div id="cookiesEmpty" class="text-sm" style="display:none; color: var(--text-tertiary);"></div>
+                <div id="cookiesContent" class="ck" style="display:none;"></div>
+              </div>
+            </div>
+          </details>
+
         </div>
       </section>
 
@@ -522,6 +541,7 @@
      email-reports.html both open. Must load before report.js. -->
 <script src="assets/js/email-composer.js"></script>
 <script src="assets/js/journey-render.js"></script>
+<script src="assets/js/cookie-render.js"></script>
 <script src="assets/js/report.js"></script>
 
 <div style="text-align:center; padding: 18px 16px; font-size: 13px; color: var(--text-tertiary, #94A3B8); border-top: 1px solid var(--border, #E2E8F0);"><strong>Designed by Jeevan K S</strong></div>

@@ -328,6 +328,36 @@ class PageScan:
     lang: Optional[str] = None
     analytics_on_load: List[str] = field(default_factory=list)   # vendor:event seen while this page loaded
     screenshot: Optional[str] = None
+    # Cookies that first appeared while this page loaded (Cookie Scanner).
+    cookies_set: List[dict] = field(default_factory=list)
+
+
+def cookie_record(c: dict) -> dict:
+    """A Playwright cookie as stored for the Cookie Scanner (no values kept)."""
+    exp = c.get("expires")
+    return {
+        "name": c.get("name") or "", "domain": (c.get("domain") or "").lstrip("."), "path": c.get("path") or "/",
+        "expires": float(exp) if isinstance(exp, (int, float)) and exp > 0 else None,
+        "secure": bool(c.get("secure")), "http_only": bool(c.get("httpOnly")),
+        "same_site": c.get("sameSite") or None,
+        "size": len(c.get("name") or "") + len(c.get("value") or ""),
+    }
+
+
+async def _new_cookies(context, seen: Set[tuple]) -> List[dict]:
+    """Cookies in the browser now that weren't there after the previous page."""
+    try:
+        raw = await context.cookies()
+    except Exception:  # noqa: BLE001 — context gone / relaunching
+        return []
+    out = []
+    for c in raw:
+        key = (c.get("name"), (c.get("domain") or "").lstrip("."), c.get("path") or "/")
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(cookie_record(c))
+    return out[:300]
 
 
 @dataclass
@@ -530,6 +560,7 @@ async def scan_site(
         first = True
         pages_on_tab = 0
         scanned_final: Set[str] = set()
+        seen_cookies: Set[tuple] = set()
         while queue and len(result.pages) < limit:
             if deadline is not None and time.monotonic() > deadline:
                 logger.info(f"journey: scan time budget reached after {len(result.pages)} page(s)")
@@ -617,6 +648,7 @@ async def scan_site(
                         label = (raw.get("accessible_name") or raw.get("text") or "")[:80]
                         queue.append((nd, level + 1, url, label, raw.get("id")))
                 scan.links_out = outs[:200]
+                scan.cookies_set = await _new_cookies(_ctx(), seen_cookies)
                 if capture is not None:
                     scan.analytics_on_load = sorted({f"{e.vendor}:{e.event}" for e in capture.between(load_mark)
                                                      if e.event})[:20]

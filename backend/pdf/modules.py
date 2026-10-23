@@ -695,3 +695,110 @@ def _journey_screenshots(jv: dict, broken: List[dict], gaps: List[dict]) -> List
                               "shown here. Run the audit again to capture fresh ones."))
     return story
 
+
+
+# --------------------------------------------------------------------------
+# Cookie Scanner
+# --------------------------------------------------------------------------
+_COOKIE_ROWS = 40
+
+
+def _yes_no(v) -> str:
+    return "Yes" if v is True else ("No" if v is False else "—")
+
+
+def build_cookie_section(payload: ReportPayload) -> List[Flowable]:
+    inv = payload.cookie_inventory or {}
+    if not inv.get("available"):
+        return []
+    s = inv.get("summary") or {}
+    story: List[Flowable] = [module_banner(
+        "cookies", "Cookie scanner", None,
+        "Every cookie the site set while we browsed it: what it is for, who sets it, how long it lasts "
+        "and whether it appeared before the visitor chose.",
+        stat=str(s.get("total", 0)), stat_label="cookies found")]
+    story.append(Spacer(1, 5 * mm))
+
+    def tile(label, value, sub, state):
+        return {"label": label, "value": value, "sub": sub, "state": state}
+
+    states = inv.get("states_tested") or []
+    tiles = [
+        tile("First / third party", f"{s.get('first_party', 0)} / {s.get('third_party', 0)}",
+             "Third-party cookies are set by other companies' domains.", "info"),
+        tile("Before consent", f"{s.get('before_consent_required', 0)} tracking",
+             "Analytics or marketing cookies set before the visitor chose.",
+             ("fail" if s.get("before_consent_required") else "pass") if "before_consent" in states else "not_tested"),
+        tile("After Reject", f"{s.get('after_reject_required', 0)} tracking",
+             "Analytics or marketing cookies still present after Reject.",
+             ("fail" if s.get("after_reject_required") else "pass") if "after_reject" in states else "not_tested"),
+        tile("Cookies with issues", str(s.get("with_issues", 0)), "Consent, lifetime or security problems.",
+             "fail" if s.get("with_issues") else "pass"),
+        tile("Unknown cookies", str((s.get("by_category") or {}).get("unknown", 0)),
+             "Not recognised: check what they are for.", "info" if s.get("needs_review") else "pass"),
+        tile("Pages scanned", str(s.get("pages_scanned", 0)),
+             "Homepage only" if s.get("pages_scanned", 0) <= 1 else "Journey Map pages", "neutral"),
+    ]
+    story.append(_check_tiles(tiles))
+    if inv.get("headline"):
+        story.append(Paragraph(esc(inv["headline"]), STYLES["Body"]))
+    for n in inv.get("notes") or []:
+        story.append(note_box(esc(n)))
+        story.append(Spacer(1, 2 * mm))
+
+    by_cat = s.get("by_category") or {}
+    cat_rows = [[Paragraph(esc(lbl), STYLES["TDBold"]), str(by_cat.get(k, 0)), why] for k, lbl, why in (
+        ("marketing", "Marketing / advertising", "Needs consent"),
+        ("analytics", "Analytics", "Needs consent"),
+        ("functional", "Functional", "Preferences the visitor chose"),
+        ("consent_management", "Consent management", "Stores the visitor's choice"),
+        ("essential", "Strictly necessary", "Allowed without consent"),
+        ("unknown", "Unknown", "Needs review"),
+    ) if by_cat.get(k)]
+    if cat_rows:
+        story += _h2("Cookies by category")
+        story.append(data_table(["Category", "Cookies", "Meaning"], cat_rows, [50 * mm, 20 * mm, W - 70 * mm],
+                                align_right=(1,)))
+
+    cookies = inv.get("cookies") or []
+    issues = [c for c in cookies if c.get("issues")]
+    if issues:
+        story += _h2("Cookies that need fixing", "Worst first. Each row says what is wrong in plain words.")
+        rows = []
+        for c in issues[:_COOKIE_ROWS]:
+            rows.append([Paragraph(f"<b>{esc(c['name'])}</b><br/>{esc(c['domain'])}", STYLES["TD"]),
+                         c.get("category_label") or "",
+                         Paragraph(esc("; ".join(c["issues"])), STYLES["TD"])])
+        story.append(data_table(["Cookie", "Category", "Problem"], rows, [52 * mm, 34 * mm, W - 86 * mm]))
+        story += _more_note(min(len(issues), _COOKIE_ROWS), len(issues), "cookies with issues")
+
+    if cookies:
+        story += _h2("Full cookie list",
+                     "Seen: B = before consent, R = after Reject, A = after Accept, J = while browsing. "
+                     "The CSV export in the report has every column.")
+        rows = []
+        for c in cookies[:_COOKIE_ROWS * 2]:
+            seen = c.get("seen") or {}
+            when = " ".join(k for k, st in (("B", "before_consent"), ("R", "after_reject"),
+                                            ("A", "after_accept"), ("J", "journey")) if seen.get(st)) or "—"
+            if c.get("detail_missing"):
+                flags = "Not recorded"
+            else:
+                flags = ", ".join([x for x, on in (("Secure", c.get("secure")), ("HttpOnly", c.get("http_only"))) if on]
+                                  + ([f"SameSite={c['same_site']}"] if c.get("same_site") else [])) or "None set"
+            rows.append([Paragraph(f"<b>{esc(c['name'])}</b><br/>{esc(c['domain'])}", STYLES["TD"]),
+                         c.get("party", "").title(), c.get("category_label") or "", c.get("lifetime_label") or "",
+                         flags.strip(), when])
+        story.append(data_table(["Cookie", "Party", "Category", "Lifetime", "Settings", "Seen"], rows,
+                                [50 * mm, 15 * mm, 30 * mm, 21 * mm, 38 * mm, W - 154 * mm]))
+        story += _more_note(min(len(cookies), _COOKIE_ROWS * 2), len(cookies), "cookies")
+
+    stor = inv.get("storage") or []
+    if stor:
+        story += _h2("Browser storage", "Keys written to localStorage / sessionStorage on the homepage.")
+        rows = [[Paragraph(esc(x["key"]), STYLES["TD"]), x["type"],
+                 ", ".join((inv.get("state_labels") or {}).get(st, st) for st in x.get("states") or [])]
+                for x in stor[:MAX_ROWS * 2]]
+        story.append(data_table(["Key", "Type", "Seen"], rows, [70 * mm, 30 * mm, W - 100 * mm]))
+        story += _more_note(min(len(stor), MAX_ROWS * 2), len(stor), "storage keys")
+    return story

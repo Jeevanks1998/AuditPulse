@@ -274,7 +274,7 @@ async def run_customer_journey(
         "parent": p.parent_url, "via": p.via_label, "status": p.status, "error": p.error,
         "elements": p.element_count, "forms": p.form_count, "screenshot": p.screenshot,
         "analytics_on_load": p.analytics_on_load, "loaded": p.error is None and (p.status or 200) < 400,
-        "links_out": len(p.links_out),
+        "links_out": len(p.links_out), "cookies_set": p.cookies_set,
     } for p in scan.pages]
     all_forms = [asdict(f) for f in scan.forms]
     forms_by_id = {f["id"]: f for f in all_forms}

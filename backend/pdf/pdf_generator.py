@@ -32,7 +32,7 @@ from pdf.appendix import build_appendix_flowables
 from pdf.components import hostname
 from pdf.cover import BAND_HEIGHT, build_cover_flowables, draw_cover_band, draw_cover_footer
 from pdf.issues import group_findings
-from pdf.modules import build_analytics_section, build_consent_section, build_journey_section
+from pdf.modules import build_analytics_section, build_consent_section, build_cookie_section, build_journey_section
 from pdf.overview import TOP_N, build_overview_flowables
 from pdf.theme import BORDER, FONT_BODY, FONT_SEMIBOLD, PAGE_MARGIN_MM, PDF_LAYOUT_VERSION, TEXT_PRIMARY, TEXT_TERTIARY
 from reports.generator import ReportPayload
@@ -42,7 +42,8 @@ _CONTENT = "content"
 # Section order follows the module order on the web report.
 _MODULE_SECTIONS = (("consent", build_consent_section),
                     ("analytics", build_analytics_section),
-                    ("journey", build_journey_section))
+                    ("journey", build_journey_section),
+                    ("cookies", build_cookie_section))
 
 
 def generate_pdf_report(payload: ReportPayload, screenshot_path: Optional[str] = None) -> bytes:

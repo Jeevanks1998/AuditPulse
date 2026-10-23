@@ -418,7 +418,8 @@ def section_intro(kicker: str, title: str, lead: Optional[str] = None) -> List[F
     return out
 
 
-def module_banner(module: str, title: str, score: Optional[int], lead: str, width: float = CONTENT_WIDTH) -> Table:
+def module_banner(module: str, title: str, score: Optional[int], lead: str, width: float = CONTENT_WIDTH,
+                  stat: Optional[str] = None, stat_label: Optional[str] = None) -> Table:
     """Header block that opens a module section: icon, title, one-line
     explanation, and the module score as a big coloured number."""
     fg, bg = module_color(module)
@@ -427,7 +428,13 @@ def module_banner(module: str, title: str, score: Optional[int], lead: str, widt
         Paragraph(esc(title), STYLES["H1"].clone("mb_h", spaceAfter=1)),
         Paragraph(lead, STYLES["BodyMuted"].clone("mb_l", spaceAfter=0)),
     ]
-    if score is None:
+    if stat is not None:
+        score_cell = [
+            Paragraph(f'<font color="{hexstr(fg)}">{esc(stat)}</font>',
+                      STYLES["Stat"].clone("mb_s2", fontSize=24, leading=26, alignment=2)),
+            Paragraph(esc(stat_label or ""), STYLES["Small"].clone("mb_sl", alignment=2)),
+        ]
+    elif score is None:
         score_cell = Paragraph("Not scored", STYLES["Small"])
     else:
         score_cell = [

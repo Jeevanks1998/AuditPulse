@@ -526,7 +526,8 @@
       }),
       window.Api.audits.getConsent(auditId).catch(function () { return null; }),
       window.Api.audits.getAnalytics(auditId).catch(function () { return null; }),
-      window.Api.audits.getJourney(auditId).catch(function () { return null; })
+      window.Api.audits.getJourney(auditId).catch(function () { return null; }),
+      window.Api.audits.getCookies ? window.Api.audits.getCookies(auditId).catch(function () { return null; }) : null
     ]).then(function (results) {
       currentReport = results[0];
       renderBanner(currentReport);
@@ -541,7 +542,9 @@
       renderConsent(results[1]);
       renderAnalytics(results[2]);
       renderJourney(results[3]);
-      showTabsForModulesRun({ consent: results[1], analytics: results[2], journey: results[3] });
+      renderCookies(results[4]);
+      showTabsForModulesRun({ consent: results[1], analytics: results[2], journey: results[3],
+                              cookies: results[4] && results[4].available ? results[4] : null });
       document.title = 'Audit Report — ' + U.hostnameOf(currentReport.url) + ' — AuditPulse';
     }).catch(function (err) {
       window.Notifications.error('Couldn\'t load report', err.message || 'This report may not exist or may still be running.');
@@ -590,6 +593,29 @@
       }
     }
 
+    function renderCookies(inv) {
+      if (!window.CookieRender) return;
+      window.CookieRender.render(inv, { content: 'cookiesContent', empty: 'cookiesEmpty', chip: 'cookiesCountChip' }, {
+        onExport: function (btn) {
+          window.Loader.setButtonLoading(btn, true);
+          window.Api.audits.exportCookiesCsvBlob(auditId).then(function (blob) {
+            var host = U.hostnameOf(currentReport ? currentReport.url : '').replace(/\./g, '-') || 'site';
+            U.downloadBlob('cookies-' + host + '-audit-' + auditId + '.csv', blob);
+          }).catch(function (err) {
+            window.Notifications.error('Couldn\'t export cookies', err.message || 'Please try again.');
+          }).finally(function () { window.Loader.setButtonLoading(btn, false); });
+        }
+      });
+      var badge = document.getElementById('tabScore-cookies');
+      if (badge) {
+        var n = inv && inv.available ? (inv.summary || {}).total : null;
+        badge.textContent = n == null ? '–' : n;
+        var issues = inv && inv.available ? (inv.summary || {}).with_issues : 0;
+        badge.setAttribute('data-band', issues ? 'bad' : 'good');
+        badge.title = n == null ? '' : n + ' cookies, ' + issues + ' with issues';
+      }
+    }
+
     function renderBanner(report) {
       var host = U.hostnameOf(report.url);
       var favicon = document.getElementById('bannerFavicon');
@@ -626,7 +652,7 @@
 
     var SEV_ORDER = { critical: 0, warning: 1, info: 2 };
     var SEV_LABEL = { critical: 'Critical', warning: 'Warning', info: 'Info' };
-    var DETAIL_TABS = ['consent', 'analytics', 'journey'];
+    var DETAIL_TABS = ['consent', 'analytics', 'journey', 'cookies'];
 
     function bandWord(score) {
       var band = U.scoreBand(score);

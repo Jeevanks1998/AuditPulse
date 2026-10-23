@@ -11,6 +11,7 @@ tests) can reuse them without going through HTTP.
 from typing import List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sqlalchemy import select
@@ -139,6 +140,50 @@ async def audit_journey(
             detail="No journey map scan for this audit — was 'journey' included in its modules?",
         )
     return journey
+
+
+async def _cookie_inventory(audit_id: int, db: AsyncSession, user: User) -> tuple:
+    from reports.cookie_view import build_cookie_inventory
+
+    audit = await db.get(Audit, audit_id)
+    if not audit or audit.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audit not found")
+    consent_row = (await db.execute(select(Consent).where(Consent.audit_id == audit_id))).scalar_one_or_none()
+    journey_row = (await db.execute(select(Journey).where(Journey.audit_id == audit_id))).scalar_one_or_none()
+    consent = ConsentOut.model_validate(consent_row).model_dump(exclude={"report_view"}) if consent_row else None
+    journey = ({"pages": journey_row.pages or [], "started_at": journey_row.started_at}
+               if journey_row else None)
+    return audit, build_cookie_inventory(consent, journey, audit.url)
+
+
+@router.get("/{audit_id}/cookies")
+async def audit_cookies(
+    audit_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Cookie Scanner: every cookie seen (consent states + journey pages), with category,
+    party, lifetime, Secure/HttpOnly/SameSite, the page that set it and plain-language issues."""
+    _audit, inventory = await _cookie_inventory(audit_id, db, current_user)
+    return inventory
+
+
+@router.get("/{audit_id}/cookies.csv")
+async def audit_cookies_csv(
+    audit_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from urllib.parse import urlparse
+
+    from reports.cookie_view import inventory_csv
+
+    audit, inventory = await _cookie_inventory(audit_id, db, current_user)
+    host = (urlparse(audit.url).hostname or "site").replace(".", "-")
+    return Response(
+        content="\ufeff" + inventory_csv(inventory), media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="cookies-{host}-audit-{audit.id}.csv"'},
+    )
 
 
 @router.get("/{audit_id}", response_model=AuditOut)

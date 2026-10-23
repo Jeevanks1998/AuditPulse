@@ -350,7 +350,10 @@ window.Api = (function () {
     getRecent: function () { return get('/audits/recent'); },
     getConsent: function (auditId) { return get('/audits/' + auditId + '/consent'); },
     getAnalytics: function (auditId) { return get('/audits/' + auditId + '/analytics'); },
-    getJourney: function (auditId) { return get('/audits/' + auditId + '/journey'); }
+    getJourney: function (auditId) { return get('/audits/' + auditId + '/journey'); },
+    // Cookie Scanner inventory. raw: keys (cookie names, category ids) stay as sent.
+    getCookies: function (auditId) { return get('/audits/' + auditId + '/cookies', { raw: true }); },
+    exportCookiesCsvBlob: function (auditId) { return getBlob('/audits/' + auditId + '/cookies.csv'); }
   };
 
   /* ------------------------------- reports -------------------------------- */

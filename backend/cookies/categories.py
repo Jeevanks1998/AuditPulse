@@ -227,6 +227,9 @@ _PATTERN_RULES = [
     (re.compile(r"^_sp_(su|enable_dfp|v1_)"), CONSENT_MANAGEMENT, PURPOSE_CONSENT_STORAGE, "Sourcepoint"),
     (re.compile(r"^cookiefirst-"), CONSENT_MANAGEMENT, PURPOSE_CONSENT_STORAGE, "CookieFirst"),
     (re.compile(r"^klaro"), CONSENT_MANAGEMENT, PURPOSE_CONSENT_STORAGE, "Klaro"),
+    (re.compile(r"^_evidon_"), CONSENT_MANAGEMENT, PURPOSE_CONSENT_STORAGE, "Evidon (Crownpeak)"),
+    (re.compile(r"^tc_privacy(_center)?$|^tcpid$"), CONSENT_MANAGEMENT, PURPOSE_CONSENT_STORAGE,
+     "TrustCommander (Commanders Act)"),
 
     # analytics / marketing families
     (re.compile(r"^_ga_[a-z0-9]+$"), ANALYTICS, PURPOSE_MEASUREMENT, "Google Analytics"),

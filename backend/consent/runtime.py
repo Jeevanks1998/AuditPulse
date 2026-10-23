@@ -245,6 +245,14 @@ class CookieSnapshot:
     category: str  # cookies.categories.{ESSENTIAL,FUNCTIONAL,ANALYTICS,MARKETING,CONSENT_MANAGEMENT,UNKNOWN}
     purpose: str = "unknown"
     vendor: Optional[str] = None
+    # Full browser-cookie detail for the Cookie Scanner inventory
+    # (reports.cookie_view). Defaults keep older stored results loadable.
+    path: str = "/"
+    expires: Optional[float] = None   # epoch seconds; None = session cookie
+    secure: bool = False
+    http_only: bool = False
+    same_site: Optional[str] = None
+    size: int = 0
 
 
 @dataclass
@@ -255,6 +263,7 @@ class ConsentStateCapture:
     cookies: List[CookieSnapshot] = field(default_factory=list)
     requests: List[NetworkRequest] = field(default_factory=list)
     error: Optional[str] = None
+    page_url: Optional[str] = None   # the page open when this state was captured
     # localStorage / sessionStorage keys at capture time (evidence that the
     # context started empty and what the page/CMP wrote).
     local_storage_keys: List[str] = field(default_factory=list)
@@ -891,8 +900,13 @@ async def _state(context, page, requests: List[NetworkRequest]) -> ConsentStateC
         local_keys, session_keys = keys[0][:50], keys[1][:50]
     except Exception:  # noqa: BLE001
         pass
+    try:
+        page_url = page.url
+    except Exception:  # noqa: BLE001
+        page_url = None
     return ConsentStateCapture(
         available=True,
+        page_url=page_url,
         cookies=await _snapshot_cookies(context),
         requests=list(requests),
         local_storage_keys=local_keys,
@@ -905,8 +919,13 @@ async def _snapshot_cookies(context) -> List[CookieSnapshot]:
     out = []
     for c in raw:
         cls = classify_cookie(c["name"], c.get("domain"))
+        exp = c.get("expires")
         out.append(CookieSnapshot(name=c["name"], domain=c.get("domain", ""), category=cls.category,
-                                  purpose=cls.purpose, vendor=cls.vendor))
+                                  purpose=cls.purpose, vendor=cls.vendor, path=c.get("path") or "/",
+                                  expires=float(exp) if isinstance(exp, (int, float)) and exp > 0 else None,
+                                  secure=bool(c.get("secure")), http_only=bool(c.get("httpOnly")),
+                                  same_site=c.get("sameSite") or None,
+                                  size=len(c.get("name") or "") + len(c.get("value") or "")))
     return out
 
 

@@ -30,6 +30,7 @@ from ai.business_impact import generate_business_impact
 from ai.executive_summary import generate_executive_summary
 from ai.priority import PrioritizedFinding, top_priorities
 from reports.consent_view import build_consent_view
+from reports.cookie_view import build_cookie_inventory
 from reports.journey_view import build_journey_view
 from schemas.report import MODULE_LABELS, ScoreCell
 
@@ -81,6 +82,10 @@ class ReportPayload:
     # model (reports.journey_view), None when the module didn't run.
     journey: Optional[dict] = None
     journey_view: Optional[dict] = None
+
+    # Cookie Scanner (reports.cookie_view): every cookie seen across the
+    # consent states and the journey's pages. None when neither ran.
+    cookie_inventory: Optional[dict] = None
 
     # Flattened from ConsentOut's four *_screenshot_url computed fields —
     # see _build_screenshots below.
@@ -253,6 +258,7 @@ async def build_report_payload(
         journey=journey,
         journey_view=(journey.get("report_view") if journey and journey.get("report_view")
                       else build_journey_view(journey)),
+        cookie_inventory=(build_cookie_inventory(consent, journey, url) if (consent or journey) else None),
         screenshots=_build_screenshots(consent),
         severity_counts=_severity_counts(findings),
         weakest_module=_weakest_module(score_grid),

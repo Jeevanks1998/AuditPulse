@@ -229,6 +229,7 @@ async def analyze_site(
     enable_runtime_checks: bool = False,
     target_region: Optional[str] = None,
     scan_id: Optional[str] = None,
+    cookie_scan_urls: Optional[List[str]] = None,
 ) -> ConsentAuditResult:
     """
     The consent pipeline — a fresh, dynamic scan every call (nothing from a
@@ -308,7 +309,7 @@ async def analyze_site(
     # 6–7. Runtime + Accept/Reject/Preferences states --------------------------
     runtime_result: Optional[ConsentRuntimeResult] = None
     if enable_runtime_checks:
-        runtime_result = await run_consent_runtime(url, scan_id=scan_id)
+        runtime_result = await run_consent_runtime(url, scan_id=scan_id, browse_urls=cookie_scan_urls)
         step(6, "Run runtime", "done" if runtime_result.available else "not_tested",
              f"{runtime_result.fresh_contexts} fresh browser context(s); banner "
              + ("detected" if runtime_result.banner_detected else "not detected")

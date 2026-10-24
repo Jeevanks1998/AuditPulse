@@ -399,6 +399,11 @@ class ConsentRuntimeResult:
     # JSON-friendly per-category request summaries for the report.
     network_summary: Dict[str, dict] = field(default_factory=dict)
 
+    # Cookie Scanner: after Accept, the same browser (consent given) visits
+    # other pages of the site; each entry is {url, cookies_set: [...]} with
+    # the cookies that first appeared on that page (reports.cookie_view).
+    site_pages: List[dict] = field(default_factory=list)
+
     tested_at: Optional[str] = None
 
     def buttons_detection(self) -> ButtonsDetection:
@@ -550,7 +555,8 @@ async def _click_control(page, handles: Dict[str, object], control: ConsentContr
 # Flow
 # ---------------------------------------------------------------------------
 
-async def run_consent_runtime(url: str, scan_id: Optional[str] = None) -> ConsentRuntimeResult:
+async def run_consent_runtime(url: str, scan_id: Optional[str] = None,
+                              browse_urls: Optional[List[str]] = None) -> ConsentRuntimeResult:
     """
     A fresh, dynamic consent scan. Nothing is reused from any earlier scan:
     every leg opens a brand-new browser context (no cookies, no local/session
@@ -595,7 +601,7 @@ async def run_consent_runtime(url: str, scan_id: Optional[str] = None) -> Consen
                         result.after_reject = ConsentStateCapture(available=False, error=str(exc))
 
                 try:
-                    await _run_leg_two(browser, url, hostname, result)
+                    await _run_leg_two(browser, url, hostname, result, browse_urls or [])
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(f"consent/runtime.py: leg 2 (accept) failed for {url}: {exc}")
                     result.leg_log.append(f"leg 2 failed: {exc}")
@@ -827,7 +833,8 @@ async def _check_withdrawal(page, result: ConsentRuntimeResult) -> None:
     result.leg_log.append(f"leg 2: '{result.withdrawal_control_label}' was clicked but no cookie settings appeared")
 
 
-async def _run_leg_two(browser, url: str, hostname: str, result: ConsentRuntimeResult) -> None:
+async def _run_leg_two(browser, url: str, hostname: str, result: ConsentRuntimeResult,
+                       browse_urls: Optional[List[str]] = None) -> None:
     context = await _fresh_context(browser, result)
     try:
         page = await context.new_page()
@@ -883,12 +890,75 @@ async def _run_leg_two(browser, url: str, hostname: str, result: ConsentRuntimeR
         result.after_accept = await _state(context, page, sink[mark:])
         result.accept_screenshot = await _capture(page, url, "consent_accept", result.scan_id)
         result.leg_log.append(f"leg 2: fresh context, clicked '{accept.label}' ({accept.action})")
+        # Tags that fire late (timers, scroll triggers, A/B tools) set cookies
+        # after the first capture: scroll, wait, and take the full jar again.
+        try:
+            await _scroll_and_settle(page)
+            later = await _snapshot_cookies(context)
+            known = {(c.name, c.domain, c.path) for c in result.after_accept.cookies}
+            result.after_accept.cookies += [c for c in later if (c.name, c.domain, c.path) not in known]
+        except Exception as exc:  # noqa: BLE001
+            result.leg_log.append(f"leg 2: late-cookie capture failed: {str(exc)[:120]}")
         try:
             await _check_withdrawal(page, result)
         except Exception as exc:  # noqa: BLE001 — never lose the accept evidence over this
             result.leg_log.append(f"leg 2: withdrawal check failed: {str(exc)[:120]}")
+        if browse_urls:
+            try:
+                await _browse_for_cookies(context, page, browse_urls, result)
+            except Exception as exc:  # noqa: BLE001 — the homepage evidence above stands on its own
+                result.leg_log.append(f"leg 2: cookie browse failed: {str(exc)[:120]}")
     finally:
         await context.close()
+
+
+BROWSE_PAGE_SETTLE_MS = 2_500
+BROWSE_BUDGET_S = 100
+
+
+async def _scroll_and_settle(page) -> None:
+    """Scroll through the page (lazy/scroll-triggered tags) and wait for late timers."""
+    try:
+        await page.evaluate(
+            "async () => { const h = document.body ? document.body.scrollHeight : 0;"
+            " for (let y = 0; y < h; y += Math.max(400, h / 6)) { window.scrollTo(0, y);"
+            " await new Promise(r => setTimeout(r, 250)); } window.scrollTo(0, 0); }")
+    except Exception:  # noqa: BLE001
+        pass
+    await page.wait_for_timeout(3_000)
+
+
+async def _browse_for_cookies(context, page, urls: List[str], result: ConsentRuntimeResult) -> None:
+    """Visit other pages with consent given; record the cookies each page adds."""
+    import time as _time
+
+    seen = {(c.name, c.domain, c.path) for c in result.after_accept.cookies}
+    seen |= {(c.name, c.domain, c.path) for c in result.after_reject.cookies}
+    started = _time.monotonic()
+    visited = 0
+    for target in urls:
+        if _time.monotonic() - started > BROWSE_BUDGET_S:
+            result.leg_log.append(f"cookie browse: time budget reached after {visited} page(s)")
+            break
+        try:
+            await page.goto(target, wait_until="load", timeout=NAVIGATION_TIMEOUT_MS)
+            await page.wait_for_timeout(BROWSE_PAGE_SETTLE_MS)
+            await _scroll_and_settle(page)
+        except Exception as exc:  # noqa: BLE001 — one slow page never stops the sweep
+            result.site_pages.append({"url": target, "error": str(exc)[:160], "cookies_set": []})
+            continue
+        visited += 1
+        new = []
+        for c in await _snapshot_cookies(context):
+            key = (c.name, c.domain, c.path)
+            if key in seen:
+                continue
+            seen.add(key)
+            new.append({"name": c.name, "domain": c.domain, "path": c.path, "expires": c.expires,
+                        "secure": c.secure, "http_only": c.http_only, "same_site": c.same_site,
+                        "size": c.size})
+        result.site_pages.append({"url": page.url or target, "cookies_set": new})
+    result.leg_log.append(f"cookie browse: {visited} page(s) visited with consent accepted")
 
 
 async def _state(context, page, requests: List[NetworkRequest]) -> ConsentStateCapture:

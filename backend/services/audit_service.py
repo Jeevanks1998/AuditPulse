@@ -507,6 +507,38 @@ async def _advance_step(db: AsyncSession, audit: Audit, step_id: str) -> None:
 
 
 
+_SKIP_EXT = (".pdf", ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".zip", ".doc", ".docx", ".xls",
+             ".xlsx", ".ppt", ".pptx", ".mp4", ".mp3", ".ics", ".xml", ".json", ".css", ".js")
+
+
+def _cookie_scan_urls(start_url: str, page, limit: int = 15) -> list:
+    """Same-site pages linked from the homepage, in page order, de-duplicated."""
+    from urllib.parse import urldefrag, urljoin
+
+    host = (urlparse(start_url).hostname or "").lower()
+    base = host[4:] if host.startswith("www.") else host
+    out, seen = [], {start_url.rstrip("/")}
+    for a in (getattr(page, "anchor_tags", None) or []):
+        href = (a.get("href") or "").strip()
+        if not href or href.startswith(("mailto:", "tel:", "javascript:", "#")):
+            continue
+        url = urldefrag(urljoin(start_url, href))[0]
+        p = urlparse(url)
+        h = (p.hostname or "").lower()
+        if p.scheme not in ("http", "https") or not (h == base or h.endswith("." + base)):
+            continue
+        if p.path.lower().endswith(_SKIP_EXT):
+            continue
+        key = url.rstrip("/")
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(url)
+        if len(out) >= limit:
+            break
+    return out
+
+
 async def _run_consent_checks(
     audit: Audit, page: ParsedPage, response: httpx.Response, hostname: Optional[str]
 ) -> tuple:
@@ -538,6 +570,11 @@ async def _run_consent_checks(
         # network capture, banner detection, control inventory, region
         # detection and screenshots — nothing from a previous scan is reused.
         scan_id = f"a{audit.id}-{consent_module.new_scan_id()}"
+        # Cookie Scanner: for a full-site audit, the consent browser (with
+        # Accept clicked) also visits up to 15 of the site's own pages so
+        # cookies set beyond the homepage are captured too.
+        cookie_scan_urls = (_cookie_scan_urls(audit.url, page, limit=min(15, int(audit.max_pages or 15)))
+                            if (audit.depth or "homepage") == "full" else [])
         result = await asyncio.wait_for(consent_module.analyze_site(
             audit.url,
             page,
@@ -553,6 +590,7 @@ async def _run_consent_checks(
             target_region=(getattr(audit, "target_region", None)
                            or getattr(settings, "CONSENT_TARGET_REGION", None) or None),
             scan_id=scan_id,
+            cookie_scan_urls=cookie_scan_urls,
         ), timeout=int(getattr(settings, "MODULE_HARD_TIMEOUT_S", 300)))
         logger.info(
             f"_run_consent_checks: fresh consent scan {scan_id} for {audit.url} — region "

@@ -50,7 +50,7 @@ STATE_LABELS = {
     "before_consent": "Before consent",
     "after_reject": "After Reject",
     "after_accept": "After Accept",
-    "journey": "While browsing (consent accepted)",
+    "journey": "Other pages (consent accepted)",
     "server": "Server response (homepage)",
 }
 CATEGORY_ORDER = (MARKETING, ANALYTICS, UNKNOWN, FUNCTIONAL, CONSENT_MANAGEMENT, ESSENTIAL)
@@ -199,6 +199,16 @@ def build_cookie_inventory(consent: Optional[dict], journey: Optional[dict], url
                     if state not in s["states"]:
                         s["states"].append(state)
 
+    # --- Cookie Scanner sweep: other pages visited after Accept ------------
+    site_pages = [p for p in (rr.get("site_pages") or []) if not p.get("error")] if consent_ran else []
+    if site_pages:
+        tested_states.add("journey")
+        if "site" not in sources:
+            sources.append("site")
+        for p in site_pages:
+            for c in p.get("cookies_set") or []:
+                add(c, "journey", p.get("url"), consent_observed)
+
     # --- Customer Journey: page that first set each cookie ----------------
     j_pages = (journey or {}).get("pages") or []
     journey_observed = _epoch((journey or {}).get("started_at"))
@@ -236,16 +246,20 @@ def build_cookie_inventory(consent: Optional[dict], journey: Optional[dict], url
     by_cat = {cat: 0 for cat in CATEGORIES}
     for c in cookies:
         by_cat[c["category"]] = by_cat.get(c["category"], 0) + 1
-    pages_scanned = len(journey_pages_with_data) if journey_pages_with_data else (1 if consent_ran else 0)
+    page_urls = {url.rstrip("/")} if consent_ran else set()
+    page_urls |= {(p.get("url") or "").rstrip("/") for p in site_pages}
+    page_urls |= {(p.get("url") or "").rstrip("/") for p in journey_pages_with_data}
+    page_urls.discard("")
+    pages_scanned = len(page_urls)
 
     if not consent_ran and not journey_pages_with_data:
         if (consent or {}).get("runtime_result") is not None or consent:
             notes.append("The live browser check could not run for this audit, so only cookies sent in the "
                          "homepage's server response are listed.")
-    if consent_ran and not journey_pages_with_data:
-        notes.append("Only the homepage was checked. Include the Journey Map module to scan cookies on "
-                     "every page the crawler visits.")
-    if any(c["detail_missing"] for c in cookies):
+    if consent_ran and not journey_pages_with_data and not site_pages:
+        notes.append("Only the homepage was checked. Run the audit with \"Entire website\" to scan cookies "
+                     "on the site's other pages too.")
+    if any(c["detail_missing"] and c["first_seen_state"] != "server" for c in cookies):
         notes.append("Some cookies were recorded by an earlier version of AuditPulse without expiry and "
                      "security settings. Run the audit again for full detail.")
 

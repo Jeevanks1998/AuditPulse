@@ -144,3 +144,41 @@ def test_cmp_cookies_recognised():
     from cookies.categories import classify_cookie
     assert classify_cookie("_evidon_consent_cookie").category == "consent_management"
     assert classify_cookie("TC_PRIVACY").category == "consent_management"
+
+
+def test_site_pages_from_consent_sweep_count_as_other_pages():
+    consent = _consent([_ck("JSESSIONID", "www.example.ie", http_only=True)], [], [_ck("_ga", "example.ie", days=300)])
+    consent["runtime_result"]["site_pages"] = [
+        {"url": "https://www.example.ie/car", "cookies_set": [_ck("_fbp", "example.ie", days=90)]},
+        {"url": "https://www.example.ie/home", "cookies_set": []},
+        {"url": "https://www.example.ie/broken", "error": "timeout", "cookies_set": []},
+    ]
+    inv = build_cookie_inventory(consent, None, "https://www.example.ie/")
+    by = {c["name"]: c for c in inv["cookies"]}
+    assert by["_fbp"]["seen"]["journey"] is True and by["_fbp"]["set_by_page"] == "https://www.example.ie/car"
+    assert by["_ga"]["seen"]["journey"] is False
+    assert inv["summary"]["pages_scanned"] == 3          # homepage + 2 visited (the failed one excluded)
+    assert not any("Only the homepage" in n for n in inv["notes"])
+
+
+def test_server_only_cookie_does_not_trigger_old_version_note():
+    consent = _consent([_ck("TCPID", "example.ie", days=300)], [], [])
+    consent["cookies_detected"] = [{"name": "AKTIONSCODE", "domain": "www.example.ie", "category": "unknown",
+                                    "expires": "session"}]
+    inv = build_cookie_inventory(consent, None, "https://www.example.ie/")
+    assert not any("earlier version" in n for n in inv["notes"])
+
+
+def test_cookie_scan_urls_same_site_only():
+    from bs4 import BeautifulSoup
+    from services.audit_service import _cookie_scan_urls
+
+    html = ('<a href="/car">Car</a><a href="/car#top">dup</a><a href="https://shop.example.ie/x">sub</a>'
+            '<a href="https://other.com/">ext</a><a href="/doc.pdf">pdf</a><a href="mailto:a@b.c">m</a>'
+            '<a href="https://www.example.ie/">home</a><a href="/home">home2</a>')
+
+    class P:
+        anchor_tags = BeautifulSoup(html, "html.parser").find_all("a")
+
+    urls = _cookie_scan_urls("https://www.example.ie/", P(), limit=5)
+    assert urls == ["https://www.example.ie/car", "https://shop.example.ie/x", "https://www.example.ie/home"]

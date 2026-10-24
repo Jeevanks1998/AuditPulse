@@ -912,11 +912,16 @@ async def _run_leg_two(browser, url: str, hostname: str, result: ConsentRuntimeR
         await context.close()
 
 
-BROWSE_PAGE_SETTLE_MS = 2_500
-BROWSE_BUDGET_S = 100
+BROWSE_PAGE_SETTLE_MS = 1_500
+BROWSE_SCROLL_SETTLE_MS = 1_500
+BROWSE_NAV_TIMEOUT_MS = 20_000
+# Enough for ~15 pages (each ~8-12 s). audit_service adds this to the consent
+# module's hard timeout when the sweep runs, so the sweep never costs the
+# homepage evidence.
+BROWSE_BUDGET_S = 210
 
 
-async def _scroll_and_settle(page) -> None:
+async def _scroll_and_settle(page, settle_ms: int = 3_000) -> None:
     """Scroll through the page (lazy/scroll-triggered tags) and wait for late timers."""
     try:
         await page.evaluate(
@@ -925,7 +930,7 @@ async def _scroll_and_settle(page) -> None:
             " await new Promise(r => setTimeout(r, 250)); } window.scrollTo(0, 0); }")
     except Exception:  # noqa: BLE001
         pass
-    await page.wait_for_timeout(3_000)
+    await page.wait_for_timeout(settle_ms)
 
 
 async def _browse_for_cookies(context, page, urls: List[str], result: ConsentRuntimeResult) -> None:
@@ -941,9 +946,13 @@ async def _browse_for_cookies(context, page, urls: List[str], result: ConsentRun
             result.leg_log.append(f"cookie browse: time budget reached after {visited} page(s)")
             break
         try:
-            await page.goto(target, wait_until="load", timeout=NAVIGATION_TIMEOUT_MS)
+            try:
+                await page.goto(target, wait_until="load", timeout=BROWSE_NAV_TIMEOUT_MS)
+            except Exception:  # noqa: BLE001 — slow "load" (endless trackers): use what has rendered
+                if not page.url or page.url == "about:blank":
+                    raise
             await page.wait_for_timeout(BROWSE_PAGE_SETTLE_MS)
-            await _scroll_and_settle(page)
+            await _scroll_and_settle(page, BROWSE_SCROLL_SETTLE_MS)
         except Exception as exc:  # noqa: BLE001 — one slow page never stops the sweep
             result.site_pages.append({"url": target, "error": str(exc)[:160], "cookies_set": []})
             continue

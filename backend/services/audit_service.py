@@ -570,6 +570,7 @@ async def _run_consent_checks(
         # network capture, banner detection, control inventory, region
         # detection and screenshots — nothing from a previous scan is reused.
         scan_id = f"a{audit.id}-{consent_module.new_scan_id()}"
+        from consent.runtime import BROWSE_BUDGET_S
         # Cookie Scanner: for a full-site audit, the consent browser (with
         # Accept clicked) also visits up to 15 of the site's own pages so
         # cookies set beyond the homepage are captured too.
@@ -591,7 +592,8 @@ async def _run_consent_checks(
                            or getattr(settings, "CONSENT_TARGET_REGION", None) or None),
             scan_id=scan_id,
             cookie_scan_urls=cookie_scan_urls,
-        ), timeout=int(getattr(settings, "MODULE_HARD_TIMEOUT_S", 300)))
+        ), timeout=int(getattr(settings, "MODULE_HARD_TIMEOUT_S", 300))
+           + (BROWSE_BUDGET_S + 30 if cookie_scan_urls else 0))
         logger.info(
             f"_run_consent_checks: fresh consent scan {scan_id} for {audit.url} — region "
             f"{result.summary.detected_region} ({result.summary.region_confidence}), frameworks "

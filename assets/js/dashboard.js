@@ -123,10 +123,10 @@
         // undefined) falls back to "Pending".
         var hasAnalyticsScore = stats.breakdown && stats.breakdown.analytics !== null && stats.breakdown.analytics !== undefined;
         var hasConsentScore = stats.breakdown && stats.breakdown.consent !== null && stats.breakdown.consent !== undefined;
-        if (statAnalytics) statAnalytics.textContent = hasAnalyticsScore ? stats.breakdown.analytics + '%' : 'Pending';
-        if (statConsent) statConsent.textContent = hasConsentScore ? stats.breakdown.consent + '%' : 'Pending';
+        if (statAnalytics) statAnalytics.textContent = hasAnalyticsScore ? stats.breakdown.analytics + '/100' : 'Pending';
+        if (statConsent) statConsent.textContent = hasConsentScore ? stats.breakdown.consent + '/100' : 'Pending';
         var hasJourneyScore = stats.breakdown && stats.breakdown.journey !== null && stats.breakdown.journey !== undefined;
-        statJourney.textContent = hasJourneyScore ? stats.breakdown.journey + '%' : 'Pending';
+        statJourney.textContent = hasJourneyScore ? stats.breakdown.journey + '/100' : 'Pending';
 
         // Trend badges: rendered only when the API supplies a value for
         // that KPI (stats.trend.<key>). No trend is ever fabricated — if
@@ -223,7 +223,7 @@
       var fill = document.getElementById(fillId);
       var val = document.getElementById(valId);
       if (fill) fill.style.width = value + '%';
-      if (val) U.animateCountUp(val, value, 700);
+      if (val) { U.animateCountUp(val, value, 700); val.title = value + ' out of 100'; }
     }
 
     // Shows a KPI card's trend badge only when `value` is an actual number

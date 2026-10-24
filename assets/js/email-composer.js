@@ -90,7 +90,7 @@ window.EmailComposer = (function () {
   function scoreStatusLabel(score) {
     if (score == null) return '—';
     var band = U.scoreBand(score);
-    return band === 'good' ? 'Healthy' : band === 'mid' ? 'Needs Attention' : 'Critical';
+    return band === 'good' ? 'Healthy' : band === 'mid' ? 'Needs attention' : 'Issues found';
   }
 
   /* "19 Sep 2026" — day, short month name, year. Mirrors

@@ -763,6 +763,12 @@ details.module-accordion[open] .module-accordion__chevron {
   font-size: var(--fs-sm); line-height: 1.6; color: var(--text-secondary);
   margin: 0 0 var(--sp-4); max-width: 90ch;
 }
+.rp-glance__help {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px var(--sp-4);
+  margin: 0 0 var(--sp-3); font-size: var(--fs-xs); color: var(--text-tertiary);
+}
+.rp-mod__score small { font-size: 0.5em; font-weight: 600; color: var(--text-tertiary); margin-left: 1px; }
+.report-banner__score-label .score-help-link { margin-top: 4px; text-transform: none; letter-spacing: 0; }
 .rp-glance__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-5); align-items: stretch; }
 .rp-glance__modules { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--sp-3); }
 

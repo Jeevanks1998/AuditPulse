@@ -183,7 +183,8 @@
   <div class="card__head health-overview__header">
     <div>
       <h3>Health Overview</h3>
-      <div class="card__head-sub">Your websites at a glance</div>
+      <div class="card__head-sub">Your websites at a glance · scores out of 100 ·
+        <button type="button" class="score-help-link" data-score-help>How is this scored?</button></div>
     </div>
     <span class="badge badge--success" id="healthOverviewBadge" style="visibility:hidden;">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>
@@ -215,7 +216,7 @@
         </svg>
         <div class="health-overview__ring-label">
           <span id="healthScoreValue" class="health-overview__ring-value">–</span>
-          <small>Overall Score</small>
+          <small>Overall score / 100</small>
         </div>
       </div>
     </div>
@@ -354,6 +355,7 @@
 <script src="assets/js/env.js"></script>
 <script src="assets/js/config.js"></script>
 <script src="assets/js/utils.js"></script>
+<script src="assets/js/score-help.js"></script>
 <script src="assets/js/validation.js"></script>
 <script src="assets/js/notifications.js"></script>
 <script src="assets/js/modal.js"></script>

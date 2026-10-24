@@ -130,8 +130,9 @@
               <div class="vring__label"><span id="bannerScoreLabel">–</span></div>
             </div>
             <div class="report-banner__score-label">
-              Overall<br>
-              <span class="report-banner__score-band" id="bannerScoreBand" data-band="mid">—</span>
+              Overall score (out of 100)<br>
+              <span class="report-banner__score-band" id="bannerScoreBand" data-band="mid">—</span><br>
+              <button type="button" class="score-help-link" data-score-help>How is this scored?</button>
             </div>
           </div>
 
@@ -174,6 +175,11 @@
            (click = filter the issue list). -->
       <section class="card rp-glance animate-in" aria-label="Summary">
         <p class="rp-glance__summary" id="execSummaryText" hidden></p>
+        <div class="rp-glance__help">
+          <span>Scores are out of 100: 80+ Healthy · 50–79 Needs attention · below 50 Issues found.</span>
+          <button type="button" class="score-help-link" data-score-help>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>How is this scored?</button>
+        </div>
         <div class="rp-glance__row">
           <div class="rp-glance__modules" id="scoreGrid"></div>
           <div class="rp-glance__sev" id="severityTable"></div>
@@ -526,6 +532,7 @@
 <script src="assets/js/env.js"></script>
 <script src="assets/js/config.js"></script>
 <script src="assets/js/utils.js"></script>
+<script src="assets/js/score-help.js"></script>
 <script src="assets/js/validation.js"></script>
 <script src="assets/js/notifications.js"></script>
 <script src="assets/js/modal.js"></script>

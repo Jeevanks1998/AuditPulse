@@ -30,6 +30,7 @@ from reportlab.platypus import BaseDocTemplate, CondPageBreak, Flowable, Frame, 
 
 from pdf.appendix import build_appendix_flowables
 from pdf.components import hostname
+from pdf.scoring import build_scoring_flowables
 from pdf.cover import BAND_HEIGHT, build_cover_flowables, draw_cover_band, draw_cover_footer
 from pdf.issues import group_findings
 from pdf.modules import build_analytics_section, build_consent_section, build_cookie_section, build_journey_section
@@ -72,6 +73,11 @@ def generate_pdf_report(payload: ReportPayload, screenshot_path: Optional[str] =
         if section:
             story.append(PageBreak())
             story += section
+
+    scoring = build_scoring_flowables(payload)
+    if scoring:
+        story.append(PageBreak())
+        story += scoring
 
     story += appendix
     doc.build(story)

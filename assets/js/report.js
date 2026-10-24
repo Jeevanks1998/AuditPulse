@@ -96,7 +96,7 @@
     security: 'Security', ux: 'UX', images: 'Images', links: 'Links',
     mobile: 'Mobile', forms: 'Forms', consent: 'Consent', analytics: 'Analytics', journey: 'Journey Map', ai: 'AI Review'
   };
-  var OVERALL_STATUS_LABELS = { good: 'Healthy', mid: 'Needs Attention', bad: 'Issues Found' };
+  var OVERALL_STATUS_LABELS = { good: 'Healthy', mid: 'Needs attention', bad: 'Issues found' };
 
   /* ------------------------- shared report-derived helpers ------------------------- */
   // These mirror reports/generator.py's count_by_severity / weakest_module /
@@ -655,6 +655,7 @@
       if (circle) U.setRingProgress(circle, report.overall);
       if (bandEl) {
         bandEl.textContent = overallStatusLabel(report.overall);
+        if (ring) ring.title = report.overall + ' out of 100 · ' + overallStatusLabel(report.overall);
         bandEl.setAttribute('data-band', U.scoreBand(report.overall));
       }
     }
@@ -667,12 +668,14 @@
     var SEV_LABEL = { critical: 'Critical', warning: 'Warning', info: 'Info' };
     var DETAIL_TABS = ['consent', 'analytics', 'journey', 'cookies'];
 
+    // Same words as the overall band, the PDF and the dashboard.
     function bandWord(score) {
       var band = U.scoreBand(score);
-      return band === 'good' ? 'Good' : (band === 'mid' ? 'Needs attention' : 'Poor');
+      return band === 'good' ? 'Healthy' : (band === 'mid' ? 'Needs attention' : 'Issues found');
     }
 
     function renderGlance(report) {
+      if (window.ScoreHelp) window.ScoreHelp.setContext(report.scoreGrid || [], report.overall);
       var summaryEl = document.getElementById('execSummaryText');
       if (summaryEl) {
         var text = typeof report.executiveSummary === 'string' ? report.executiveSummary.trim() : '';
@@ -699,7 +702,7 @@
           var clickable = DETAIL_TABS.indexOf(cell.module) !== -1;
           return '<' + (clickable ? 'button type="button"' : 'div') + ' class="rp-mod" data-band="' + band + '"' +
               (clickable ? ' data-module="' + U.escapeHtml(cell.module) + '" title="Open ' + U.escapeHtml(cell.label) + ' details"' : '') + '>' +
-            '<span class="rp-mod__score">' + cell.score + '</span>' +
+            '<span class="rp-mod__score" title="' + cell.score + ' out of 100 · ' + bandWord(cell.score) + '">' + cell.score + '<small>/100</small></span>' +
             '<span class="rp-mod__text"><span class="rp-mod__label">' + U.escapeHtml(cell.label) + '</span>' +
               '<span class="rp-mod__sub">' + U.escapeHtml(sub) + '</span></span>' +
             '<span class="rp-mod__bar" aria-hidden="true"><i style="width:' + Math.max(0, Math.min(100, cell.score)) + '%"></i></span>' +
@@ -713,7 +716,11 @@
       // Score badges on the module tabs.
       (report.scoreGrid || []).forEach(function (cell) {
         var el = document.getElementById('tabScore-' + cell.module);
-        if (el) { el.textContent = cell.score; el.setAttribute('data-band', U.scoreBand(cell.score)); }
+        if (el) {
+          el.textContent = cell.score;
+          el.setAttribute('data-band', U.scoreBand(cell.score));
+          el.title = cell.score + ' out of 100 · ' + bandWord(cell.score);
+        }
       });
 
       // Only show tabs for modules this audit actually ran (a Journey Map

@@ -132,7 +132,7 @@ def draw_cover_band(canvas: Canvas, payload: ReportPayload) -> None:
     ry = top - 92 * mm
     canvas.setFillColor(WHITE, alpha=0.10)
     canvas.circle(rx + ring_size / 2, ry + ring_size / 2, ring_size / 2 + 4 * mm, stroke=0, fill=1)
-    ring = ScoreRing(payload.overall, size=ring_size, stroke=3.6 * mm, on_dark=True, label="overall score")
+    ring = ScoreRing(payload.overall, size=ring_size, stroke=3.6 * mm, on_dark=True, label="out of 100")
     ring.canv = canvas
     canvas.saveState()
     canvas.translate(rx, ry)
@@ -248,7 +248,11 @@ def build_cover_flowables(payload: ReportPayload, issues: List[Issue], has_appen
         while len(cards) < 3:
             cards.append(Spacer(1, 1))
         story.append(_row(cards, width))
-        story.append(Spacer(1, 4 * mm))
+        story.append(Paragraph(
+            "Scores are health ratings out of 100, not percentages: 80+ Healthy, 50–79 Needs attention, "
+            "below 50 Issues found. See “How the scores work” near the end for how each number is calculated.",
+            STYLES["Small"].clone("ag_scores", spaceBefore=2 * mm)))
+        story.append(Spacer(1, 3 * mm))
 
     counts = issue_counts(issues)
     tiles = [_severity_tile(s, counts[s], (width - 8 * mm) / 3) for s in ("critical", "warning", "info")]
@@ -271,6 +275,9 @@ def build_cover_flowables(payload: ReportPayload, issues: List[Issue], has_appen
                          "journey": "Journey map — discovered journey paths, safely tested, with screenshots"}.get(c.module, c.label))
     if has_appendix:
         contents.append("Appendix — full lists and scan details")
+    if payload.score_grid:
+        contents.insert(len(contents) - (1 if has_appendix else 0),
+                        "How the scores work — what the numbers mean and how they are calculated")
     story.append(Spacer(1, 5 * mm))
     story.append(Paragraph("In this report", STYLES["H2"].clone("toc_h", spaceBefore=0)))
     for i, line in enumerate(contents, 1):

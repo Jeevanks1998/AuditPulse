@@ -46,7 +46,7 @@ SEVERITIES = ("critical", "warning", "info")
 # `overall_status` from.
 _SCORE_BAND_GOOD = 80
 _SCORE_BAND_MID = 50
-_STATUS_LABELS = {"good": "Healthy", "mid": "Needs Attention", "bad": "Issues Found"}
+_STATUS_LABELS = {"good": "Healthy", "mid": "Needs attention", "bad": "Issues found"}
 
 
 @dataclass

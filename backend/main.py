@@ -1,23 +1,8 @@
 """
-main.py
+AuditPulse API entry point: start-up/shut-down, logging, middleware, error
+handling, screenshots, health check and the API routes.
 
-FastAPI entry point for the AuditPulse backend (AI Website Audit Platform).
-
-This wires up:
-  - app lifespan (DB init on startup, connection cleanup on shutdown)
-  - logging
-  - CORS (so the static frontend in /assets can call this API from another
-    origin during local development)
-  - global exception handling -> consistent JSON error shape
-  - health check endpoint
-  - the API router mount point (routers themselves land in a future
-    `routes/` package and get included below, e.g. auth, audits, settings)
-
-Run locally:
-    uvicorn main:app --reload
-
-Run in Docker:
-    see Dockerfile
+Run locally: uvicorn main:app --reload
 """
 
 from contextlib import asynccontextmanager
@@ -35,18 +20,10 @@ from config.config import (
 )
 from middleware import setup_middleware
 
-# --------------------------------------------------------------------------
 # Routers
-# --------------------------------------------------------------------------
-# api/router.py aggregates auth, audits, reports, dashboard, history,
-# scheduler, and settings into one APIRouter.
 from api.router import api_router
 
-# Importing models registers every ORM class (User, Audit, Website, Issue,
-# Consent, Analytics, Report, History) on Base.metadata. api/router.py's
-# imports already pull most of these in transitively, but importing the
-# package explicitly here means table creation in init_db() never depends
-# on router import order.
+# Import every model so init_db() creates all tables, whatever the import order.
 import models  # noqa: F401
 
 
@@ -54,9 +31,7 @@ _DEFAULT_SECRET = "change-this-to-a-long-random-string-in-production"
 
 
 def _check_secrets() -> None:
-    """Refuse to start with the sample JWT secret outside local development:
-    anyone who has read the (public) source could forge a session token
-    for any user."""
+    """Refuse to start with the sample secret outside development (anyone could forge sessions)."""
     weak = settings.SECRET_KEY == _DEFAULT_SECRET or len(settings.SECRET_KEY) < 32
     local_db = any(h in settings.DATABASE_URL for h in ("@localhost", "@127.0.0.1", "@db:", "@postgres:"))
     if weak and not local_db:
@@ -67,9 +42,7 @@ def _check_secrets() -> None:
         logger.warning("SECRET_KEY is the development default — never use this in production.")
 
 
-# --------------------------------------------------------------------------
 # Lifespan
-# --------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
@@ -81,41 +54,23 @@ async def lifespan(app: FastAPI):
     await close_db()
 
 
-# --------------------------------------------------------------------------
-# App instance
-# --------------------------------------------------------------------------
+# App
 app = FastAPI(
     title=settings.APP_NAME,
     description="Backend API for the AI Website Audit Platform (AuditPulse).",
     version="1.0.0",
-    # Docs are opt-in (ENABLE_API_DOCS) so a deploy that forgets APP_ENV
-    # doesn't publish the full API map.
+    # API docs only when ENABLE_API_DOCS is on.
     docs_url="/docs" if settings.ENABLE_API_DOCS else None,
     redoc_url="/redoc" if settings.ENABLE_API_DOCS else None,
     openapi_url="/openapi.json" if settings.ENABLE_API_DOCS else None,
     lifespan=lifespan,
 )
 
-# --------------------------------------------------------------------------
-# Middleware + exception handlers (middleware/) -> auth context, request
-# logging, rate limiting, CORS, and the consistent { success, error } JSON
-# shape the frontend's Notifications.error(...) calls expect (see
-# assets/js/api.js callers). See middleware/__init__.py for layer order.
-# --------------------------------------------------------------------------
+# Middleware and error handlers (see middleware/__init__.py for the order).
 setup_middleware(app)
 
-# --------------------------------------------------------------------------
-# Static screenshot serving — banner-clip screenshots (consent/screenshots.py)
-# and full-page screenshots (crawler/screenshots.py) are written to
-# settings.SCREENSHOT_DIR on disk; mount that directory so the paths stored
-# on Consent.banner_screenshot_path can be turned into a URL the frontend
-# can load directly (see schemas.audit.ConsentOut.banner_screenshot_url).
-# --------------------------------------------------------------------------
-#
-# Files on disk are served first; when the file isn't there (the container
-# disk is wiped on every Railway redeploy, or the audit ran on a separate
-# worker service) the durable copy in the database is served instead —
-# see models/screenshot_blob.py and utils/screenshot_store.py.
+# Screenshots: served from disk, or from the database copy when the file is
+# gone (the server disk is wiped on redeploy). See utils/screenshot_store.py.
 _screenshot_dir = Path(settings.SCREENSHOT_DIR)
 _screenshot_dir.mkdir(parents=True, exist_ok=True)
 
@@ -142,9 +97,7 @@ async def serve_screenshot(key: str):
     return Response(content=content, media_type=content_type, headers=cache)
 
 
-# --------------------------------------------------------------------------
 # Health check
-# --------------------------------------------------------------------------
 @app.get("/health", tags=["System"])
 async def health_check():
     return {"status": "ok"}
@@ -155,9 +108,7 @@ async def root():
     return {"message": f"{settings.APP_NAME} is running", "health": "/health"}
 
 
-# --------------------------------------------------------------------------
-# Routers
-# --------------------------------------------------------------------------
+# Routes
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
 

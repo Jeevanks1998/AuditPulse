@@ -1,14 +1,5 @@
 """
-images/optimizer.py
-
-Static, markup-only optimization signals: whether any image on the
-page uses a next-gen format (webp/avif, or <picture> with a
-next-gen <source>) instead of only legacy jpg/png/gif, and whether
-images omit explicit width/height (or an aspect-ratio style), which
-lets the browser reserve layout space before the image loads instead
-of shifting content once it arrives (a direct Cumulative Layout Shift
-contributor). Reads crawler.parser.ParsedPage.image_tags, the same
-<img> tag list seo/alt_text.py uses.
+Flags no modern image formats (webp/avif) and images without width/height (causes layout shift).
 """
 
 from __future__ import annotations

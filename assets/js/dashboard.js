@@ -1,14 +1,9 @@
-/* ==========================================================================
-   dashboard.js — dashboard.html page logic
-   ========================================================================== */
+/* Dashboard page */
 
 (function () {
   var U = window.Utils;
 
-  // Mirrors backend consent.consent_score.GDPR_CHECK_ORDER / GDPR_CHECK_LABELS —
-  // keep the key list, order, and severity/failReason text in sync with that
-  // module (same source data assets/js/report.js's GDPR_CHECK_ITEMS uses, so
-  // the "why did it fail" wording matches between dashboard and report).
+  // Keep in sync with GDPR_CHECK_ORDER in backend consent/consent_score.py (and report.js).
   var GDPR_CHECK_ITEMS = [
     { key: 'consent_banner', label: 'Consent banner', severity: 'critical',
       failReason: 'No consent banner or CMP was detected' },
@@ -32,8 +27,7 @@
       failReason: 'Reject does not actually stop tracking' }
   ];
 
-  // Mirrors backend consent.consent_score.CCPA_CHECK_ORDER / CCPA_CHECK_LABELS —
-  // same relationship CCPA_CHECK_ITEMS in report.js has to that module.
+  // Keep in sync with CCPA_CHECK_ORDER in backend consent/consent_score.py (and report.js).
   var CCPA_CHECK_ITEMS = [
     { key: 'privacy_policy_available', label: 'Privacy policy available', severity: 'warning',
       failReason: 'Privacy policy was not detected' },
@@ -51,14 +45,13 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     var statJourney = document.getElementById('statJourney');
-    if (!statJourney || !window.Api) return; // not on dashboard.html
+    if (!statJourney || !window.Api) return; // not on the dashboard
 
     var statCritical = document.getElementById('statCriticalIssues');
     var statAnalytics = document.getElementById('statAnalytics');
     var statConsent = document.getElementById('statConsent');
 
-    // Trend indicators are optional — only shown when the API actually
-    // returns a trend value for that KPI. Nothing here is invented.
+    // Trend badges: only shown when the API returns a trend.
     var trendJourney = document.getElementById('trendJourney');
     var trendCritical = document.getElementById('trendCriticalIssues');
     var trendAnalytics = document.getElementById('trendAnalytics');
@@ -74,9 +67,7 @@
 
     if (healthOverviewRetry) healthOverviewRetry.addEventListener('click', function () { loadStats(); });
 
-    // Real time-of-day + real logged-in user's first name — replaces the
-    // old hardcoded "Good morning, Jeevan" that showed regardless of the
-    // time or who was actually signed in.
+    // Greeting by time of day and the signed-in user's first name.
     var greetingEl = document.getElementById('greetingName');
     if (greetingEl) {
       var hour = new Date().getHours();
@@ -86,12 +77,7 @@
       greetingEl.textContent = firstName ? (timeGreeting + ', ' + firstName) : timeGreeting;
     }
 
-    // Stats/health and Recent Audits are fetched and rendered independently
-    // (not Promise.all'd together) so that a failure in one never wipes out
-    // data that successfully loaded in the other — e.g. if /audits/recent
-    // errors out but /audits/stats succeeds, the KPI cards and health ring
-    // still render normally, and vice versa. Each section owns its own
-    // loading → data / empty / error states.
+    // Stats and recent audits load separately, so one failing doesn't hide the other.
     loadStats();
     loadRecentAudits();
 
@@ -117,10 +103,7 @@
 
         U.animateCountUp(statCritical, stats.criticalIssues || 0, 700);
         
-        // Display Analytics and Consent status — a real 0% score must still
-        // render as "0%", not "Pending". Only an actually-missing value
-        // (module wasn't run, so breakdown.analytics/consent is null/
-        // undefined) falls back to "Pending".
+        // A real 0 still shows; only a module that didn't run shows "Pending".
         var hasAnalyticsScore = stats.breakdown && stats.breakdown.analytics !== null && stats.breakdown.analytics !== undefined;
         var hasConsentScore = stats.breakdown && stats.breakdown.consent !== null && stats.breakdown.consent !== undefined;
         if (statAnalytics) statAnalytics.textContent = hasAnalyticsScore ? stats.breakdown.analytics + '/100' : 'Pending';
@@ -128,10 +111,7 @@
         var hasJourneyScore = stats.breakdown && stats.breakdown.journey !== null && stats.breakdown.journey !== undefined;
         statJourney.textContent = hasJourneyScore ? stats.breakdown.journey + '/100' : 'Pending';
 
-        // Trend badges: rendered only when the API supplies a value for
-        // that KPI (stats.trend.<key>). No trend is ever fabricated — if
-        // the backend hasn't added trend data yet, these stay hidden,
-        // exactly as they are today.
+        // Trend badges only when the API sends a value; never made up.
         setTrend(trendJourney, stats.trend && stats.trend.journey);
         setTrend(trendCritical, stats.trend && stats.trend.criticalIssues);
         setTrend(trendAnalytics, stats.trend && stats.trend.analytics);
@@ -141,9 +121,7 @@
         U.setRingProgress(healthRingCircle, stats.overall || 0);
         U.setRingBand(healthRing, stats.overall || 0);
 
-        // Health-overview badge reflects the real overall score (band computed
-        // the same way as the ring itself) rather than the static "Healthy"
-        // markup this element started as.
+        // Badge follows the real overall score.
         var healthBadge = document.getElementById('healthOverviewBadge');
         var healthBadgeLabel = document.getElementById('healthOverviewBadgeLabel');
         if (healthBadge && healthBadgeLabel) {
@@ -159,10 +137,7 @@
         setBar('barJourney', 'valJourney', stats.breakdown.journey || 0);
     }
 
-    // KPI cards, trend badges, and the health ring all fall back to "–" /
-    // hidden rather than a stale or fabricated number, and a single toast
-    // (with a real retry, not just "refresh the page") lets the person
-    // recover without reloading the whole dashboard.
+    // On error: show "–" (never stale numbers) and a toast with Retry.
     function handleStatsError() {
       [statJourney, statCritical, statAnalytics, statConsent].forEach(function (el) {
         window.Loader.setSkeleton(el, false);
@@ -172,18 +147,13 @@
       window.Loader.setSkeleton(healthScoreValue, false);
       if (healthScoreValue) healthScoreValue.textContent = '–';
 
-      // Swap the ring/category grid for an inline "Unable to load dashboard
-      // data. / Try again" state with a real retry button — the KPI stat
-      // cards above stay visible showing "–" rather than the whole card
-      // disappearing, and Recent Audits is unaffected either way.
+      // Replace the ring with an error + Try again; the stat cards and recent audits stay.
       if (healthOverviewMain) healthOverviewMain.style.display = 'none';
       if (healthOverviewError) healthOverviewError.style.display = '';
       window.Notifications.error('Unable to load dashboard data.', 'Try again from the Health Overview card.');
     }
 
-    // Recent Audits owns its own loading / empty / error / data states,
-    // independent of the stats fetch above — see the comment where
-    // loadStats()/loadRecentAudits() are kicked off.
+    // Recent audits: own loading / empty / error / data states.
     function loadRecentAudits() {
       renderRecentAuditsLoading();
       return window.Api.audits.getRecent()
@@ -226,10 +196,7 @@
       if (val) { U.animateCountUp(val, value, 700); val.title = value + ' out of 100'; }
     }
 
-    // Shows a KPI card's trend badge only when `value` is an actual number
-    // from the API (e.g. stats.trend.journey). Any missing/undefined/
-    // null value keeps the badge hidden rather than showing a placeholder
-    // or a made-up figure.
+    // Shows a trend badge only for a real number from the API.
     function setTrend(el, value) {
       if (!el) return;
       if (value === undefined || value === null || value === '' || isNaN(Number(value))) {
@@ -245,9 +212,7 @@
       el.textContent = (num > 0 ? '▲ +' : num < 0 ? '▼ ' : '') + Math.abs(num) + '%';
     }
 
-    // Renders GET /audits/recent straight into the Recent Audits list —
-    // url, overall_score, status, and completed_at/created_at all come
-    // from the API response (mapAudit in api.js). No placeholder rows.
+    // Recent audits list, straight from the API.
     var STATUS_BADGE = {
       completed: { cls: 'badge--success', label: 'Completed' },
       running: { cls: 'badge--warning', label: 'Running' },
@@ -276,10 +241,7 @@
       }
       recentList.innerHTML = list.slice(0, 4).map(function (audit) {
         var isCompleted = audit.status === 'completed';
-        // audit.overallScore, not .score — the API field is overall_score,
-        // camelCased by api.js's toCamel. This previously read a field that
-        // never existed, so hasScore was always false and every audit here
-        // silently showed the neutral dash regardless of its real score.
+        // overallScore is only meaningful once the audit finished.
         var hasScore = isCompleted && audit.overallScore !== null && audit.overallScore !== undefined && !isNaN(Number(audit.overallScore));
 
         var scoreChip;
@@ -293,9 +255,7 @@
 
         var dateStr = U.formatRelativeTime(audit.completedAt || audit.createdAt);
 
-        // Partial data: the label/meta line only renders when the API
-        // actually returned one — no empty placeholder row for audits
-        // that don't have a label.
+        // Only show the label line if the audit has one.
         return '' +
           '<div class="row-item">' +
             '<a class="row-item__link" href="report.html?id=' + encodeURIComponent(audit.id) + '">' +
@@ -332,28 +292,20 @@
         });
       }
 
-      // Point the "Download PDF" quick-action card at the most recent
-      // audit's report so it's a real link rather than the static
-      // report.html placeholder.
+      // Point "Download PDF" at the latest audit's report.
       var pdfQuickAction = document.getElementById('downloadPdfQuickAction');
       if (pdfQuickAction && list[0]) {
         pdfQuickAction.href = 'report.html?id=' + encodeURIComponent(list[0].id);
       }
     }
 
-    /* --------------------------- Analytics / Consent Health (§6) --------------------------- */
+    /* Analytics / Consent health */
 
     function renderRuntimeHealth(list) {
       var grid = document.getElementById('runtimeHealthGrid');
       if (!grid || !list || !list.length) return;
 
-      // Only a completed audit has consent/analytics rows or a real report
-      // to fetch — picking list[0] unconditionally (newest audit, whatever
-      // its status) fired these three calls against failed/running audits
-      // too, producing 409s (report), 404s (no analytics row was ever
-      // created), and an aborted/CORS-looking failure on consent, none of
-      // which actually broke anything (each call already falls back to
-      // null) but filled the console with noise for no reason.
+      // Only completed audits have results to show.
       var latest = list.filter(function (a) { return a.status === 'completed'; })[0];
       if (!latest) return; // nothing completed yet — no health data exists to show
 
@@ -381,11 +333,7 @@
       return passed ? { cls: 'badge--success', label: 'Healthy' } : { cls: 'badge--error', label: 'Issues found' };
     }
 
-    // Builds one KPI tile. `status` drives the color treatment and must be
-    // one of 'good' | 'bad' | 'warning' | 'neutral' | 'untested' — callers
-    // pass 'untested' whenever the underlying field genuinely wasn't
-    // evaluated for this audit, rather than coercing a missing value into
-    // a fake pass or fail.
+    // One KPI tile. status: 'good' | 'bad' | 'warning' | 'neutral' | 'untested'.
     function kpiTile(iconSvg, label, value, sub, status) {
       return '<div class="health-kpi-tile" data-status="' + status + '">' +
         '<span class="health-kpi-tile__icon">' + iconSvg + '</span>' +
@@ -404,12 +352,7 @@
     var ICON_COOKIE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10zm3.6-9.6l-5.9-5.9M8.4 14.4l5.9-5.9"/></svg>';
     var ICON_SHIELD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
 
-    // Renders the Analytics Health KPI grid straight from the
-    // /audits/{id}/analytics response (mapAnalytics in api.js) plus the
-    // matching report's analytics-module findings. Every value below reads
-    // an actual API field — nothing here is invented to fill space; a
-    // field that wasn't evaluated (e.g. runtime page-view validation on an
-    // audit that didn't run it) renders "Not tested" instead of a 0/false.
+    // Analytics health tiles from the analytics result and findings. Untested values show "Not tested".
     function renderAnalyticsHealthCard(analytics, link, findings) {
       var card = document.getElementById('analyticsHealthCard');
       var badgeEl = document.getElementById('analyticsHealthBadge');
@@ -417,15 +360,7 @@
       var linkEl = document.getElementById('analyticsHealthLink');
       if (!card || !analytics) return false;
 
-      // Vendor list is built from every vendor actually detected in the
-      // page's markup (vendorConfigs) — not just the ones that show up in
-      // runtimeResult.vendors. The runtime pass only ever records a vendor
-      // that captured at least one request, so a vendor that was detected
-      // but never fired a single tracking request at runtime is *absent*
-      // from runtimeResult.vendors, not present-and-passing. Treating that
-      // absence as "failed" (same convention report.js uses for its
-      // Detection & Runtime table) keeps a totally broken vendor visible
-      // instead of silently vanishing from the count and chip list.
+      // List every tool found in the page code; one never seen in the browser counts as failed, not missing.
       var detectedVendorKeys = Object.keys(analytics.vendorConfigs || {});
       var runtimeVendors = (analytics.runtimeTested && analytics.runtimeResult && analytics.runtimeResult.vendors) || {};
       var vendors = detectedVendorKeys.map(function (k) {
@@ -437,9 +372,7 @@
       var pageViewTested = analytics.runtimeTested && vendors.length > 0;
       var pageViewPassing = pageViewTested && vendors.filter(function (v) { return v.page_view_status === 'passed'; }).length;
       var allPassed = pageViewTested && pageViewPassing === vendors.length;
-      // Badge reflects whether page-view testing actually ran (pageViewTested),
-      // not just the coarser runtimeTested flag — a runtime pass that found
-      // zero vendors to test is "Not tested", not "Issues found".
+      // "Not tested" when no page views were tested (not "Issues found").
       var badge = badgeFor(allPassed, pageViewTested);
       var findingsCount = (findings || []).length;
 
@@ -484,11 +417,7 @@
         findingsCount ? 'bad' : 'good'
       ));
 
-      // Per-vendor page-view breakdown — only rendered when the runtime
-      // pass actually ran. Covers every statically-detected vendor
-      // (vendorConfigs), cross-referenced against analytics.runtimeResult.vendors —
-      // a detected vendor missing from the runtime result renders as
-      // "Failing", not as an omitted vendor.
+      // Page-view chip per tool, only when the live check ran. Tools missing from it show as failing.
       if (pageViewTested) {
         var chips = vendors.map(function (v) {
           var passed = v.page_view_status === 'passed';
@@ -500,10 +429,7 @@
         tiles.push('<div class="health-vendor-chips">' + chips + '</div>');
       }
 
-      // Cross-page consistency (multi-page audits only) — real discrepancies
-      // computed by the backend across every crawled page, straight from
-      // analytics.crossPageFindings. Left out entirely on a homepage-only
-      // audit, where the backend always returns [] for this field.
+      // Cross-page differences (full-site audits only).
       var crossPageFindings = analytics.crossPageFindings || [];
       var crossPageHtml = '';
       if (crossPageFindings.length) {
@@ -519,24 +445,16 @@
       return true;
     }
 
-    // Mirrors report.js's PASS_ICON/FAIL_ICON so a check row looks the same
-  // on the dashboard as it does on the full report.
+    // Same icons as report.js.
   var PASS_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>';
   var FAIL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
 
-  // Turns a raw API tri-state value into { ok, tested } — mirrors
-  // report.js's checkResultFromValue: true -> pass, false -> fail,
-  // null/undefined -> not tested. Deliberately not `!!value`, which
-  // collapses false and null/undefined into the same falsy value and
-  // would render a genuine FALSE result as "not tested".
+  // API value -> { ok, tested }: true = pass, false = fail, null = not tested.
   function checkResultFromValue(value) {
     return { ok: value === true, tested: value === true || value === false };
   }
 
-  // One ✓/✕/○ row per individual check, in *_CHECK_ITEMS order — the
-  // full per-check picture the health card's compliance block shows above
-  // the summary badge, distinct from renderComplianceRow's summary +
-  // "why did it fail" disclosure below.
+  // One ✓/✕/○ row per check.
   function renderCheckListRows(checkItems, checksMap) {
     return checkItems.map(function (item) {
       var result = checkResultFromValue(checksMap[item.key]);
@@ -547,14 +465,8 @@
     }).join('');
   }
 
-  // Renders one compliance roll-up (GDPR or CCPA) as a "<Label> — Failed/Passed
-    // · N issues" row, plus — only when it failed — a collapsible "Why did it
-    // fail?" disclosure listing the specific checks that failed, each marked
-    // 🔴 (critical) or 🟠 (warning). Reads straight from `checksMap`
-    // (consent.gdprChecks / consent.ccpaChecks) and the matching *_CHECK_ITEMS
-    // array above — no separate issue list is built for this, the backend's
-    // gdpr_checks/ccpa_checks dicts are the single source of truth for
-    // "what's missing".
+  // One GDPR or CCPA row ("Failed/Passed · N issues"), with a "Why did it fail?"
+  // list of the failed checks when it failed. Uses the backend's check results.
     function renderComplianceRow(label, compliant, checkItems, checksMap) {
       var failed = checkItems.filter(function (c) { return checksMap[c.key] === false; });
       var badge = compliant
@@ -582,12 +494,7 @@
       return html;
     }
 
-    // Renders the Consent Health section straight from /audits/{id}/consent
-    // (mapConsent in api.js): a Cookie Banner / GDPR / CCPA KPI tile row —
-    // the three fields this card is scoped to — plus the existing GDPR/CCPA
-    // "why did it fail" disclosures. A field with no corresponding API value
-    // (e.g. there is no consent-decision logging endpoint in this backend)
-    // is intentionally left out rather than shown with a made-up value.
+    // Consent health tiles (banner, GDPR, CCPA) and the "why did it fail" lists.
     function renderConsentHealthCard(consent, link) {
       var card = document.getElementById('consentHealthCard');
       var badgeEl = document.getElementById('consentHealthBadge');
@@ -595,9 +502,7 @@
       var linkEl = document.getElementById('consentHealthLink');
       if (!card || !consent) return false;
 
-      // Only frameworks that apply to the detected region are judged (Phase 2
-      // consent.region). Audits recorded before applicability existed keep
-      // the legacy GDPR + CCPA view.
+      // Only laws that apply to the region are judged; older audits show GDPR + CCPA.
       var app = consent.applicability || {};
       var hasApp = !!(app.frameworks && app.frameworks.length);
       var applicable = hasApp ? (app.applicable_frameworks || []) : ['gdpr', 'ccpa'];
@@ -663,14 +568,11 @@
           : '') +
       '</div>';
 
-      // Real runtime-verified enforcement (does Reject actually block
-      // tracking, does Accept actually allow it) — kept as a supplementary
-      // note since it's genuine data from consent.runtimeResult, distinct
-      // from the GDPR/CCPA checklist above.
+      // Live Accept/Reject results, as an extra note.
       var runtimeHtml = '';
       if (consent.runtimeTested) {
         var rr = consent.runtimeResult || {};
-        // runtime_result keys arrive camelCased from api.js.
+        // runtime_result keys arrive in camelCase.
         var rejectV = rr.rejectBlocksTracking !== undefined ? rr.rejectBlocksTracking : rr.reject_blocks_tracking;
         var acceptV = rr.acceptAllowsTracking !== undefined ? rr.acceptAllowsTracking : rr.accept_allows_tracking;
         var rejectKnown = rejectV !== null && rejectV !== undefined;

@@ -1,21 +1,6 @@
 """
-links/redirects.py
-
-Site-level check that live-requests a sample of a page's links and
-inspects the *redirect chain* each one takes before landing on a final
-URL — distinct from seo/broken_links.py, which only reports the small
-"redirected" bucket as one info-level finding without looking at chain
-length or status codes along the way. Here, a chain of more than one
-hop, a chain using a temporary (302/307) status where the destination
-looks permanent, and a plain-http URL that never actually reaches
-https all get their own finding, since each has a different fix.
-
-Makes its own requests the same way seo/broken_links.py does, capped
-and concurrency-limited so a page with many links doesn't turn one
-audit into dozens of extra requests. See links/loops.py for the
-separate, cheaper check that manually walks hops looking for a true
-redirect cycle rather than characterizing a normal (non-looping)
-chain.
+Requests a sample of links and checks their redirect chains: too many hops,
+temporary redirects where a permanent one fits, and http that never reaches https.
 """
 
 from __future__ import annotations
@@ -36,7 +21,7 @@ CATEGORY = "redirects"
 DEFAULT_MAX_LINKS_CHECKED = 40
 DEFAULT_CONCURRENCY = 8
 REQUEST_TIMEOUT_SECONDS = 8.0
-LONG_CHAIN_HOP_THRESHOLD = 2  # more than 1 intermediate hop before the final URL
+LONG_CHAIN_HOP_THRESHOLD = 2  # more than one hop before the final URL
 MAX_EXAMPLES = 5
 
 TEMPORARY_REDIRECT_CODES = {302, 303, 307}
@@ -58,11 +43,7 @@ async def check_redirects(
     concurrency: int = DEFAULT_CONCURRENCY,
     timeout: float = REQUEST_TIMEOUT_SECONDS,
 ) -> List[dict]:
-    """
-    Live-checks a deduped sample of `links` and returns findings about
-    the redirect chain each one takes, if any. Results are per-URL —
-    a link repeated on the page is only checked once.
-    """
+    """Checks the redirect chain of a sample of links. Each URL is checked once."""
     candidates = _dedupe_checkable(links)
     sample = candidates[:max_links]
     if not sample:

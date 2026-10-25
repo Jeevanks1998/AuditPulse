@@ -1,19 +1,6 @@
 """
-utils/file_manager.py
-
-Generic, path-traversal-safe file I/O for anything new that needs to
-read/write under one of the app's data directories (settings.REPORTS_DIR,
-settings.SCREENSHOT_DIR, settings.LOG_FILE_PATH's parent, or an ad hoc
-export directory). `reports/report_storage.py` and `crawler/screenshots.py`
-already do their own narrow, purpose-built file I/O for their one job
-each — this module doesn't replace either, it's what the *next* feature
-that needs disk storage (an export format, an upload, a cache) should
-build on instead of writing another one-off `Path(...).write_text(...)`.
-
-Every method resolves paths against `base_dir` and refuses to write/read
-outside of it, so a caller passing a filename built from user/external
-input (an audit label, a URL-derived slug) can't be tricked into
-escaping the intended directory via `../../` segments.
+Safe file reading/writing inside one base folder: paths can never escape it
+(e.g. with ../), even when built from user input.
 """
 
 from __future__ import annotations
@@ -28,23 +15,20 @@ logger = get_logger(__name__)
 
 
 class PathTraversalError(ValueError):
-    """Raised when a requested path would resolve outside `base_dir`."""
+    """The path would end up outside `base_dir`."""
 
 
 class FileManager:
-    """A small sandboxed file store rooted at `base_dir`.
+    """File store rooted at `base_dir`.
 
         reports = FileManager(settings.REPORTS_DIR)
         reports.write_json("42/summary.json", {"score": 87})
-        data = reports.read_json("42/summary.json")
     """
 
     def __init__(self, base_dir: str | Path):
         self.base_dir = Path(base_dir)
 
-    # ------------------------------------------------------------------
     # Path safety
-    # ------------------------------------------------------------------
     def ensure_dir(self, sub_dir: str = "") -> Path:
         """Creates (if needed) and returns `base_dir / sub_dir`."""
         target = self._safe_path(sub_dir) if sub_dir else self.base_dir
@@ -52,8 +36,7 @@ class FileManager:
         return target
 
     def _safe_path(self, relative_path: str) -> Path:
-        """Resolves `relative_path` under `base_dir`, raising
-        `PathTraversalError` if the result would land outside it."""
+        """Resolves `relative_path` under `base_dir`; PathTraversalError if it would leave it."""
         self.base_dir.mkdir(parents=True, exist_ok=True)
         candidate = (self.base_dir / relative_path).resolve()
         base_resolved = self.base_dir.resolve()
@@ -61,9 +44,7 @@ class FileManager:
             raise PathTraversalError(f"'{relative_path}' resolves outside of {self.base_dir}")
         return candidate
 
-    # ------------------------------------------------------------------
     # Text / bytes
-    # ------------------------------------------------------------------
     def write_text(self, relative_path: str, content: str, encoding: str = "utf-8") -> Path:
         path = self._safe_path(relative_path)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -88,9 +69,7 @@ class FileManager:
             return None
         return path.read_bytes()
 
-    # ------------------------------------------------------------------
     # JSON
-    # ------------------------------------------------------------------
     def write_json(self, relative_path: str, data: Any, indent: int = 2) -> Path:
         return self.write_text(relative_path, json.dumps(data, indent=indent, default=str))
 
@@ -104,9 +83,7 @@ class FileManager:
             logger.warning(f"file_manager: {relative_path} is not valid JSON")
             return None
 
-    # ------------------------------------------------------------------
     # Housekeeping
-    # ------------------------------------------------------------------
     def exists(self, relative_path: str) -> bool:
         return self._safe_path(relative_path).exists()
 

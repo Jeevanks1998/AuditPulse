@@ -40,7 +40,7 @@ def _controls(result, layer=1):
     return {c["label"]: c["action"] for c in result.summary.technical_scan["controls"] if c["layer"] == layer}
 
 
-# --- EU site, client-rendered OneTrust-style banner, GTM pre-consent --------
+# EU site, OneTrust-style banner drawn by JavaScript, GTM before consent
 def test_eu_client_rendered_cmp(site_server):
     r = scan("www.example-shop.de", site_server)
     rt = r.runtime_result
@@ -88,7 +88,7 @@ def test_eu_client_rendered_cmp(site_server):
     assert s.gdpr_compliant is True
 
 
-# --- Unknown region, tracking before consent, "necessary only" keeps tracking -----
+# Unknown region, tracking before consent, "necessary only" still tracks
 def test_global_site_tracking_and_unknown_region(site_server):
     r = scan("www.globalco.com", site_server)
     rt, s = r.runtime_result, r.summary
@@ -128,7 +128,7 @@ def test_global_site_with_explicit_region(site_server):
     assert s.gdpr_compliant is False
 
 
-# --- India, CMP inside an iframe; an unrelated "Accept" dialog on the page --------
+# India, consent tool inside an iframe, plus an unrelated "Accept" dialog
 def test_iframe_cmp_india(site_server):
     r = scan("news.example.in", site_server)
     rt, s = r.runtime_result, r.summary
@@ -150,7 +150,7 @@ def test_iframe_cmp_india(site_server):
     assert s.gdpr_checks == {} and s.ccpa_checks == {}
 
 
-# --- UK banner with only OK / Got it / Close ---------------------------------------
+# UK banner with only OK / Got it / Close
 def test_ok_and_close_are_not_accept_or_reject(site_server):
     r = scan("shop.example.co.uk", site_server)
     rt, s = r.runtime_result, r.summary
@@ -163,7 +163,7 @@ def test_ok_and_close_are_not_accept_or_reject(site_server):
     assert s.gdpr_checks["reject_control"] is False
 
 
-# --- No banner at all: unrelated "Accept order"/"Continue" never become consent ---
+# No banner: unrelated "Accept order" / "Continue" are never consent buttons
 def test_no_banner(site_server):
     r = scan("plain.example.com", site_server)
     rt, s = r.runtime_result, r.summary
@@ -173,7 +173,7 @@ def test_no_banner(site_server):
     assert s.has_cookie_banner is False
 
 
-# --- Only "Continue without accepting": recorded, nothing assumed -----------------
+# Only "Continue without accepting": recorded, nothing assumed
 def test_continue_without_accepting_only(site_server):
     r = scan("boutique.example.fr", site_server)
     rt, s = r.runtime_result, r.summary
@@ -187,7 +187,7 @@ def test_continue_without_accepting_only(site_server):
     assert s.gdpr_checks["accept_control"] is False
 
 
-# --- Phase 2 columns ---------------------------------------------------------------
+# Region columns
 def test_region_columns(site_server):
     s = scan("news.example.in", site_server).summary
     assert s.detected_region == "IN" and s.region_confidence == "high"
@@ -197,7 +197,7 @@ def test_region_columns(site_server):
     assert (u.detected_region, u.region_confidence, u.applicability_status) == ("UNKNOWN", "low", "not_determined")
 
 
-# --- Phase 3: every scan is fresh ----------------------------------------------------
+# Every scan is fresh
 def test_every_scan_is_fresh(site_server):
     import os
     a = scan("www.example-shop.de", site_server)
@@ -236,7 +236,7 @@ def test_leg_one_order_and_banner_clip(site_server):
     assert h < 400 and w > 600
 
 
-# --- Italian TrustCommander-style banner (the axa.it setup) -------------------
+# Italian TrustCommander-style banner (as on axa.it)
 def test_italian_banner_and_reject_checked_on_next_page(site_server):
     """'Accetta tutti i cookie' / 'Personalizza preferenze' / 'Continua senza
     accettare' are recognised from their words, and a tag that keeps firing on
@@ -270,7 +270,7 @@ def test_first_layer_reject_is_the_one_tested(site_server):
     assert rt.accept_clicked and (rt.accept_clicked_label or "").lower() == "accetta tutti i cookie"
 
 
-# --- "Accept/Reject Non-Essential Cookies" + footer "Personalise Cookies" ------
+# "Accept/Reject Non-Essential Cookies" and a footer "Personalise Cookies" button
 def test_non_essential_wording_and_live_withdrawal(site_server):
     """'Accept Non-Essential Cookies' is an accept (not a necessary-only reject),
     and consent withdrawal is verified live: after accepting, the footer

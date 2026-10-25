@@ -1,29 +1,14 @@
 """
-utils/net_guard.py
+SSRF protection: audits may only reach public internet addresses.
 
-Server-Side Request Forgery (SSRF) protection.
-
-AuditPulse fetches whatever URL a user types (and every link, redirect and
-sub-resource that page points to) from inside our own infrastructure — with
-httpx and with a real Chromium. Without a guard, an audit of
-`http://localhost:8000`, `http://169.254.169.254/` (cloud metadata),
-`http://redis.railway.internal:6379` or `http://10.0.0.5/admin` would make
-the server read its own private network and hand the result back to the
-user as screenshots, HTML and evidence.
-
-The rule is simple: only public internet addresses may be contacted.
-Anything that resolves to a loopback, private (RFC 1918), link-local,
-carrier-grade NAT, multicast, reserved or unspecified address — or a
-hostname that is clearly internal (localhost, *.internal, *.local …) — is
-refused, for:
-
-  * the audit URL itself (checked when the audit / schedule is created and
-    again when it runs, in case DNS changed in between),
-  * every httpx request, including each redirect hop (GuardedTransport),
-  * every request Chromium makes (install_browser_guard → context route).
-
-Set ALLOW_PRIVATE_NETWORK_TARGETS=true only for local development / tests
-that serve fixture sites on 127.0.0.1.
+Without it, an audit of http://localhost, http://169.254.169.254 (cloud
+metadata) or an internal host would let a user read our private network.
+Loopback, private, link-local, reserved and clearly internal host names
+(localhost, *.internal, *.local) are refused for:
+  - the audit URL (when created, and again when it runs)
+  - every httpx request and redirect (GuardedTransport)
+  - every request Chromium makes (install_browser_guard)
+ALLOW_PRIVATE_NETWORK_TARGETS=true is only for local tests.
 """
 
 from __future__ import annotations
@@ -52,7 +37,7 @@ _DNS_TTL_S = 300
 
 
 class BlockedTargetError(ValueError):
-    """Raised when a URL points at a non-public network address."""
+    """The URL points at a non-public address."""
 
 
 def _allowed_private() -> bool:
@@ -87,7 +72,7 @@ def _resolve_public(host: str) -> bool:
         ips = {i[4][0] for i in infos}
         ok = bool(ips) and all(is_public_ip(ip) for ip in ips)
     except (socket.gaierror, UnicodeError, OSError):
-        ok = True   # unresolvable: nothing to reach; let the request fail normally
+        ok = True   # can't resolve: nothing to reach; let the request fail normally
     _dns_cache[host] = (now + _DNS_TTL_S, ok)
     return ok
 
@@ -109,7 +94,7 @@ def host_is_public(host: Optional[str]) -> bool:
 
 
 def check_url(url: str) -> None:
-    """Raise BlockedTargetError unless `url` is http(s) to a public host."""
+    """Raises BlockedTargetError unless `url` is http(s) to a public host."""
     p = urlparse(url)
     if p.scheme.lower() not in _ALLOWED_SCHEMES:
         raise BlockedTargetError("Only http:// and https:// websites can be audited.")
@@ -129,9 +114,7 @@ def is_url_allowed(url: str) -> bool:
         return False
 
 
-# --------------------------------------------------------------------------
-# httpx: every request and every redirect hop goes through the transport.
-# --------------------------------------------------------------------------
+# httpx: every request and redirect goes through this transport
 class GuardedTransport(httpx.AsyncHTTPTransport):
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url)
@@ -143,18 +126,14 @@ class GuardedTransport(httpx.AsyncHTTPTransport):
 
 
 def guarded_async_client(**kwargs) -> httpx.AsyncClient:
-    """httpx.AsyncClient that refuses private/internal destinations."""
+    """httpx client that refuses private/internal addresses."""
     if _allowed_private():
         return httpx.AsyncClient(**kwargs)
     kwargs.setdefault("transport", GuardedTransport())
     return httpx.AsyncClient(**kwargs)
 
 
-# --------------------------------------------------------------------------
-# Chromium: one route per context that aborts non-public destinations.
-# Other handlers in the code base call route.fallback() so this one always
-# gets the final say.
-# --------------------------------------------------------------------------
+# Chromium: blocks non-public addresses. Other route handlers call route.fallback(), so this one decides last.
 async def _browser_route(route) -> None:
     try:
         url = route.request.url
@@ -175,7 +154,7 @@ async def guard_context(context) -> None:
 
 
 def install_browser_guard(browser):
-    """Wrap browser.new_context / new_page so every context gets the guard."""
+    """Makes every new browser context use the guard."""
     if _allowed_private() or getattr(browser, "_ap_guarded", False):
         return browser
     orig_new_context = browser.new_context

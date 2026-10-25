@@ -1,10 +1,5 @@
 """
-pdf/appendix.py
-
-The reference part at the back: for every issue, the complete list of
-places it was found (the issue cards show only the first few), then the
-pages that were scanned and the technical scan details. Small type, no
-repetition of the explanations already given on "Start here".
+Appendix: every place each issue was found, pages scanned and scan details.
 """
 
 from __future__ import annotations

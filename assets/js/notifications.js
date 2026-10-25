@@ -1,7 +1,4 @@
-/* ==========================================================================
-   notifications.js — lightweight toast notifications.
-   Exposed as window.Notifications with success/error/warning/info(title, desc).
-   ========================================================================== */
+/* Toasts: window.Notifications.success / error / warning / info(title, description). */
 
 window.Notifications = (function () {
 

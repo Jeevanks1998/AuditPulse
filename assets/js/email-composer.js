@@ -1,47 +1,21 @@
-/* ==========================================================================
-   email-composer.js — the "Send to POC" dialog. Exposed as
-   window.EmailComposer.
-
-   WHY THIS FILE EXISTS
-   --------------------
-   The composer used to be duplicated: once inside assets/js/app.js (now
-   renamed assets/js/report.js — see that file's header) at the top level
-   of report.html's page controller, and once more in an assets/js/report.js
-   on disk that had gotten corrupted into holding HTML instead of JS.
-   email-reports.html loaded the corrupted file, not app.js, so its
-   "Send to POC" button had no working composer at all. This file is now
-   the single source of truth: both report.html and email-reports.html
-   load it directly, so a fix here can't be duplicated out of sync again.
-
-   Styling is NOT defined here. assets/css/report.css already carries the
-   full composer stylesheet (.composer-overlay, .mailhead/.mailrow,
-   .recipients/.chip, .opt-group/.opt, .preview/.file-chip, plus the
-   <=640px full-screen-sheet treatment), so this module renders against
-   those exact class names. Both pages must link report.css.
-
-   PUBLIC API
-   ----------
-   EmailComposer.open({
-     auditId,           // required — the audit whose report is being sent
-     report,            // required — a ReportOut (url, overall, generatedAt, ...)
-     prefill,           // optional — an EmailHistoryOut to reload ("Resend")
-     trigger,           // optional — element focus returns to on close
-     onSent             // optional — callback(result) after a successful send
-   })
-
-   `prefill` is what makes Resend work: pass a previous send and every
-   field (to/cc/bcc, subject, body, attachment checkboxes) comes back
-   exactly as it went out, instead of regenerating defaults.
-   ========================================================================== */
+/*
+ * The "Send to POC" email dialog (window.EmailComposer), used by report.html
+ * and email-reports.html. Styles are in report.css.
+ *
+ * EmailComposer.open({
+ *   auditId,  // required
+ *   report,   // required: the report (url, overall, generatedAt, ...)
+ *   prefill,  // optional: a previous send, for Resend
+ *   trigger,  // optional: element to refocus on close
+ *   onSent    // optional: callback(result) after sending
+ * })
+ */
 
 window.EmailComposer = (function () {
   var U = window.Utils;
   var V = window.Validation;
 
-  /* The default message. Mirrors backend/emailer/templates.py's _TEMPLATE
-     — same six {{tokens}}, same wording — so the text the user sees here
-     is the text the backend would have generated had `body` been omitted.
-     Keep the two in sync. */
+  /* Default message. Keep in sync with backend emailer/templates.py. */
   var EMAIL_BODY_TEMPLATE = [
     'Hi {{poc_name}},',
     '',
@@ -68,15 +42,12 @@ window.EmailComposer = (function () {
     send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>'
   };
 
-  /* Fallback labels, used only if GET /reports/email/attachment-choices
-     fails. Not the source of truth — the backend owns that list
-     (emailer/attachments.py ATTACHMENT_CHOICES), and a hardcoded list here
-     would silently drift from what the server can actually attach. */
+  /* Fallback labels if the attachment list can't be loaded (the backend owns the real list). */
   var FALLBACK_CHOICES = { pdf: 'Audit Report PDF' };
 
-  var openInstance = null; // only ever one composer at a time
+  var openInstance = null; // one composer at a time
 
-  /* -------------------------------- helpers -------------------------------- */
+  /* Helpers */
 
   function esc(s) { return U.escapeHtml(s); }
 
@@ -93,10 +64,7 @@ window.EmailComposer = (function () {
     return band === 'good' ? 'Healthy' : band === 'mid' ? 'Needs attention' : 'Issues found';
   }
 
-  /* "19 Sep 2026" — day, short month name, year. Mirrors
-     backend/emailer/templates.py's build_subject() formatting so a
-     backend-generated subject (body omitted from the send request) reads
-     identically to the one this page shows and lets the user edit. */
+  /* "19 Sep 2026" (same as the backend's subject date). */
   function formatSubjectDate(iso) {
     if (!iso) return '';
     var d = new Date(iso);
@@ -122,10 +90,7 @@ window.EmailComposer = (function () {
     });
   }
 
-  /* Splits pasted/typed recipient text. Accepts comma, semicolon, and
-     whitespace separators, because people paste address lists out of
-     Outlook and Sheets in all three forms and silently losing half of a
-     pasted list is far worse than accepting a separator we didn't plan for. */
+  /* Splits pasted addresses on commas, semicolons or spaces. */
   function splitAddresses(text) {
     return String(text || '')
       .split(/[,;\s]+/)
@@ -137,11 +102,7 @@ window.EmailComposer = (function () {
     return V && V.isValidEmail ? V.isValidEmail(addr) : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr);
   }
 
-  /* ------------------------------ recipient field ------------------------------
-     A chip list backed by a plain array. Each entry keeps its own validity so
-     an address that fails the format check still renders (as .chip--invalid)
-     rather than vanishing — a chip that disappears on blur reads as "accepted"
-     and the user finds out at send time. */
+  /* Recipient field: chips; invalid addresses stay visible (marked) so nothing silently disappears. */
 
   function RecipientField(rowEl, opts) {
     var self = this;
@@ -156,14 +117,12 @@ window.EmailComposer = (function () {
     U.on(this.inputEl, 'keydown', function (e) {
       if (e.key === 'Enter' || e.key === ',' || e.key === ';' || e.key === 'Tab') {
         if (self.inputEl.value.trim()) {
-          // Tab still moves focus on — it just commits what's typed first,
-          // so tabbing out of a half-entered address doesn't discard it.
+          // Tab commits what's typed, then moves on.
           if (e.key !== 'Tab') e.preventDefault();
           self.commit();
         }
       } else if (e.key === 'Backspace' && !self.inputEl.value && self.addresses.length) {
-        // Backspace on an empty input edits the last chip rather than
-        // deleting it outright, so a typo is fixable without retyping.
+        // Backspace on an empty input edits the last chip.
         var last = self.addresses.pop();
         self.inputEl.value = last.value;
         self.render();
@@ -179,8 +138,7 @@ window.EmailComposer = (function () {
       }
     });
 
-    // Clicking anywhere in the chip area focuses the input — the whole
-    // block should behave like one text field.
+    // Clicking the chip area focuses the input.
     U.on(this.wrapEl, 'click', function (e) {
       if (e.target === self.wrapEl) self.inputEl.focus();
     });
@@ -201,7 +159,7 @@ window.EmailComposer = (function () {
       var exists = self.addresses.some(function (a) {
         return a.value.toLowerCase() === addr.toLowerCase();
       });
-      if (exists) return; // duplicates are silently dropped, not double-sent
+      if (exists) return; // duplicates are ignored
       self.addresses.push({ value: addr, valid: isValidEmail(addr) });
     });
     this.render();
@@ -240,8 +198,7 @@ window.EmailComposer = (function () {
       '</span>';
     }).join('');
 
-    // The <input> is re-inserted rather than replaced so focus and any
-    // in-progress text survive a re-render.
+    // Re-insert the input so focus and typed text survive a re-render.
     var input = this.inputEl;
     var value = input.value;
     var hadFocus = document.activeElement === input;
@@ -259,7 +216,7 @@ window.EmailComposer = (function () {
     this.rowEl.classList.toggle('is-invalid', !!message);
   };
 
-  /* --------------------------------- markup --------------------------------- */
+  /* Markup */
 
   function recipientRowHtml(id, label, required) {
     return '<div class="mailrow" data-row="' + id + '">' +
@@ -355,7 +312,7 @@ window.EmailComposer = (function () {
     '</div>';
   }
 
-  /* ---------------------------------- open ---------------------------------- */
+  /* Open */
 
   function open(opts) {
     opts = opts || {};
@@ -407,11 +364,9 @@ window.EmailComposer = (function () {
       onChange: function () { bccField.setError(''); }
     });
 
-    /* ---- prefill: a resend reloads the previous send verbatim ---- */
+    /* Resend: reload the previous email as it was */
     subjectEl.value = (prefill && prefill.subject) || defaultSubject(report);
-    // An old history row (written before `body` was stored) comes back
-    // empty. Falling back to the default template is right: that is the
-    // text the backend would have generated for it at the time.
+    // Older history rows have no body: use the default template.
     bodyEl.value = (prefill && prefill.body) || defaultBody(report, auditId);
     if (prefill) {
       toField.setValues(prefill.recipientTo || []);
@@ -419,7 +374,7 @@ window.EmailComposer = (function () {
       bccField.setValues(prefill.recipientBcc || []);
     }
 
-    /* ---- attachment checkboxes ---- */
+    /* Attachments */
     function renderChoices(map) {
       choices = map;
       var keys = Object.keys(map);
@@ -429,9 +384,7 @@ window.EmailComposer = (function () {
       }
       optListEl.innerHTML = keys.map(function (k) { return optionHtml(k, map[k]); }).join('');
 
-      // A resend restores exactly the keys recorded on that send; a fresh
-      // compose starts at the PDF only — never everything, which would
-      // quietly mail a full evidence package to a client.
+      // Resend keeps the original attachments; a new email starts with the PDF only.
       var checked = (prefill && prefill.attachments && prefill.attachments.length)
         ? prefill.attachments
         : ['pdf'];
@@ -459,7 +412,7 @@ window.EmailComposer = (function () {
         .map(function (b) { return b.value; });
     }
 
-    /* ---------------------------- preview ---------------------------- */
+    /* Preview */
 
     function renderPreview() {
       var files = selectedAttachments();
@@ -498,11 +451,10 @@ window.EmailComposer = (function () {
       previewBtn.textContent = on ? 'Back to edit' : 'Preview';
     }
 
-    /* ----------------------------- validation ----------------------------- */
+    /* Validation */
 
     function validate() {
-      // Commit anything half-typed first, or a user who fills in an address
-      // and clicks Send without leaving the field gets "recipient required".
+      // Commit half-typed addresses first.
       toField.commit(); ccField.commit(); bccField.commit();
 
       var ok = true;
@@ -537,11 +489,11 @@ window.EmailComposer = (function () {
         ok = false;
       }
 
-      if (!ok && previewing) setPreview(false); // errors live on the edit view
+      if (!ok && previewing) setPreview(false); // errors show on the edit view
       return ok;
     }
 
-    /* -------------------------------- send -------------------------------- */
+    /* Send */
 
     function send() {
       if (sending || !validate()) return;
@@ -558,9 +510,7 @@ window.EmailComposer = (function () {
         body: bodyEl.value,
         attachments: selectedAttachments()
       }).then(function (result) {
-        // The endpoint returns 200 for a *recorded* attempt, including a
-        // failed one (that's the point of Email History) — so success is
-        // read off the payload, never off the HTTP status.
+        // Failed sends are also saved (200), so check result.success, not the HTTP status.
         if (result && result.success) {
           window.Notifications.success('Report sent',
             'Emailed to ' + toField.values().join(', ') + '.');
@@ -569,7 +519,7 @@ window.EmailComposer = (function () {
         } else {
           showAlert((result && result.errorMessage) ||
             'The email couldn\u2019t be sent. The attempt was recorded in Email History.');
-          if (opts.onSent) opts.onSent(result); // refresh the table: the failure is a new row
+          if (opts.onSent) opts.onSent(result); // refresh the table: a failure is also a new row
         }
       }).catch(function (err) {
         showAlert((err && err.message) || 'The email couldn\u2019t be sent. Please try again.');
@@ -580,11 +530,10 @@ window.EmailComposer = (function () {
       });
     }
 
-    /* ------------------------------- wiring ------------------------------- */
+    /* Events */
 
     U.on(overlay, 'click', function (e) {
-      // Clicking the backdrop closes — but not mid-send, which would hide
-      // the outcome of a request that's still going.
+      // Backdrop click closes, but not while sending.
       if (e.target === overlay && !sending) { close(); return; }
 
       var btn = e.target.closest ? e.target.closest('[data-act]') : null;
@@ -610,8 +559,7 @@ window.EmailComposer = (function () {
     function onKeydown(e) {
       if (e.key === 'Escape' && !sending) { close(); return; }
 
-      // Focus trap. Without it, tabbing past the last control lands on the
-      // page behind the overlay, which is still scrollable and clickable.
+      // Keep keyboard focus inside the dialog.
       if (e.key !== 'Tab') return;
       var focusable = U.qsa(
         'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
@@ -637,8 +585,7 @@ window.EmailComposer = (function () {
       if (trigger && trigger.focus) trigger.focus();
     }
 
-    // Resending already has its recipients; a fresh compose does not, so
-    // each opens on the field that actually needs attention.
+    // Focus the field that needs attention (body for Resend, To otherwise).
     if (prefill && toField.values().length) bodyEl.focus();
     else overlay.querySelector('#composerToInput').focus();
 
@@ -648,8 +595,7 @@ window.EmailComposer = (function () {
 
   return {
     open: open,
-    // Exported so email-reports.js can render the same default text when it
-    // has no stored body to fall back on.
+    // Used by email-reports.js for the same default text.
     defaultSubject: defaultSubject,
     defaultBody: defaultBody
   };

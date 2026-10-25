@@ -1,12 +1,5 @@
 """
-security/hsts.py
-
-Strict-Transport-Security (HSTS) checks: presence, a max-age long
-enough to actually protect repeat visitors, and the includeSubDomains /
-preload directives. HSTS only makes sense on HTTPS — security/https.py
-owns the "site isn't even served over HTTPS" finding, so this module
-no-ops cleanly when called for a plain-http URL rather than piling on
-a redundant finding.
+Strict-Transport-Security checks: present, long enough max-age, includeSubDomains, preload. Skipped for http URLs.
 """
 
 from __future__ import annotations
@@ -18,9 +11,9 @@ from urllib.parse import urlparse
 MODULE = "security"
 CATEGORY = "hsts"
 
-# Six months, the widely-cited practical minimum for HSTS to be meaningful.
+# Six months: the usual minimum.
 MIN_RECOMMENDED_MAX_AGE = 15_768_000
-# One year, required for HSTS preload-list submission.
+# One year: needed for the HSTS preload list.
 PRELOAD_MIN_MAX_AGE = 31_536_000
 
 _MAX_AGE_RE = re.compile(r"max-age\s*=\s*(\d+)", re.IGNORECASE)

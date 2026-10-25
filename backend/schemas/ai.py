@@ -1,12 +1,5 @@
 """
-schemas/ai.py
-
-Request/response models for api/ai.py — the AI-assistant panel on
-report.html (executive summary, prioritized findings, business impact,
-action plan, chat). One schema per ai/ module, mirroring the dataclasses
-those modules already return (ai.priority.PrioritizedFinding,
-ai.action_plan.ActionPlan) so the API layer doesn't leak dataclasses
-straight into a FastAPI response.
+Request/response models for the AI endpoints (summary, priorities, impact, plan, chat).
 """
 
 from typing import Dict, List, Optional

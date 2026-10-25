@@ -1,43 +1,10 @@
 """
-images/
-
-A dedicated, granular image-quality check package — one file per
-concern — for an "images" score that doesn't exist yet anywhere in the
-pipeline (same situation ux/, mobile/, and forms/ describe: no
-`breakdown["images"] = ...` placeholder currently sitting in
-services.audit_service.run_audit_pipeline to replace, so wiring this
-in means adding an "images" key to breakdown/EMPTY_BREAKDOWN rather
-than swapping one out). Every check function returns findings in the
-same {module, category, severity, title, description, recommendation}
-shape services.audit_service / models.issue already persist, so it
-plugs into Issue sync / report.html / history exactly like every other
-module here.
-
-Distinct from seo/alt_text.py, which checks alt-text presence/length/
-filename-sniffing for SEO purposes:
-
-    optimizer   — next-gen format (webp/avif) usage; missing width/
-                  height causing layout shift
-    alt         — context-appropriateness of alt text (redundant
-                  "image of..." phrasing; icon alt duplicating
-                  adjacent link text) rather than presence/length
-    lazyload    — native loading="lazy" usage: none used on an
-                  image-heavy page, or used on the likely-LCP first
-                  image
-    broken      — missing src attributes (sync), plus a live-checked
-                  sample of <img> src URLs for 4xx/5xx/connection
-                  errors (async, needs an httpx.AsyncClient)
-    image_score — turns any list of these findings into a weighted
-                  0-100 score with a per-category breakdown
-
-Usage — wiring this into the real pipeline (crawler.crawler.Crawler
-already produces a ParsedPage per page):
-
-    from images import run_page_checks, run_site_checks, score_images
-
-    page_findings = run_page_checks(page)
-    site_findings = await run_site_checks(client, page)
-    result = score_images(page_findings + site_findings)
+Image checks (not used by the audit pipeline yet):
+  optimizer   - modern formats (webp/avif) and width/height set
+  alt         - alt text that repeats "image of..." or the link text
+  lazyload    - lazy loading used, but not on the first image
+  broken      - missing src, and a sample of image URLs checked live
+  image_score - 0-100 score
 """
 
 from __future__ import annotations
@@ -68,12 +35,7 @@ __all__ = [
 
 
 def run_page_checks(page: ParsedPage) -> List[dict]:
-    """
-    Every check that only needs one already-fetched page: optimization,
-    alt-text quality, lazy-loading, and the zero-request missing-src
-    check. Cheap and synchronous — safe to call once per page during a
-    crawl, same as seo/accessibility/ux's page-level checks.
-    """
+    """Checks that only need the parsed page."""
     findings: List[dict] = []
     findings += check_image_optimization(page)
     findings += check_alt_text_quality(page)
@@ -83,10 +45,5 @@ def run_page_checks(page: ParsedPage) -> List[dict]:
 
 
 async def run_site_checks(client: httpx.AsyncClient, page: ParsedPage) -> List[dict]:
-    """
-    The one images/ check that makes its own requests: a live-checked
-    sample of this page's image src URLs. Call once per page (or just
-    for the homepage, for a cheaper audit) — same shape as
-    seo.run_site_checks.
-    """
+    """Checks a sample of the page's image URLs live."""
     return await check_broken_images(client, page)

@@ -1,11 +1,8 @@
 """
-Real-site widget behaviour seen on axa.it, reproduced on a fixture page:
-
-  * a link with target=_blank opens a new tab — it works, it is not "broken";
-  * slider arrows (slick) are page UI: never a CTA / conversion, never a gap;
-  * the already-active tab is not clicked; another tab that swaps the list
-    (same size, same text length) is detected as working;
-  * a styled button that really does nothing is still reported as not working.
+Widget behaviour seen on axa.it: target=_blank links work (not broken),
+slider arrows are page UI (never a conversion), the active tab isn't clicked
+while another tab is detected as working, and a button that does nothing is
+reported as not working.
 """
 
 import asyncio

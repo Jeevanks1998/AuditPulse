@@ -1,15 +1,6 @@
 """
-crawler/robots.py
-
-Async robots.txt fetching, parsing, and per-hostname caching. Wraps the
-stdlib's `urllib.robotparser` (synchronous, in-memory only) behind an
-async fetch so a crawl of N pages on the same site only ever downloads
-/robots.txt once, and callers (crawler.py) never block on network I/O
-themselves.
-
-A missing, unreachable, or malformed robots.txt is treated as "allow
-everything" — the same behavior real-world crawlers fall back to —
-rather than aborting the crawl.
+Fetches and caches robots.txt per host. Missing or broken robots.txt means
+"allow everything", as real crawlers do.
 """
 
 from __future__ import annotations
@@ -38,11 +29,7 @@ class _RobotsInfo:
 
 
 class RobotsChecker:
-    """
-    One instance per crawl. Caches parsed robots.txt per hostname so
-    `can_fetch` is a cheap in-memory check for every page after the first
-    on a given host.
-    """
+    """One per crawl; caches robots.txt per host."""
 
     def __init__(self, user_agent: str = DEFAULT_USER_AGENT, timeout: float = ROBOTS_FETCH_TIMEOUT_SECONDS):
         self.user_agent = user_agent
@@ -58,7 +45,7 @@ class RobotsChecker:
         return info.crawl_delay
 
     async def sitemaps(self, client: httpx.AsyncClient, url: str) -> List[str]:
-        """Sitemap: lines declared in robots.txt, if any (sitemap.py also probes default paths)."""
+        """Sitemap: lines from robots.txt."""
         info = await self._get_info(client, url)
         return info.sitemap_urls
 
@@ -87,15 +74,14 @@ class RobotsChecker:
             if response.status_code == 200:
                 lines = response.text.splitlines()
                 parser.parse(lines)
-                # Sitemap URLs themselves contain colons (https://...), so strip
-                # only the "sitemap:" prefix rather than splitting on every colon.
+                # Sitemap URLs contain colons, so only strip the "sitemap:" prefix.
                 sitemap_urls = [
                     line[len("sitemap:"):].strip()
                     for line in lines
                     if line.lower().startswith("sitemap:")
                 ]
             else:
-                # No robots.txt (404/403/etc) -> allow everything.
+                # No robots.txt: allow everything.
                 parser.parse([])
         except httpx.HTTPError as exc:
             logger.warning(f"robots.py: failed to fetch {robots_url}, allowing all: {exc}")

@@ -1,18 +1,5 @@
 """
-links/external.py
-
-Page-level checks on a page's links to other domains: target="_blank"
-links missing rel="noopener" (the classic reverse-tabnabbing gap — the
-opened page can reach back into window.opener and redirect the
-original tab), plain-http links out from an otherwise-https page, and
-a page so dominated by outbound links that it reads more like a link
-farm than content. Distinct from security/mixed_content.py, which
-looks at a page's own *loaded resources* (scripts, images, styles)
-over http — this looks at *outbound navigation* links, a different
-attack surface and a different fix.
-
-Takes the crawler.links.Link list a caller already resolved for the
-page, same as links/internal.py.
+Outbound link checks: target=_blank without rel=noopener, http links from an https page, and pages that are mostly outbound links.
 """
 
 from __future__ import annotations
@@ -75,7 +62,7 @@ def _check_target_blank_without_noopener(page: ParsedPage, external: List[Link])
 
 def _check_insecure_external_links(page: ParsedPage, external: List[Link]) -> List[dict]:
     if urlparse(page.url).scheme != "https":
-        return []  # the page itself isn't https; not this check's concern
+        return []  # the page itself isn't https
 
     insecure = [link for link in external if urlparse(link.url).scheme == "http"]
     if not insecure:

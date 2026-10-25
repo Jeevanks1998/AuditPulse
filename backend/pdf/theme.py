@@ -1,13 +1,6 @@
 """
-pdf/theme.py
-
-Shared visual constants for the pdf/ package: the AuditPulse UI palette
-(assets/css/theme.css), the Source Sans 3 type family (embedded from
-pdf/assets/fonts, SIL Open Font License — see OFL.txt there), and the
-ParagraphStyles every section uses.
-
-If the font files can't be registered for any reason the package falls
-back to Helvetica, so a font problem never breaks report generation.
+PDF colours (same as assets/css/theme.css), Source Sans 3 fonts (OFL licence)
+and text styles. Falls back to Helvetica if the fonts can't load.
 """
 
 from __future__ import annotations
@@ -19,18 +12,10 @@ from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.styles import ParagraphStyle
 
-# Bumped whenever the layout changes — reports/report_storage.py folds it
-# into the PDF cache key so old cached PDFs are never served after a
-# redesign.
-# v6: full redesign — cover with module scores, "Start here" top fixes,
-# per-module sections with consent + journey screenshots, compact
-# appendix, compressed images.
-# v7: no separate "Issues to fix" section; more journey screenshots.
+# Raise when the layout changes; it's part of the PDF cache key, so old cached PDFs aren't reused.
 PDF_LAYOUT_VERSION = 7
 
-# --------------------------------------------------------------------------
 # Fonts
-# --------------------------------------------------------------------------
 _FONT_DIR = Path(__file__).resolve().parent / "assets" / "fonts"
 
 
@@ -56,9 +41,7 @@ FONT_DISPLAY = FONT_BOLD
 FONT_BODY_BOLD = FONT_BOLD
 FONT_MONO = "Courier"
 
-# --------------------------------------------------------------------------
-# Palette (assets/css/theme.css)
-# --------------------------------------------------------------------------
+# Colours (assets/css/theme.css)
 INK = colors.HexColor("#101828")
 PRIMARY = colors.HexColor("#4F46E5")
 PRIMARY_DARK = colors.HexColor("#3730A3")
@@ -86,7 +69,7 @@ SURFACE_SUNKEN = colors.HexColor("#F9FAFB")
 CANVAS = colors.HexColor("#F6F7FB")
 WHITE = colors.white
 
-# One colour per audit module — same as the web app's --mod-* tokens.
+# One colour per module (same as the web app).
 MODULE_COLORS = {
     "consent": (colors.HexColor("#7C3AED"), colors.HexColor("#F4EBFF")),
     "analytics": (colors.HexColor("#2563EB"), colors.HexColor("#EAF2FF")),
@@ -100,7 +83,7 @@ def module_color(module: str):
     return MODULE_COLORS.get(module, (PRIMARY, PRIMARY_SOFT))
 
 
-# Severity: colour + plain-language meaning used everywhere in the report.
+# Severity colours and plain-language meaning.
 SEVERITY_META = {
     "critical": {"label": "Critical", "action": "Fix now", "fg": ERROR, "bg": ERROR_SOFT, "text": ERROR_TEXT},
     "warning": {"label": "Warning", "action": "Fix soon", "fg": WARNING, "bg": WARNING_SOFT, "text": WARNING_TEXT},
@@ -142,7 +125,7 @@ def severity_soft_color(severity: str) -> colors.Color:
     return SEVERITY_SOFT_COLORS.get(severity, INFO_SOFT)
 
 
-# PASS / FAIL / NOT TESTED vocabulary for runtime + consent checks.
+# Pass / Fail / Not tested labels.
 STATE_META = {
     "pass": ("Pass", SUCCESS_TEXT, SUCCESS_SOFT),
     "passed": ("Pass", SUCCESS_TEXT, SUCCESS_SOFT),
@@ -162,7 +145,7 @@ def hexstr(color) -> str:
 
 
 def esc(text) -> str:
-    """XML-escape crawled / AI text before it goes into a Paragraph."""
+    """Escapes crawled or AI text before it goes into a Paragraph."""
     return _xml_escape(str(text if text is not None else ""))
 
 
@@ -207,6 +190,6 @@ STYLES = {
     "Left": _style("Left", alignment=TA_LEFT),
 }
 
-# Back-compat aliases used by older call sites.
+# Older names still used.
 STYLES["TableCell"] = STYLES["TD"]
 STYLES["TableCellMuted"] = STYLES["TDMuted"]

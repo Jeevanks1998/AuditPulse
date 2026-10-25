@@ -1,8 +1,6 @@
-/* ==========================================================================
-   Responsive rules — mobile-first overrides layered on top of base styles
-   ========================================================================== */
+/* Responsive overrides */
 
-/* ---- Tablet / small laptop ---- */
+/* Tablet / small laptop */
 @media (max-width: 1180px) {
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
   .dashboard-grid { grid-template-columns: 1fr; }
@@ -12,14 +10,13 @@
   .quick-actions { grid-template-columns: repeat(2, 1fr); }
 }
 
-/* ---- Health overview: stack the ring above the breakdown once the card
-   column narrows past a comfortable side-by-side width ---- */
+/* Health overview: ring above the breakdown */
 @media (max-width: 760px) {
   .health-card__body { flex-direction: column; align-items: stretch; gap: var(--sp-6); }
   .health-breakdown__label { width: 96px; }
 }
 
-/* ---- Sidebar collapses to icon rail / off-canvas ---- */
+/* Sidebar becomes off-canvas */
 @media (max-width: 960px) {
   .app-shell { grid-template-columns: 1fr; }
   .sidebar {
@@ -46,7 +43,7 @@
   .menu-toggle { display: none; }
 }
 
-/* ---- Mobile ---- */
+/* Mobile */
 @media (max-width: 640px) {
   .content { padding: var(--sp-4); }
   .topbar { padding: 0 var(--sp-4); }
@@ -72,11 +69,7 @@
   .metric-card-grid { grid-template-columns: 1fr; }
 }
 
-/* ---- Phones: never wider than the screen ----
-   A plain `1fr` grid column can't shrink below its widest content, so the
-   top bar (bell + theme switch + profile) and wide report rows pushed every
-   page 30–170px past the screen edge. minmax(0,1fr) + min-width:0 lets the
-   column fit the viewport; wide tables keep their own horizontal scroll. */
+/* Phones: never wider than the screen (minmax(0,1fr) lets columns shrink) */
 @media (max-width: 960px) {
   .app-shell { grid-template-columns: minmax(0, 1fr); }
   .app-shell > * { min-width: 0; }

@@ -1,11 +1,8 @@
-/* ==========================================================================
-   utils.js — small, dependency-free helpers reused across every page script.
-   Exposed as window.Utils.
-   ========================================================================== */
+/* Small shared helpers (window.Utils). */
 
 window.Utils = (function () {
 
-  /* ------------------------------ DOM ------------------------------ */
+  /* DOM */
 
   function qs(selector, root) {
     return (root || document).querySelector(selector);
@@ -30,7 +27,7 @@ window.Utils = (function () {
       .replace(/'/g, '&#39;');
   }
 
-  /* --------------------------- formatting --------------------------- */
+  /* Formatting */
 
   function hostnameOf(url) {
     if (!url) return '';
@@ -78,7 +75,7 @@ window.Utils = (function () {
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   }
 
-  /* ------------------------------ rings ------------------------------ */
+  /* Score rings */
 
   function setRingProgress(circleEl, percent) {
     if (!circleEl) return;
@@ -95,7 +92,7 @@ window.Utils = (function () {
     ringEl.setAttribute('data-band', scoreBand(score));
   }
 
-  /* ---------------------------- animation ---------------------------- */
+  /* Animation */
 
   function animateCountUp(el, target, duration, suffix) {
     if (!el) return;
@@ -120,7 +117,7 @@ window.Utils = (function () {
     window.requestAnimationFrame(tick);
   }
 
-  /* ----------------------------- storage ----------------------------- */
+  /* Storage */
 
   function storageGet(key, fallback) {
     try {
@@ -167,7 +164,7 @@ window.Utils = (function () {
     }
   }
 
-  /* ---------------------------- clipboard ---------------------------- */
+  /* Clipboard */
 
   function copyToClipboard(text) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -196,9 +193,7 @@ window.Utils = (function () {
     downloadBlob(filename, blob);
   }
 
-  // Same trigger-a-download dance as downloadTextFile, but for a Blob we
-  // already have (e.g. a PDF fetched as a binary response) rather than text
-  // we need to wrap in one ourselves.
+  // Downloads a Blob we already have (e.g. a fetched PDF).
   function downloadBlob(filename, blob) {
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
@@ -210,9 +205,7 @@ window.Utils = (function () {
     setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   }
 
-  // Reads a single query-string parameter from the current page URL, e.g.
-  // getQueryParam('id') on "report.html?id=42" -> "42". Returns null if
-  // the param isn't present.
+  // One query-string value, e.g. getQueryParam('id') on report.html?id=42 -> "42"; null if missing.
   function getQueryParam(name) {
     return new URLSearchParams(window.location.search).get(name);
   }

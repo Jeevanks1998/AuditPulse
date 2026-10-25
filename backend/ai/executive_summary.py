@@ -1,15 +1,7 @@
 """
-ai/executive_summary.py
+Writes the short summary paragraph at the top of the report.
 
-Generates the short, plain-English paragraph that sits at the top of a
-report (reports/generator.py -> ReportPayload.executive_summary,
-report.html's summary banner) — a couple of sentences a non-technical
-stakeholder can read to understand where the site stands and what
-matters most, without scrolling through every finding.
-
-Same fallback contract as the rest of ai/: a missing/unconfigured
-provider or a failed call never raises out of `generate_executive_summary`,
-it just returns a deterministic, template-built summary instead.
+If the AI is unavailable, a template summary is used instead.
 """
 
 from __future__ import annotations
@@ -38,9 +30,7 @@ async def generate_executive_summary(
         return _heuristic_summary(url, overall, breakdown, findings or [])
 
 
-# --------------------------------------------------------------------------
-# AI-backed path
-# --------------------------------------------------------------------------
+# AI path
 async def _summary_from_ai(url: str, overall: int, breakdown: Dict[str, int], findings: List[dict]) -> str:
     critical_titles = [f.get("title") for f in findings if f.get("severity") == "critical"][:5]
 
@@ -56,7 +46,7 @@ async def _summary_from_ai(url: str, overall: int, breakdown: Dict[str, int], fi
 
 
 def _unscored_summary(url: str, findings: List[dict]) -> str:
-    """No module produced a score in this run — say so instead of "0/100, weak"."""
+    """Used when no module produced a score."""
     blocked = next((f for f in findings if f.get("module") == "site_access"), None)
     if blocked:
         return (f"{url} could not be audited: the website's bot protection blocked AuditPulse's browser, "
@@ -71,9 +61,7 @@ def _unscored_summary(url: str, findings: List[dict]) -> str:
     return sentence
 
 
-# --------------------------------------------------------------------------
-# Heuristic fallback
-# --------------------------------------------------------------------------
+# Fallback
 def _heuristic_summary(url: str, overall: int, breakdown: Dict[str, int], findings: List[dict]) -> str:
     band = "strong" if overall >= 80 else "mixed" if overall >= 50 else "weak"
     critical_count = sum(1 for f in findings if f.get("severity") == "critical")

@@ -1,9 +1,5 @@
 """
-pdf/overview.py
-
-Page 2 — "Start here": the five things to fix first (one line each, with
-where to look), what was checked, and a short key explaining the colours
-and labels used through the rest of the report.
+Page 2, "Start here": the top 5 things to fix, what was checked, and a key to the labels.
 """
 
 from __future__ import annotations

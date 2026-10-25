@@ -1,18 +1,8 @@
 """
-ai/action_plan.py
+Turns prioritized findings into a plan: quick wins, short term, long term.
 
-Turns a completed audit's prioritized findings (ai/priority.py) into a
-concrete "what to do, in what order" plan grouped into three horizons —
-quick_wins, short_term, long_term — for reports/generator.py's
-`action_plan` field. This is the last step of the AI report pipeline:
-executive_summary.py says where things stand, business_impact.py says why
-it matters, this says what to actually do about it.
-
-Grouping is derived from ai/priority.py's deterministic effort estimate
-(never re-run through the AI provider), so the buckets a stakeholder sees
-always agree with the ranked list above them; only the step *wording* is
-optionally enriched by the AI provider, with a plain heuristic phrasing
-as the fallback.
+Grouping comes from priority.py (no AI), so it always matches the ranked
+list. AI only rewords the steps; plain wording is the fallback.
 """
 
 from __future__ import annotations
@@ -26,9 +16,7 @@ from ai.provider import AIProviderError, call_ai_json
 
 MAX_STEPS_PER_HORIZON = 5
 
-# Which severities land in which horizon. Critical items are quick wins
-# (fix now, they're cheap to justify) or short-term depending on effort;
-# info-level items are long-term/nice-to-have by default.
+# Which horizon each severity goes into by default.
 _HORIZON_BY_SEVERITY = {
     "critical": "quick_wins",
     "warning": "short_term",
@@ -79,9 +67,7 @@ async def generate_action_plan(
     return plan
 
 
-# --------------------------------------------------------------------------
-# AI-backed step wording
-# --------------------------------------------------------------------------
+# AI wording
 async def _step_wording_from_ai(url: str, prioritized: List[PrioritizedFinding]) -> Dict[str, str]:
     top = prioritized[: MAX_STEPS_PER_HORIZON * 3]
     items = [{"title": p.title, "description": p.description, "severity": p.severity} for p in top]
@@ -98,9 +84,7 @@ async def _step_wording_from_ai(url: str, prioritized: List[PrioritizedFinding])
     return {str(k): str(v) for k, v in result.items() if v}
 
 
-# --------------------------------------------------------------------------
-# Heuristic fallback
-# --------------------------------------------------------------------------
+# Fallback wording
 def _heuristic_step_text(item: PrioritizedFinding) -> str:
     if item.recommendation:
         return item.recommendation

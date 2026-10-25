@@ -1,14 +1,5 @@
 """
-analytics/clarity.py
-
-Detects Microsoft Clarity, the free session-recording/heatmap tool.
-Its install snippet is a small inline script that defines a `clarity`
-function and appends a loader from www.clarity.ms/tag/<project-id>, so
-both the project ID and the "is it actually wired up" signal live in
-the same inline block.
-
-Reads crawler.parser.ParsedPage.soup directly, same rationale as the
-other analytics/* modules.
+Detects Microsoft Clarity (heatmaps and session recordings) and its project ID.
 """
 
 from __future__ import annotations
@@ -31,11 +22,11 @@ class ClarityDetection:
     detected: bool = False
     project_ids: List[str] = field(default_factory=list)
     script_tag_count: int = 0
-    api_call_found: bool = False  # clarity('set'/'identify'/'consent', ...) usage beyond the base snippet
+    api_call_found: bool = False  # clarity('set' / 'identify' / 'consent', ...) used beyond the basic snippet
 
 
 def detect_clarity(page: ParsedPage) -> ClarityDetection:
-    """Scans this page's <script> tags for Microsoft Clarity signals."""
+    """Looks for Microsoft Clarity in the page's scripts."""
     result = ClarityDetection()
     project_ids: List[str] = []
 
@@ -58,7 +49,7 @@ def detect_clarity(page: ParsedPage) -> ClarityDetection:
 
 
 def check_clarity(page: ParsedPage) -> List[dict]:
-    """Findings for Microsoft Clarity issues. Absence of Clarity is not itself a finding."""
+    """Findings for Clarity problems. No Clarity at all is not a finding."""
     detection = detect_clarity(page)
     findings: List[dict] = []
 

@@ -1,18 +1,6 @@
 """
-consent/consent_score.py
-
-Turns the flat finding lists every other consent/* module returns into
-a single weighted 0-100 score with a per-category breakdown — same
-shape Audit.breakdown["consent"] / AuditStatsOut.breakdown already
-carry for the other modules (see analytics/analytics_score.py,
-seo/seo_score.py for the identical pattern this mirrors).
-
-Also exposes `build_consent_summary`, which assembles a
-models.consent.Consent-ready row from every consent/* + cookies/*
-detection in one place — this is what
-services.audit_service._write_consent_result should build from once
-it's wired to the real checks instead of its current
-random.randint(...) placeholder.
+Turns consent findings into a 0-100 score, builds the GDPR / CCPA / DPDP
+check lists, and assembles the consent summary saved to the database.
 """
 
 from __future__ import annotations
@@ -39,7 +27,7 @@ from consent.cookies import bucket_cookies
 from consent.preferences import PreferencesDetection
 from cookies.storage import CookieSummary
 
-if TYPE_CHECKING:  # avoid importing consent.runtime at module load time
+if TYPE_CHECKING:  # avoid importing consent.runtime at load time
     from consent.runtime import ConsentRuntimeResult
     from consent.network import PreConsentNetworkResult
 
@@ -47,20 +35,16 @@ MODULE = "consent"
 
 SEVERITY_PENALTY = {"critical": 30, "warning": 15, "info": 5}
 
-# Relative weights (normalized by their total). Categories not listed here (e.g. an unrecognized
-# `category` value on a finding) are folded into "other" at a small
-# default weight so nothing is silently dropped from the overall score.
+# Weights (divided by their total). Unknown categories count as "other".
 CATEGORY_WEIGHTS: Dict[str, float] = {
-    "banner": 0.25,        # no banner at all is the single biggest compliance gap
+    "banner": 0.25,        # no banner is the biggest gap
     "buttons": 0.15,
-    "behavior": 0.20,      # scripts actually held back pre-consent — the substance behind the banner
+    "behavior": 0.20,      # tracking really held back until consent
     "network": 0.10,
     "cookies": 0.15,
     "consent_mode": 0.05,
     "preferences": 0.10,
-    # Live click-through evidence (Reject doesn't stop tracking, etc.) is the
-    # strongest evidence this module has — weighted accordingly. Weights are
-    # normalized by their total in score_consent, so this needn't sum to 1.
+    # Live Accept/Reject test is the strongest evidence. Keep in sync with assets/js/score-help.js.
     "runtime": 0.20,
 }
 
@@ -70,8 +54,7 @@ _OTHER_WEIGHT = 0.05
 _PRIVACY_POLICY_LINK_RE = re.compile(r"privacy (policy|notice)", re.IGNORECASE)
 _PRIVACY_POLICY_HREF_RE = re.compile(r"privacy[-_]?(policy|notice)", re.IGNORECASE)
 
-# Rough CCPA signal: a "Do Not Sell/Share My Personal Information" link
-# (required verbatim-ish wording under CCPA/CPRA for businesses that sell data).
+# "Do Not Sell/Share My Personal Information" link (CCPA).
 
 
 @dataclass
@@ -83,11 +66,7 @@ class ConsentScoreResult:
 
 
 def score_consent(findings: List[dict]) -> ConsentScoreResult:
-    """
-    Scores a flat list of finding dicts (as returned by
-    consent.run_page_checks, or concatenated across an entire crawl)
-    into an overall score plus per-category breakdown.
-    """
+    """Scores a list of consent findings."""
     by_category: Dict[str, List[dict]] = {}
     for finding in findings:
         category = finding.get("category") or _OTHER_CATEGORY
@@ -127,10 +106,7 @@ def _score_category(category_findings: List[dict]) -> int:
     return max(0, score)
 
 
-# The ten individual technical checks that make up a GDPR assessment,
-# in display order. Each maps to one specific, independently-testable
-# requirement rather than being folded into a single pass/fail bit —
-# see GdprAssessment below for why that distinction matters.
+# The ten GDPR checks, in display order.
 GDPR_CHECK_ORDER = (
     "consent_banner",
     "accept_control",
@@ -157,11 +133,7 @@ GDPR_CHECK_LABELS: Dict[str, str] = {
     "reject_blocks_tracking": "Reject actually blocks tracking",
 }
 
-# "reject_blocks_tracking" is deliberately excluded: it's the only check
-# here that depends on the optional Playwright runtime pass, so it's
-# routinely None ("not tested") on a static-only audit — counting an
-# untested check as a failure would make every such audit non-compliant
-# regardless of what the banner itself actually does.
+# "reject_blocks_tracking" needs the browser check, so an untested result doesn't fail compliance.
 _REQUIRED_FOR_COMPLIANCE = frozenset(GDPR_CHECK_ORDER) - {"reject_blocks_tracking"}
 
 
@@ -169,22 +141,14 @@ _REQUIRED_FOR_COMPLIANCE = frozenset(GDPR_CHECK_ORDER) - {"reject_blocks_trackin
 class GdprCheck:
     key: str
     label: str
-    passed: Optional[bool]  # None = not evaluated (missing data, e.g. runtime pass didn't run)
+    passed: Optional[bool]  # None = not tested
     detail: str = ""
-    # Structured, UI-renderable evidence backing a failed check — e.g. the
-    # actual tracker requests seen for trackers_blocked_pre_consent. Only
-    # populated for checks that have real underlying evidence data to show
-    # (currently just trackers_blocked_pre_consent, from the live
-    # consent.network pre-consent capture); every other check has to make
-    # do with `detail` alone. Shape: {"summary": str, "items": [str, ...],
-    # "items_label": str}. `items`/`items_label` are omitted (left as an
-    # empty list / "") when there's nothing list-like to show.
+    # Evidence shown for a failed check: {"summary", "items", "items_label"}.
     evidence: Optional[dict] = None
 
 
 def _reject_detail_and_evidence(runtime_result, ok: bool, control: str):
-    """Detail text + evidence for the 'reject actually blocks tracking' checks,
-    built from what the live pass saw after the click and on the next page."""
+    """Detail text and evidence for "Reject really blocks tracking", from what the browser saw after the click."""
     try:
         from consent.runtime import reject_tracking_evidence
         ev = reject_tracking_evidence(runtime_result)
@@ -213,16 +177,7 @@ def _reject_detail_and_evidence(runtime_result, ok: bool, control: str):
 
 @dataclass
 class GdprAssessment:
-    """
-    The individual-signal replacement for a single `gdpr_compliant`
-    boolean. "GDPR compliant = TRUE/FALSE" hides *which* requirement a
-    site fails; a banner with an accept-only button and one that blocks
-    trackers correctly but has no reject control at all both used to
-    collapse to the same `False`. Each check here maps to one distinct
-    technical requirement (a clear positive action, no non-essential
-    cookies before consent, an equally-easy way to withdraw, etc.) so a
-    report can say exactly which one is missing.
-    """
+    """The ten GDPR checks, so the report shows exactly which requirement failed."""
     checks: List[GdprCheck] = field(default_factory=list)
 
     def get(self, key: str) -> Optional[GdprCheck]:
@@ -233,31 +188,12 @@ class GdprAssessment:
 
     @property
     def failed_checks(self) -> List[GdprCheck]:
-        """Checks that ran and failed — derived from the live results, not
-        from a fixed list. `passed is False` only: an unevaluated check
-        (None) is "not tested", never a failure."""
+        """Checks that ran and failed (not tested is not failed)."""
         return [c for c in self.checks if c.passed is False]
 
     def as_evidence_dict(self) -> Dict[str, dict]:
-        """
-        One entry per check that *didn't pass*, so the report explains
-        itself from what this audit actually observed rather than from
-        fixed label text:
-
-          failed (passed is False)      -> reason + any structured evidence
-          not tested (passed is None)   -> reason only (why it couldn't be
-                                           verified, e.g. runtime cookie
-                                           timing unavailable)
-
-        Each entry carries:
-          reason   — the check's own `detail` string
-          summary/items/items_label — structured evidence, when the check
-                     has any (trackers_blocked_pre_consent,
-                     cookies_blocked_pre_consent)
-
-        Passed checks are left out, so this stays sparse. Stored in the
-        existing gdpr_check_evidence JSON column — no schema change. Older
-        audits lack `reason`; the report falls back to its fixed text.
+        """Reason and evidence for each check that didn't pass (failed or not tested).
+        Saved in gdpr_check_evidence.
         """
         out: Dict[str, dict] = {}
         for c in self.checks:
@@ -272,11 +208,7 @@ class GdprAssessment:
 
     @property
     def compliant(self) -> bool:
-        """
-        True only when every required check ran and passed. See
-        `_REQUIRED_FOR_COMPLIANCE` for why the runtime-only
-        reject_blocks_tracking check doesn't gate this verdict.
-        """
+        """True only when every required check ran and passed."""
         required = [c for c in self.checks if c.key in _REQUIRED_FOR_COMPLIANCE]
         return bool(required) and all(c.passed is True for c in required)
 
@@ -292,18 +224,8 @@ class GdprAssessment:
 def resolve_banner_detection(
     banner_detected: bool, runtime_result: Optional["ConsentRuntimeResult"]
 ) -> tuple:
-    """
-    Returns (banner_found, found_via_runtime_only).
-
-    consent.banner.detect_banner reads only the raw fetched HTML, so a CMP
-    that injects its banner with client-side JavaScript (OneTrust, Didomi,
-    custom banners...) is invisible to it — the same blind spot that
-    build_gdpr_assessment already works around for the Accept/Reject/
-    Manage buttons. When the live Playwright pass ran and found a visible
-    Accept or Reject control, a consent banner demonstrably exists, so
-    that counts as detection too. Manage/Personalize alone isn't treated as
-    proof (too generic a label to trust by itself), and a runtime pass that
-    didn't run (`available` False) never upgrades a "not found".
+    """Returns (banner_found, found_only_in_browser). Banners added by JavaScript
+    aren't in raw HTML; a visible Accept or Reject in the browser proves one.
     """
     runtime_saw_banner = bool(
         runtime_result and runtime_result.available and runtime_result.banner_detected
@@ -317,22 +239,9 @@ _MAX_COOKIES_LISTED = 10
 def _cookies_before_consent_check(
     runtime_result: Optional["ConsentRuntimeResult"],
 ) -> GdprCheck:
-    """
-    cookies_blocked_pre_consent, judged only from consent.runtime's
-    before-consent snapshot: a fresh browser context, page loaded, *no*
-    consent action taken yet, then every cookie in the jar recorded. That
-    is a real timing measurement.
-
-    The static Set-Cookie summary (consent.cookies) is deliberately NOT
-    consulted here. It only sees cookies a server sets on the first HTTP
-    response, so it misses everything client-side scripts set afterwards,
-    and can't say anything about timing — using it here reported "no
-    non-essential cookies" for pages that visibly had several.
-
-    PASS / FAIL / None ("not tested") — and when the runtime pass didn't
-    run or couldn't capture the snapshot, that's None, never a guessed
-    FAIL or PASS. Cookie names, domains and categories all come from the
-    snapshot itself; nothing here is site-specific.
+    """"No non-essential cookies before consent", judged only from the browser's
+    cookie jar before any click. Server headers can't show timing, so they aren't
+    used. None = not tested.
     """
     key = "cookies_blocked_pre_consent"
     label = GDPR_CHECK_LABELS[key]
@@ -402,12 +311,7 @@ def _cookies_before_consent_check(
 def effective_buttons(
     static_buttons: ButtonsDetection, runtime_result: Optional["ConsentRuntimeResult"]
 ) -> ButtonsDetection:
-    """
-    The single control inventory every check reads. The rendered banner
-    (consent.runtime) wins whenever the live pass saw it — it is what a
-    visitor actually gets, and client-rendered CMPs never exist in raw
-    HTML. Otherwise the banner-scoped static scan is used.
-    """
+    """The buttons every check uses: the rendered banner when the browser saw it, otherwise the raw HTML."""
     if runtime_result is not None and runtime_result.available and runtime_result.banner_detected:
         return runtime_result.buttons_detection()
     return static_buttons
@@ -453,30 +357,9 @@ def build_gdpr_assessment(
     runtime_result: Optional["ConsentRuntimeResult"] = None,
     network_result: Optional["PreConsentNetworkResult"] = None,
 ) -> GdprAssessment:
-    """
-    Builds the ten checks in `GDPR_CHECK_ORDER` from detections that
-    consent/__init__.py's run_page_checks / analyze_site have already
-    computed — no new page-scanning here, this only re-reads results
-    other modules produced.
-
-    `cookie_summary` is accepted for API compatibility but no longer feeds
-    any check: Set-Cookie headers from one HTTP fetch can't establish
-    what was set before consent (see _cookies_before_consent_check, which
-    judges cookies_blocked_pre_consent from the runtime before-consent
-    snapshot instead).
-
-    `runtime_result` is optional for the same reason: reject_blocks_tracking
-    needs consent.runtime's live click-through pass. None (no pass run,
-    or the pass ran but never found/clicked a reject control) reports as
-    "not evaluated", never as a silent pass or fail.
-
-    `network_result` is optional too: consent.network's pre-consent
-    capture (the same data check_pre_consent_network's findings and the
-    old flat "N request(s) to known tracker(s) (...) were observed
-    before any consent action" text are built from). When available and
-    trackers_blocked_pre_consent fails, its actual captured requests
-    back that check's `evidence` (count + tracker names) instead of
-    leaving the UI with just the pass/fail bit.
+    """Builds the ten GDPR checks from results already computed (no page scanning).
+    runtime_result and network_result are optional; missing data means
+    "not tested", never pass or fail. `cookie_summary` is no longer used.
     """
     checks: List[GdprCheck] = []
 
@@ -489,8 +372,7 @@ def build_gdpr_assessment(
          else "No consent banner or CMP was detected."),
     ))
 
-    # One inventory decides every control check: the rendered banner when
-    # the live pass saw it, otherwise the banner-scoped static markup scan.
+    # One button list for every check.
     eff = effective_buttons(buttons, runtime_result)
     reject_layer = runtime_result.reject_layer if (runtime_result and runtime_result.available) else None
     if eff.source == "static" and eff.reject_found:
@@ -557,8 +439,7 @@ def build_gdpr_assessment(
 
     checks.append(_cookies_before_consent_check(runtime_result))
 
-    # Static detection + runtime verification: a Manage/Personalize control
-    # only counts once clicking it actually opened a preference panel.
+    # Settings only counts if clicking it really opened a preference panel.
     panel_verified = (runtime_result.personalize_exposes_controls
                       if (runtime_result and runtime_result.available and runtime_result.manage_clicked) else None)
     granular_ok = manage_found and panel_verified is not False
@@ -619,13 +500,7 @@ def build_gdpr_assessment(
     return GdprAssessment(checks=checks)
 
 
-# The six individual technical checks that make up a CCPA/CPRA
-# assessment, in display order — the CCPA counterpart to
-# GDPR_CHECK_ORDER above. CCPA compliance was previously a single
-# `ccpa_link_found and privacy_policy_url is not None` boolean; that
-# collapsed "no Do Not Sell link" and "no opt-out mechanism at all"
-# into the same undifferentiated False, the same problem
-# GDPR_CHECK_ORDER already fixed for GDPR.
+# The six CCPA checks, in display order.
 CCPA_CHECK_ORDER = (
     "privacy_policy_available",
     "privacy_choices_link",
@@ -644,10 +519,7 @@ CCPA_CHECK_LABELS: Dict[str, str] = {
     "opt_out_behavior_verified": "Opt-out actually stops tracking",
 }
 
-# "opt_out_behavior_verified" is excluded for the same reason
-# GDPR's "reject_blocks_tracking" is: it depends on the optional
-# Playwright runtime pass, so it's routinely None ("not tested") on a
-# static-only audit.
+# "opt_out_behavior_verified" needs the browser check, so it doesn't gate compliance.
 _CCPA_REQUIRED_FOR_COMPLIANCE = frozenset(CCPA_CHECK_ORDER) - {"opt_out_behavior_verified"}
 
 
@@ -655,14 +527,13 @@ _CCPA_REQUIRED_FOR_COMPLIANCE = frozenset(CCPA_CHECK_ORDER) - {"opt_out_behavior
 class CcpaCheck:
     key: str
     label: str
-    passed: Optional[bool]  # None = not evaluated
+    passed: Optional[bool]  # None = not tested
     detail: str = ""
 
 
 @dataclass
 class CcpaAssessment:
-    """CCPA counterpart to GdprAssessment — see that class's docstring
-    for why a single `ccpa_compliant` boolean isn't enough on its own."""
+    """The six CCPA checks (see GdprAssessment)."""
     checks: List[CcpaCheck] = field(default_factory=list)
 
     def get(self, key: str) -> Optional[CcpaCheck]:
@@ -694,16 +565,7 @@ def build_ccpa_assessment(
     gpc_honored: bool,
     runtime_result: Optional["ConsentRuntimeResult"] = None,
 ) -> CcpaAssessment:
-    """
-    Builds the six checks in `CCPA_CHECK_ORDER`, fetched/detected the
-    same way build_gdpr_assessment builds GDPR's ten: every check here
-    is either read from a detection another consent/* module already
-    ran (consent.consent_score.detect_privacy_policy /
-    detect_ccpa_link, consent.ccpa.detect_privacy_choices_link /
-    detect_gpc_handling, consent.preferences.detect_preferences_link)
-    or, for opt_out_behavior_verified, the optional live click-through
-    (consent.runtime) pass — no new page-scanning happens here.
-    """
+    """Builds the six CCPA checks from results already computed (no page scanning)."""
     checks: List[CcpaCheck] = []
 
     privacy_ok = privacy_policy_url is not None
@@ -756,11 +618,8 @@ def build_ccpa_assessment(
     return CcpaAssessment(checks=checks)
 
 
-# India's Digital Personal Data Protection Act, 2023 — technical indicators
-# a website scan can observe. Reuses the technical checks above (no new
-# page scanning); the DPDP framing is: notice before collection, a clear
-# affirmative action, freedom to refuse, no processing before consent,
-# and withdrawal as easy as giving consent.
+# India DPDP Act checks a website scan can see: notice before collection,
+# clear consent action, freedom to refuse, nothing before consent, easy withdrawal.
 DPDP_CHECK_ORDER = (
     "notice_available",
     "notice_purpose_stated",
@@ -789,8 +648,7 @@ DPDP_CHECK_LABELS: Dict[str, str] = {
     "dpdp_referenced": "Notice refers to the DPDP Act",
 }
 
-# DPDP notice checks — read from the privacy notice itself
-# (consent.site_evidence). None = the notice could not be read.
+# DPDP checks read from the privacy notice. None = notice not readable.
 _DPDP_NOTICE_RULES = {
     "notice_purpose_stated": (
         re.compile(r"\bpurposes?\b", re.I),
@@ -830,7 +688,7 @@ _DPDP_REQUIRED_FOR_COMPLIANCE = frozenset(DPDP_CHECK_ORDER) - {"refusal_blocks_t
 
 
 def _dpdp_notice_check(key: str, site_evidence) -> tuple:
-    """(passed, evidence) for one notice check; passed None when no notice was read."""
+    """(passed, evidence) for one notice check; None if no notice was read."""
     notice = getattr(site_evidence, "notice", None) if site_evidence is not None else None
     if notice is None or not (notice.text or "").strip():
         return None, {"reason": "The privacy notice could not be read automatically, so this was not tested."}
@@ -846,9 +704,7 @@ def _dpdp_notice_check(key: str, site_evidence) -> tuple:
 
 
 def build_dpdp_assessment(technical: GdprAssessment, site_evidence=None) -> dict:
-    """DPDP view: the technical consent checks plus checks read from the
-    privacy notice itself (purpose, grievance contact, rights, DPDP
-    reference) — returned as a JSON-ready dict."""
+    """DPDP view: technical checks plus privacy-notice checks, as a dict."""
     checks: Dict[str, Optional[bool]] = {}
     evidence: Dict[str, dict] = {}
     for key in DPDP_CHECK_ORDER:
@@ -880,26 +736,16 @@ def build_dpdp_assessment(technical: GdprAssessment, site_evidence=None) -> dict
 
 @dataclass
 class ConsentSummary:
-    """Field-for-field match with models.consent.Consent, minus audit_id/id/created_at."""
+    """Same fields as models.consent.Consent (minus id, audit_id, created_at)."""
     has_cookie_banner: bool = False
     banner_blocks_scripts_pre_consent: bool = False
     gdpr_compliant: bool = False
-    # Per-check breakdown behind gdpr_compliant above — key -> True/False/None
-    # ("not evaluated"), in GDPR_CHECK_ORDER. gdpr_compliant is just
-    # GdprAssessment.compliant computed from these; the dict is what a
-    # report should actually render instead of the single bit.
+    # GDPR check -> True / False / None (not tested). gdpr_compliant comes from these.
     gdpr_checks: Dict[str, Optional[bool]] = field(default_factory=dict)
-    # Structured evidence for whichever gdpr_checks entries have it (see
-    # GdprCheck.evidence) — sparse, keyed the same as gdpr_checks, only
-    # present for checks with real underlying data to show (currently
-    # just trackers_blocked_pre_consent).
+    # Evidence for the checks that have it.
     gdpr_check_evidence: Dict[str, dict] = field(default_factory=dict)
     ccpa_compliant: bool = False
-    # Per-check breakdown behind ccpa_compliant above — key -> True/False/None
-    # ("not evaluated"), in CCPA_CHECK_ORDER. ccpa_compliant is just
-    # CcpaAssessment.compliant computed from these; the dict is what a
-    # report should actually render instead of the single bit (same
-    # relationship gdpr_checks has to gdpr_compliant above).
+    # CCPA check -> True / False / None (not tested).
     ccpa_checks: Dict[str, Optional[bool]] = field(default_factory=dict)
     privacy_policy_found: bool = False
     privacy_policy_url: Optional[str] = None
@@ -907,41 +753,24 @@ class ConsentSummary:
     third_party_trackers: List[str] = field(default_factory=list)
     consent_score: int = 0
 
-    # Set by consent.analyze_site after screenshot capture / the runtime
-    # pass complete — build_consent_summary leaves these at their default
-    # since analyze_site computes the screenshots after building the
-    # summary object (see consent/__init__.py). Left as real fields here
-    # (rather than a separate kwarg on the Consent(...) call) so the whole
-    # row can persist from a single `Consent(audit_id=..., **vars(summary))`.
+    # Set by analyze_site after screenshots are taken.
     banner_screenshot_path: Optional[str] = None
     preferences_screenshot_path: Optional[str] = None
     reject_screenshot_path: Optional[str] = None
     accept_screenshot_path: Optional[str] = None
 
-    # consent.runtime.run_consent_runtime's click-through verdicts.
-    # runtime_available: the Playwright pass executed at all (browser
-    # launched, page loaded) — independent of whether it found anything to
-    # click. runtime_tested: it additionally succeeded in clicking Accept
-    # and/or Reject, i.e. reject_blocks_tracking/accept_allows_tracking/
-    # personalize_exposes_controls below are real verdicts, not just "not
-    # tested". runtime_result is the full ConsentRuntimeResult, serialized,
-    # kept for the evidence-package export and the report's screenshot strip.
+    # Browser check results. runtime_available: it ran. runtime_tested: it
+    # clicked Accept and/or Reject. runtime_result: the full result, for exports.
     runtime_available: bool = False
     runtime_tested: bool = False
     runtime_result: Optional[dict] = None
 
-    # Region detection + which frameworks were assessed (consent.region).
-    # gdpr_checks / ccpa_checks above are only populated when that framework
-    # is applicable; an empty dict + applicability.frameworks[*].status ==
-    # "not_assessed" means "not assessed", never "failed".
+    # Region and which laws were assessed. Empty checks + "not_assessed" means not assessed, not failed.
     applicability: Dict[str, object] = field(default_factory=dict)
-    # Framework-neutral technical consent scan: the rendered banner, its
-    # control inventory (label / detected action / evidence), the technical
-    # checks, and the classified pre-consent network/cookie evidence.
+    # Law-neutral scan: rendered banner, buttons, checks and evidence.
     technical_scan: Dict[str, object] = field(default_factory=dict)
 
-    # Phase 2: the region engine's output as first-class columns
-    # (consent.region.RegionResult) + the consent-control inventory.
+    # Detected region and the banner's buttons.
     detected_region: str = "UNKNOWN"
     region_confidence: str = "low"
     region_evidence: List[str] = field(default_factory=list)
@@ -951,7 +780,7 @@ class ConsentSummary:
 
 
 def detect_privacy_policy(page: ParsedPage) -> Optional[str]:
-    """Returns the absolute-or-relative href of a privacy policy link, if any is found."""
+    """Returns the privacy policy link, if any."""
     for tag in page.anchor_tags:
         text = tag.get_text(strip=True) or ""
         href = tag.get("href") or ""
@@ -961,7 +790,7 @@ def detect_privacy_policy(page: ParsedPage) -> Optional[str]:
 
 
 def detect_ccpa_link(page: ParsedPage) -> bool:
-    """Back-compat wrapper — the signal now lives in consent.ccpa."""
+    """Kept for older callers; see consent.ccpa."""
     return detect_do_not_sell_link(page)
 
 
@@ -982,30 +811,20 @@ def build_consent_summary(
     ccpa_signals: Optional[CcpaSignals] = None,
     scan_meta: Optional[dict] = None,
     site_evidence=None,
-    # Phase 1 keyword, kept for callers that still pass it.
+    # older keyword, still accepted
     applicability: Optional[RegionResult] = None,
 ) -> ConsentSummary:
-    """
-    Assembles a ConsentSummary ready for models.consent.Consent(**vars(summary)).
-
-    Flow:
-        region detected  →  applicable frameworks  →  run applicable assessment(s)
-
-    The ten technical checks (GDPR_CHECK_ORDER) are always computed — they
-    are the framework-neutral *technical consent scan* and are stored in
-    `technical_scan`. They are only *interpreted* as a GDPR assessment
-    (gdpr_checks / gdpr_compliant) when GDPR applies; CCPA's six checks
-    only run when a California candidate is detected; DPDP only for India.
-    When no region can be established, regional compliance is
-    "not assessed" — no GDPR/CCPA pass or fail is produced at all.
+    """Builds the summary saved to the database: region -> which laws apply ->
+    their checks. The ten technical checks always run; they count as GDPR only
+    where GDPR applies. CCPA only for California, DPDP only for India. No region
+    means "not assessed".
     """
     applicability = region or applicability or detect_region(page.url, page, target_region)
     ccpa_signals = ccpa_signals or detect_ccpa_signals(page)
 
     privacy_policy_url = detect_privacy_policy(page)
     if privacy_policy_url is None and getattr(site_evidence, "notice", None) is not None:
-        # No privacy link on the homepage, but the notice was found one level
-        # down (e.g. a PDF linked from a "Policies" page).
+        # No privacy link on the homepage, but the notice was found one level down.
         privacy_policy_url = site_evidence.notice.url
     ccpa_link_found = ccpa_signals.do_not_sell_link
     privacy_choices = ccpa_signals.privacy_choices
@@ -1129,8 +948,7 @@ def _serialize_runtime(runtime_result) -> Optional[dict]:
     if not runtime_result:
         return None
     data = dataclasses.asdict(runtime_result)
-    # Keep the stored row small and useful: per-request detail is summarized
-    # in network_summary; keep only confirmed-tracking + vendor requests here.
+    # Keep the saved row small: only tracking and vendor requests.
     for state in ("before_consent", "after_reject", "before_accept", "after_accept"):
         cap = getattr(runtime_result, state, None)
         if cap is None or state not in data:
@@ -1155,8 +973,8 @@ def build_technical_scan(
     network_result: Optional["PreConsentNetworkResult"],
     banner_found: bool,
 ) -> dict:
-    """Framework-neutral technical consent scan for the report (JSON-ready)."""
-    from consent.network import summarize_requests  # local: keeps module import light
+    """Law-neutral technical scan for the report."""
+    from consent.network import summarize_requests  # local import keeps start-up light
 
     eff = effective_buttons(buttons, runtime_result)
     runtime_ok = bool(runtime_result and runtime_result.available)
@@ -1181,7 +999,7 @@ def build_technical_scan(
         network["before_consent"] = runtime_result.network_summary["before_consent"]
     if runtime_ok:
         for k in ("after_reject", "after_reject_next_page", "after_accept"):
-            if k in runtime_result.network_summary:   # an empty capture is evidence too ("no requests")
+            if k in runtime_result.network_summary:   # an empty capture is evidence too
                 network[k] = runtime_result.network_summary[k]
 
     cookies: Dict[str, object] = {}

@@ -1,15 +1,5 @@
 """
-models/report.py
-
-Report is the persisted, shareable artifact generated from a completed
-Audit (report.html). It replaces the old ad hoc `Audit.share_token`
-column with a proper one-to-one row so share links can expire, track
-view counts, and (once wired up) point at an exported PDF on disk —
-without bloating the Audit table itself.
-
-api/reports.py builds the on-screen ReportOut payload from Audit +
-Issue on the fly (that data changes with the audit); this model only
-tracks the *sharing/export* side effects layered on top of it.
+Sharing and export details for an audit's report (share links, expiry, view counts).
 """
 
 from datetime import datetime, timezone
@@ -45,9 +35,7 @@ class Report(Base):
     )
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    # ----------------------------------------------------------------
     # Relationships
-    # ----------------------------------------------------------------
     audit: Mapped["Audit"] = relationship("Audit", back_populates="report")
     user: Mapped["User"] = relationship("User", back_populates="reports")
 

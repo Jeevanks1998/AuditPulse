@@ -1,7 +1,4 @@
-/* ==========================================================================
-   Cookie Scanner — report page tab (assets/js/cookie-render.js).
-   Colours come from variables.css / theme.css so dark mode follows.
-   ========================================================================== */
+/* Cookie Scanner tab on the report page (cookie-render.js). Uses theme colours, so dark mode works. */
 
 .ck { display: flex; flex-direction: column; gap: var(--sp-4); }
 .ck-block { display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -14,7 +11,7 @@
   background: var(--color-primary-soft); color: var(--text-primary); border: 1px solid transparent;
 }
 
-/* ---- tiles ---- */
+/* Tiles */
 .ck-tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--sp-2); }
 .ck-tile {
   border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--sp-2) var(--sp-3);
@@ -27,7 +24,7 @@
 .ck-tile[data-state="pass"] .ck-tile__value { color: var(--color-success); }
 .ck-tile[data-state="warn"] .ck-tile__value { color: var(--color-warning); }
 
-/* ---- category bars ---- */
+/* Category bars */
 .ck-bars { display: grid; gap: 6px; }
 .ck-bar {
   display: grid; grid-template-columns: 170px 1fr 40px; gap: var(--sp-2); align-items: center;
@@ -39,7 +36,7 @@
 .ck-bar__fill { display: block; height: 100%; }
 .ck-bar__n { font-family: var(--font-mono); text-align: right; }
 
-/* category colours (fill + chip) */
+/* Category colours */
 .ck-cat { display: inline-block; padding: 1px 8px; border-radius: var(--radius-pill); font-size: var(--fs-2xs); font-weight: 600; white-space: nowrap; }
 .ck-cat--marketing { background: rgba(239, 68, 68, .14); color: var(--color-error); }
 .ck-cat--analytics { background: rgba(249, 115, 22, .14); color: var(--color-accent-orange); }
@@ -54,7 +51,7 @@
 .ck-bar__fill.ck-cat--essential { background: var(--color-success); }
 .ck-bar__fill.ck-cat--unknown { background: var(--text-tertiary); border: 0; }
 
-/* ---- toolbar ---- */
+/* Toolbar */
 .ck-toolbar { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
 .ck-input {
   font: inherit; font-size: var(--fs-sm); padding: 6px 10px; border-radius: var(--radius-sm);
@@ -65,7 +62,7 @@ input.ck-input { flex: 1 1 220px; }
 .ck-legend { margin: 0; font-size: var(--fs-xs); color: var(--text-tertiary); }
 .ck-count { margin: 0; font-size: var(--fs-xs); color: var(--text-secondary); }
 
-/* ---- table ---- */
+/* Table */
 .ck-tablewrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-md); }
 .ck-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); min-width: 760px; }
 .ck-table th {
@@ -107,7 +104,7 @@ input.ck-input { flex: 1 1 220px; }
 .ck-chip--review { background: var(--color-warning-soft); color: var(--color-warning-text); }
 .ck-chip--ok { background: var(--color-success-soft); color: var(--color-success-text); }
 
-/* ---- expanded row ---- */
+/* Expanded row */
 .ck-detailrow td { background: var(--surface-sunken); }
 .ck-detail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-4); padding: var(--sp-1) 0; }
 .ck-detail__h { margin: 0 0 4px; font-size: var(--fs-xs); font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .03em; }
@@ -132,7 +129,7 @@ input.ck-input { flex: 1 1 220px; }
   .ck-detail { grid-template-columns: 1fr; }
   .ck-export { margin-left: 0; }
   .ck-toolbar .ck-input { flex: 1 1 45%; }
-  /* Table becomes one card per cookie. */
+  /* Small screens: one card per cookie. */
   .ck-tablewrap { overflow: visible; border: 0; }
   .ck-storage .ck-tablewrap { overflow-x: auto; border: 1px solid var(--border); }
   .ck-table--small td { word-break: break-all; }

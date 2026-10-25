@@ -1,17 +1,5 @@
 """
-forms/forms_score.py
-
-Turns the flat finding lists from forms/validation.py,
-required_fields.py, captcha.py, and autocomplete.py into a single
-weighted 0-100 score with a per-category breakdown — same shape as
-seo/seo_score.py and ux/ux_score.py, so it drops into
-Audit.breakdown / AuditStatsOut.breakdown as breakdown["forms"]
-alongside the other module scores.
-
-Validation and required-field consistency are weighted heaviest since
-they affect whether the form actually works correctly for users;
-captcha and autocomplete are lower-stakes convenience/hardening
-categories.
+Turns form findings into a 0-100 score. Validation and required fields weigh most.
 """
 
 from __future__ import annotations
@@ -44,7 +32,7 @@ class FormsScoreResult:
 
 
 def score_forms(findings: List[dict]) -> FormsScoreResult:
-    """Scores a flat list of finding dicts (forms/* run_*_checks output) into an overall score."""
+    """Scores a list of form findings."""
     by_category: Dict[str, List[dict]] = {}
     for finding in findings:
         category = finding.get("category") or _OTHER_CATEGORY

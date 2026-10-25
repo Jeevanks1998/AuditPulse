@@ -1,27 +1,11 @@
 """
-journey/journey_scanner.py
+Scans the real site in a browser and finds every page and interactive element
+(links, buttons, forms, downloads, videos, tabs, menus, ...). No site-specific
+names: the rendered page is the only source.
 
-Scans the actual website and discovers what exists — pages, and every
-interactive element on each rendered page. Nothing here knows any
-website-specific button, label or journey: the rendered DOM is the source
-of truth.
-
-    start URL
-       ↓  render in a real browser (JavaScript executed)
-    discover elements (links, buttons, CTAs, forms + fields + submit,
-    downloads, videos, search, navigation, phone/email links, tabs,
-    accordions, modal triggers, any other clickable element)
-       ↓
-    follow same-site links (breadth-first) within the audit's crawl limits
-       ↓
-    pages + elements + forms + page relationships (parent → child)
-
-Crawl limits and safety reuse the existing AuditPulse controls:
-  * the audit's own max_pages and depth ("homepage" → the homepage plus the
-    pages it links to directly; "full" → a deeper breadth-first walk)
-  * robots.txt via crawler.robots.RobotsChecker, and its crawl-delay
-  * same-site only; asset URLs (PDF, images…) are downloads, not pages
-  * no form is ever submitted while scanning
+Follows same-site links breadth-first within the audit's page limit,
+respects robots.txt, treats files (PDF, images) as downloads, and never
+submits forms.
 """
 
 from __future__ import annotations
@@ -39,20 +23,16 @@ from journey.browser_session import is_browser_dead_error
 from crawler.links import ASSET_EXTENSIONS, NON_CRAWLABLE_SCHEMES
 from utils.net_guard import guarded_async_client
 
-# Hard ceilings on top of the audit's own max_pages, so one audit can never
-# turn into an unbounded browser crawl.
+# Hard page limits on top of the audit's max_pages.
 HOMEPAGE_DEPTH_PAGE_CAP = 8
 FULL_DEPTH_PAGE_CAP = 25
 FULL_DEPTH_LEVELS = 3
 PAGE_SETTLE_MS = 1_200
 MAX_HTML_BYTES = 4_000_000
-MAX_ELEMENTS_PER_PAGE = 800   # mega-menus alone can hold 300+ links
+MAX_ELEMENTS_PER_PAGE = 800   # mega-menus alone can have 300+ links
 MAX_CRAWL_DELAY_S = 5.0
 
-# Runs in the rendered page. Collects every interactive element and every
-# form, tagging each element with data-journey-id so later steps can find
-# exactly the same element again. No labels or site-specific names here —
-# only DOM structure, roles and attributes.
+# Runs in the page: collects every interactive element and form, tagging each with data-journey-id.
 DISCOVER_JS = r"""
 (args) => {
   const { maxElements, idPrefix } = args;
@@ -281,8 +261,8 @@ class DiscoveredElement:
     style: Dict[str, object] = field(default_factory=dict)
     signature: str = ""
     in_dialog: bool = False
-    in_consent: bool = False   # inside a cookie / consent banner (tested by the Consent module)
-    dynamic: bool = False      # not present in the server-delivered HTML
+    in_consent: bool = False   # inside a cookie banner (Consent module tests these)
+    dynamic: bool = False      # not in the server's HTML (added by JavaScript)
 
     @property
     def label(self) -> str:
@@ -317,7 +297,7 @@ class PageScan:
     title: str = ""
     depth: int = 0
     parent_url: Optional[str] = None
-    via_label: Optional[str] = None       # the discovered link that led here
+    via_label: Optional[str] = None       # the link that led here
     via_element_id: Optional[str] = None
     status: Optional[int] = None
     final_url: Optional[str] = None
@@ -326,14 +306,14 @@ class PageScan:
     form_count: int = 0
     links_out: List[str] = field(default_factory=list)
     lang: Optional[str] = None
-    analytics_on_load: List[str] = field(default_factory=list)   # vendor:event seen while this page loaded
+    analytics_on_load: List[str] = field(default_factory=list)   # vendor:event seen while the page loaded
     screenshot: Optional[str] = None
-    # Cookies that first appeared while this page loaded (Cookie Scanner).
+    # Cookies that first appeared on this page (Cookie Scanner).
     cookies_set: List[dict] = field(default_factory=list)
 
 
 def cookie_record(c: dict) -> dict:
-    """A Playwright cookie as stored for the Cookie Scanner (no values kept)."""
+    """A browser cookie as stored for the Cookie Scanner (no values)."""
     exp = c.get("expires")
     return {
         "name": c.get("name") or "", "domain": (c.get("domain") or "").lstrip("."), "path": c.get("path") or "/",
@@ -345,7 +325,7 @@ def cookie_record(c: dict) -> dict:
 
 
 async def _new_cookies(context, seen: Set[tuple]) -> List[dict]:
-    """Cookies in the browser now that weren't there after the previous page."""
+    """Cookies that weren't there after the previous page."""
     try:
         raw = await context.cookies()
     except Exception:  # noqa: BLE001 — context gone / relaunching
@@ -379,9 +359,7 @@ _TRACKING_PARAM_RE = re.compile(r"^(utm_[a-z]+|gclid|gbraid|wbraid|fbclid|msclki
 
 
 def normalize_url(url: str) -> str:
-    """One canonical form per page: no #fragment, no trailing slash, no
-    campaign/tracking parameters (utm_*, gclid, xtor…), so the same page
-    reached through two differently-tagged links is scanned once."""
+    """One URL per page: drops the #fragment, trailing slash and tracking parameters."""
     url, _ = urldefrag(url)
     p = urlparse(url)
     path = p.path or "/"
@@ -407,9 +385,7 @@ def is_asset_url(url: str) -> bool:
     return bool(ext) and (ext in ASSET_EXTENSIONS or f".{ext}" in ASSET_EXTENSIONS)
 
 
-# URLs that can change state on a plain GET (add-to-cart links, sign-out,
-# delete/unsubscribe endpoints…) are never *crawled*; the links themselves are
-# still discovered and reported.
+# URLs that change something on a plain visit (add to cart, sign out, delete...) are never visited.
 _STATEFUL_URL_RE = re.compile(
     r"(add[-_]?to[-_]?(cart|basket|bag)|/cart\b|/basket\b|/checkout|/payment|/pay\b|log[-_]?out|sign[-_]?out|"
     r"/delete|/remove|unsubscribe|/order/confirm)", re.I)
@@ -428,14 +404,14 @@ def _crawlable(url: str, host: str) -> bool:
 
 
 def page_limit_for(depth: str, max_pages: int) -> Tuple[int, int]:
-    """(page cap, link levels) for an audit's depth setting and max_pages."""
+    """(page limit, link levels) for the audit's depth and max_pages."""
     if depth == "full":
         return max(1, min(max_pages, FULL_DEPTH_PAGE_CAP)), FULL_DEPTH_LEVELS
     return max(1, min(max_pages, HOMEPAGE_DEPTH_PAGE_CAP)), 1
 
 
 def _static_signatures(html: str) -> Set[str]:
-    """Signatures of the elements present in the server-delivered HTML."""
+    """Signatures of the elements in the server's HTML."""
     from bs4 import BeautifulSoup
 
     sigs: Set[str] = set()
@@ -456,11 +432,8 @@ def _static_signatures(html: str) -> Set[str]:
 
 
 async def http_fetch(context, url: str, method: str = "GET", timeout: float = 15.0):
-    """
-    Plain HTTP request carrying the browser context's cookies (so consent /
-    session state matches the rendered page). Returns (status, headers, text)
-    or (None, {}, "") on failure. Used for the server-HTML snapshot and for
-    download / external-link checks — never for form submission.
+    """Plain HTTP request with the browser's cookies. Returns (status, headers, text)
+    or (None, {}, "") on failure. Never used to submit forms.
     """
     import httpx
 
@@ -477,8 +450,7 @@ async def http_fetch(context, url: str, method: str = "GET", timeout: float = 15
                 r = await client.request("HEAD", url)
                 if r.status_code < 400 and r.status_code != 405:
                     return r.status_code, dict(r.headers), ""
-            # Streamed GET: only text/HTML bodies are read (capped), so a
-            # 50 MB PDF behind a download link is never held in memory.
+            # Only HTML bodies are read (capped), so a big download is never held in memory.
             async with client.stream("GET", url) as r:
                 text = ""
                 if method == "GET" and "text" in r.headers.get("content-type", ""):
@@ -495,9 +467,7 @@ async def http_fetch(context, url: str, method: str = "GET", timeout: float = 15
         return None, {}, ""
 
 
-# Recycle the tab every N pages: one long-lived tab keeps every visited
-# page's JS heap / caches alive, which on a small container ends with
-# Chromium being killed for memory.
+# Use a new tab every N pages so memory doesn't build up.
 RECYCLE_TAB_EVERY = 4
 
 
@@ -516,13 +486,9 @@ async def scan_site(
     deadline: Optional[float] = None,
     out: Optional[dict] = None,
 ) -> ScanResult:
-    """
-    Breadth-first scan of the rendered site in an existing browser context
-    (journey/__init__ opens it through analytics.runtime.open_runtime_browser).
-    `on_page_loaded(page, url)` runs after the first page renders (used to
-    handle the consent banner once, before discovery). `on_page_scanned(page,
-    scan)` runs after each page is discovered (page screenshot). `capture`
-    (journey_tracking.TrackingCapture) attributes analytics hits to page loads.
+    """Scans the rendered site breadth-first. on_page_loaded runs after the first
+    page (accepts the banner); on_page_scanned runs after each page (screenshot);
+    `capture` links analytics hits to page loads.
     """
     import httpx
 
@@ -532,7 +498,7 @@ async def scan_site(
     limit, levels = page_limit_for(depth, max_pages)
     result = ScanResult(start_url=start_url, page_limit=limit)
     if out is not None:
-        out["scan"] = result   # the caller keeps the pages found so far if the scan is cut short
+        out["scan"] = result   # keep the pages found so far if the scan is cut short
 
     queue: List[Tuple[str, int, Optional[str], Optional[str], Optional[str]]] = [
         (normalize_url(start_url), 0, None, None, None)]
@@ -546,8 +512,7 @@ async def scan_site(
         except Exception:  # noqa: BLE001
             crawl_delay = 0.0
 
-        # `session` is a journey.browser_session.JourneyBrowser (relaunches a
-        # killed Chromium) — or, for older callers, a plain BrowserContext.
+        # `session` can relaunch a killed Chromium (or is a plain BrowserContext for older callers).
         restartable = hasattr(session, "restart")
 
         def _ctx():
@@ -592,7 +557,7 @@ async def scan_site(
                 try:
                     resp = await goto_page(page, url)
                 except Exception as nav_exc:  # noqa: BLE001
-                    # Chromium was killed (memory): relaunch and retry this page once.
+                    # Chromium was killed: relaunch and retry this page once.
                     if not (restartable and is_browser_dead_error(nav_exc) and await session.restart(str(nav_exc))):
                         raise
                     page = await _new_page()
@@ -601,8 +566,7 @@ async def scan_site(
                 scan.status = resp.status if resp else None
                 landed = normalize_url(page.url)
                 if landed != url and landed in scanned_final:
-                    # Redirected to a page already scanned (e.g. /a and /a/ or a
-                    # tagged link): one page, scanned once.
+                    # Redirected to a page already scanned: skip the duplicate.
                     result.pages.remove(scan)
                     continue
                 scanned_final.add(landed)
@@ -610,8 +574,7 @@ async def scan_site(
                 if first and on_page_loaded is not None:
                     await on_page_loaded(page, url)
                     first = False
-                # Server-delivered HTML (same cookies as the browser) — anything
-                # rendered that isn't in it was generated dynamically.
+                # Server HTML: anything rendered that isn't in it was added by JavaScript.
                 _status, _headers, static_html = await http_fetch(_ctx(), url)
                 static_sigs = _static_signatures(static_html) if static_html else set()
 
@@ -632,7 +595,7 @@ async def scan_site(
                 scan.element_count = len(data.get("elements", []))
                 scan.form_count = len(data.get("forms", []))
 
-                # Follow same-site links discovered on this page.
+                # Follow same-site links found on this page.
                 outs: List[str] = []
                 for raw in data.get("elements", []):
                     dest = raw.get("destination")

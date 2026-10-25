@@ -1,11 +1,6 @@
 """
-pdf/scoring.py
-
-"How the scores work": a short closing page that explains what the 0-100
-numbers mean, the overall calculation for this audit (with its real
-module scores) and how each module's score is built. The numbers come
-from the same constants the scoring code uses, so the explanation cannot
-drift from the scores.
+"How the scores work" page: what the 0-100 numbers mean, this audit's overall
+calculation and how each module is scored. Uses the scoring code's own constants.
 """
 
 from __future__ import annotations

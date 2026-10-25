@@ -1,17 +1,6 @@
 """
-accessibility/heading.py
-
-Heading-outline checks framed around assistive-tech navigation (WCAG
-1.3.1 "Info and Relationships", 2.4.6 "Headings and Labels") rather
-than SEO relevance: seo/headings.py already covers missing/duplicate H1
-and skipped levels for topical-signal reasons, and module="seo" there
-is the version of that check that feeds the SEO score — this module
-covers what's specific to screen readers: headings with no announcable
-text at all (screen readers announce "heading level N" and then
-nothing), and heading elements used purely for visual styling of
-non-heading content. Reads crawler.parser.ParsedPage.soup directly
-since empty/icon-only headings aren't visible in the already-extracted
-`headings` text-only dict.
+Heading checks for screen-reader users: empty headings and headings used
+only for styling. (Missing/duplicate H1 is covered by seo/headings.py.)
 """
 
 from __future__ import annotations
@@ -103,7 +92,7 @@ def _check_no_headings_at_all(page: ParsedPage) -> List[dict]:
     if any(headings.get(level) for level in HEADING_TAGS):
         return []
     if page.word_count < 50:
-        return []  # not enough content for an outline to matter (e.g. a redirect/error page)
+        return []  # too little content for headings to matter
     return [_finding(
         "info",
         "No headings on a content-heavy page",

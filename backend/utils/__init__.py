@@ -1,29 +1,12 @@
 """
-utils/
-
-Small, dependency-light helpers reused across services/api/crawler
-modules, split by concern rather than dumped in one file:
-
-  logger.py      - get_logger / log_duration / log_context, layered on
-                   config/logging.py's already-configured logger.
-  helpers.py     - generic bits with no other home: time, retries,
-                   bounded concurrency, dict/list wrangling, tokens.
-  formatter.py   - human-readable score/byte/duration/relative-time
-                   strings, mirroring assets/js/utils.js's formatting.
-  urls.py        - URL normalization/parsing for the crawler and
-                   SEO/links checks.
-  screenshots.py - filesystem lifecycle for captured screenshots
-                   (crawler/screenshots.py owns the actual capture).
-  file_manager.py- generic, path-traversal-safe file I/O for new
-                   features that need disk storage.
-
-This top-level module re-exports the handful of names reached for most
-often, mirroring config/config.py's role for config/:
-
-    from utils import get_logger, normalize_url, score_band
-
-Less-common helpers stay accessed via their own submodule
-(`utils.file_manager.FileManager`, etc.) rather than being flattened here too.
+Small shared helpers:
+  logger.py       - logging helpers
+  helpers.py      - time, retries, concurrency, dict/list helpers
+  formatter.py    - readable scores, sizes, durations
+  urls.py         - URL helpers
+  screenshots.py  - screenshot files on disk
+  file_manager.py - safe file reading/writing
+Common ones are re-exported: `from utils import get_logger, normalize_url, score_band`.
 """
 
 from utils.formatter import format_bytes, format_duration, format_relative_time, score_band

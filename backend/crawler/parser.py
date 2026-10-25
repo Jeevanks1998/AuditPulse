@@ -1,14 +1,5 @@
 """
-crawler/parser.py
-
-Turns raw HTML into a structured, network-free ParsedPage. Every other
-module in this package (links.py, extractor.py) consumes a ParsedPage
-instead of re-parsing HTML itself, so BeautifulSoup only runs once per
-fetched page no matter how many downstream checks look at it.
-
-Kept dependency-light on purpose: this module never makes a network
-call and never knows about httpx/asyncio — crawler.py owns fetching,
-this module only owns turning bytes-already-in-hand into structure.
+Turns raw HTML into a ParsedPage, once per page. No network calls here.
 """
 
 from __future__ import annotations
@@ -28,18 +19,13 @@ NOISE_TAGS = ("script", "style", "noscript", "template")
 
 @dataclass
 class ParsedPage:
-    """
-    Structured view of one fetched page. `soup` is kept around so a
-    caller can do a one-off custom lookup, but every field that
-    links.py/extractor.py need is already pulled out below so most
-    callers never have to touch BeautifulSoup directly.
-    """
+    """One parsed page. Common fields are extracted; `soup` is kept for anything else."""
 
     url: str
     soup: BeautifulSoup
 
     title: Optional[str] = None
-    meta: Dict[str, str] = field(default_factory=dict)  # name/property (lowercased) -> content
+    meta: Dict[str, str] = field(default_factory=dict)  # name/property (lower case) -> content
     headings: Dict[str, List[str]] = field(default_factory=dict)  # "h1" -> [text, ...]
 
     anchor_tags: List[Tag] = field(default_factory=list)
@@ -55,7 +41,7 @@ class ParsedPage:
 
 
 def parse_html(url: str, html: str) -> ParsedPage:
-    """Parse one page's raw HTML into a ParsedPage. Never raises on malformed markup."""
+    """Parses one page's HTML. Never fails on broken markup."""
     soup = BeautifulSoup(html or "", "lxml")
 
     page = ParsedPage(url=url, soup=soup, html_bytes=len(html.encode("utf-8", errors="ignore")))
@@ -117,7 +103,7 @@ def _extract_lang(soup: BeautifulSoup) -> Optional[str]:
 
 
 def _extract_json_ld(url: str, soup: BeautifulSoup) -> List[Any]:
-    """Parses every <script type="application/ld+json"> block; skips ones that don't parse."""
+    """Every JSON-LD block that parses."""
     blocks: List[Any] = []
     for tag in soup.find_all("script", attrs={"type": "application/ld+json"}):
         raw = tag.string or tag.get_text()
@@ -131,7 +117,7 @@ def _extract_json_ld(url: str, soup: BeautifulSoup) -> List[Any]:
 
 
 def _extract_visible_text(soup: BeautifulSoup) -> str:
-    """Best-effort visible-text extraction: strips script/style/template content first."""
+    """Visible text, without script/style/template content."""
     working = BeautifulSoup(str(soup), "lxml")
     for tag in working(NOISE_TAGS):
         tag.decompose()

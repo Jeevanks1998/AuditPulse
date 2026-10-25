@@ -1,21 +1,11 @@
 """
-pdf/pdf_generator.py
-
-The single entry point for this package: turns a
-reports.generator.ReportPayload into a complete PDF (bytes).
-
-Layout (v6), written for someone who has never seen the tool:
-
-  1. Cover            — site, date, overall score, module scores,
-                        how many issues to fix now / soon, summary
-  2. Start here       — the top 5 things to fix, what was checked,
-                        how to read the labels
-  3. Consent, Analytics, Customer Journey — the evidence per module
-  4. Appendix         — full lists of affected places, pages, scan IDs
-
-The raw findings are grouped by pdf.issues; nothing here re-derives
-scores. Screenshots are re-encoded as small JPEGs (pdf.components
-.load_image) so a report stays a few MB instead of 15+.
+Builds the PDF from a ReportPayload:
+  1. Cover - scores, issue counts, summary
+  2. Start here - top 5 to fix
+  3. One section per module
+  4. How the scores work
+  5. Appendix
+Screenshots are compressed so the file stays a few MB.
 """
 
 from __future__ import annotations
@@ -40,7 +30,7 @@ from reports.generator import ReportPayload
 
 _COVER = "cover"
 _CONTENT = "content"
-# Section order follows the module order on the web report.
+# Same order as the web report.
 _MODULE_SECTIONS = (("consent", build_consent_section),
                     ("analytics", build_analytics_section),
                     ("journey", build_journey_section),
@@ -48,11 +38,7 @@ _MODULE_SECTIONS = (("consent", build_consent_section),
 
 
 def generate_pdf_report(payload: ReportPayload, screenshot_path: Optional[str] = None) -> bytes:
-    """Renders `payload` to a complete PDF and returns it as bytes.
-
-    `screenshot_path` is accepted for backwards compatibility and ignored:
-    the redesigned report shows the consent/journey evidence screenshots
-    instead of a separate homepage preview."""
+    """Returns the PDF as bytes. `screenshot_path` is ignored (kept for older callers)."""
     buffer = BytesIO()
     doc = _doc(buffer, payload)
 

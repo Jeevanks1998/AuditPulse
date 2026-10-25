@@ -4,20 +4,10 @@ Revision ID: e4312ce42c87
 Revises:
 Create Date: 2026-09-11 00:00:00.000000
 
-Adds two JSON columns to `schedules` (services.scheduler_service.Schedule),
-introduced for the redesigned Schedule Audit modal:
-
-  - schedule: structured recurrence detail behind `frequency`/`time_label`
-    (e.g. {"time": "09:00 AM", "timezone": "Asia/Kolkata", "weekday":
-    "Monday"} for Weekly, or {"year_month": "September", "year_day": 15,
-    "time": "09:00 AM"} for Yearly). `frequency` also now accepts "Yearly".
-  - schedule_period: the window during which the recurring schedule is
-    active — {"start_date": "2026-09-10", "end_date": "2027-09-10",
-    "never_expires": false} — distinct from `frequency`/`schedule`, which
-    control how often it repeats, not how long it stays active.
-
-Both are nullable; existing rows read as "no structured detail", falling
-back to `frequency`/`time_label` for display.
+schedules.schedule: recurrence details, e.g. {"time": "09:00 AM",
+"timezone": "Asia/Kolkata", "weekday": "Monday"}. frequency also allows "Yearly".
+schedules.schedule_period: when it's active, e.g. {"start_date",
+"end_date", "never_expires"}. Both nullable.
 """
 from typing import Sequence, Union
 

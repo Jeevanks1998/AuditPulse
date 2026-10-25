@@ -1,32 +1,25 @@
 """
-config/constants.py
-
-Static, non-secret constants shared across the backend. These mirror
-`window.APP_CONFIG` in assets/js/config.js on the front end, so the two
-stay in sync (module keys, audit steps, score bands, etc.).
+Shared constants. Keep in sync with window.APP_CONFIG in assets/js/config.js.
 """
 
 from enum import Enum
 
 APP_NAME = "AuditPulse"
 
-# Module keys — must match `data-module` attributes in audit.html.
-# The audit checks are Analytics, Consent and Customer Journey; "ai" and
-# "pdf" are report outputs. (The old Performance module was removed.)
+# Module keys (match data-module in audit.html). analytics, consent and journey
+# check the site; ai and pdf are report outputs.
 AUDIT_MODULES = [
     "ai",
     "pdf",
     "consent",
     "analytics",
-    "journey",      # Customer Journey Mapping (journey/)
+    "journey",      # Journey Map
 ]
 
-# The modules that actually check the site (the rest are report outputs).
+# Modules that check the site.
 CHECK_MODULES = ["analytics", "consent", "journey"]
 
-# Ordered pipeline steps for a running audit job.
-# `id` corresponds to the check-item element ids used by the frontend
-# progress UI (assets/js/audit.js -> checkList).
+# Audit progress steps, in order. `id` matches the progress list in assets/js/audit.js.
 AUDIT_STEPS = [
     {"id": "checkCrawl", "label": "Crawling website"},
     {"id": "checkConsent", "label": "Cookie consent"},
@@ -35,27 +28,19 @@ AUDIT_STEPS = [
     {"id": "checkReport", "label": "Generating report"},
 ]
 
-# Score-band thresholds shared by ring/chip coloring on the frontend.
+# Score bands: 80+ Healthy, 50-79 Needs attention, below 50 Issues found.
 SCORE_BANDS = {"good": 80, "mid": 50}
 
-# Relative weighting for the overall score (requirements §6.1): the
-# runtime-validated modules (Analytics, Consent — see analytics/runtime.py,
-# consent/runtime.py) carry more weight than the purely-static checks,
-# since a live pass/fail verdict is stronger signal than a heuristic scan.
-# Keys match services.audit_service.EMPTY_BREAKDOWN / Audit.breakdown.
-# services.audit_service._compute_overall_score only weights whichever
-# modules actually ran for a given audit, renormalizing over their total
-# weight — so this doesn't need to sum to 1.0 and new modules can be added
-# here without updating every existing audit.
+# Weights for the overall score. Consent counts most (checked in a real
+# browser). Only modules that ran are averaged, so these needn't sum to 1.
+# Keep in sync with assets/js/score-help.js and pdf/scoring.py.
 MODULE_WEIGHTS = {
     "analytics": 0.15,
     "consent": 0.20,
     "journey": 0.15,
 }
 
-# Fallback weight for any breakdown key not listed in MODULE_WEIGHTS above
-# (e.g. a future module added to a check package before its weight is
-# tuned here) — keeps _compute_overall_score from silently dropping it.
+# Weight for any module not listed above.
 DEFAULT_MODULE_WEIGHT = 0.05
 
 

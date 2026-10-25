@@ -1,9 +1,5 @@
 """
-middleware/security_headers.py
-
-Defensive HTTP headers on every API response: no MIME sniffing, never
-framed, no referrer leakage, and HTTPS-only once served over TLS. The API
-returns JSON / files only, so a strict Content-Security-Policy is safe.
+Security headers on every API response: no MIME sniffing, no framing, no referrer, HTTPS only, strict CSP.
 """
 
 from fastapi import FastAPI, Request
@@ -14,7 +10,7 @@ _HEADERS = {
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-    "Cross-Origin-Resource-Policy": "cross-origin",   # screenshots are loaded by the Vercel frontend
+    "Cross-Origin-Resource-Policy": "cross-origin",   # screenshots are loaded by the frontend on Vercel
 }
 _JSON_CSP = "default-src 'none'; frame-ancestors 'none'"
 

@@ -1,18 +1,5 @@
 """
-links/internal.py
-
-Page-level checks on a page's own internal links: dead-end pages with
-no internal links out at all, internal links carrying nofollow (which
-blocks link equity/crawl budget from flowing between a site's own
-pages — a very different concern than nofollow on an external link,
-see links/external.py), and generic/non-descriptive anchor text
-("click here", "read more") that tells a user or a screen reader
-nothing about the destination.
-
-Takes the crawler.links.Link list a caller already resolved for the
-page (crawler.links.extract_links), the same list seo/broken_links.py
-and links/external.py consume, so link resolution/classification only
-happens once per page no matter how many downstream checks need it.
+Internal link checks: pages with no internal links, nofollow on own links, and vague text like "click here".
 """
 
 from __future__ import annotations

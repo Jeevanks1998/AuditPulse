@@ -1,24 +1,10 @@
 """
-consent/site_evidence.py
-
-A few pages beyond the homepage, read once per consent scan, for two
-purposes:
-
-  1. Region detection (consent/region.py). Global ".com" sites rarely say
-     where they operate on the homepage — axagbs.com is a typical case:
-     the homepage is generic, but its policies page links an Indian
-     Companies Act filing (Form MGT-7), its news URLs say "...in-pune..."
-     and "...30-years-in-india". Reading the linked policy / legal / about /
-     contact pages and the homepage's link URLs surfaces that evidence.
-
-  2. Regional notice checks (consent/consent_score.py). The DPDP Act's
-     notice requirements (purpose, grievance contact, rights) can only be
-     judged from the privacy notice itself, which is often a separate page
-     or a PDF.
-
-Strictly read-only and bounded: at most MAX_PAGES fetches, each with a
-short timeout and a size cap; any failure just means less evidence, never
-an error.
+Reads a few pages beyond the homepage (privacy notice, policy, about,
+contact), for two uses:
+  1. Region detection: .com sites often only show where they operate on
+     those pages (e.g. an Indian company filing, "in Pune" URLs).
+  2. DPDP notice checks, which need the privacy notice itself (often a PDF).
+At most MAX_PAGES small, quick fetches; failures just mean less evidence.
 """
 
 from __future__ import annotations
@@ -43,7 +29,7 @@ MAX_TEXT_CHARS = 200_000
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/126.0 Safari/537.36 AuditPulse")
 
-# Which links are worth reading, best first.
+# Which links to read, best first.
 _NOTICE_RE = re.compile(r"privacy|data[-_ ]?protection|personal[-_ ]?data|privacy[-_ ]?notice|datenschutz", re.I)
 _POLICY_RE = re.compile(r"cookie|polic(?:y|ies)|legal|terms|disclaimer|imprint|impressum|grievance", re.I)
 _ABOUT_RE = re.compile(r"about|contact|company|who[-_ ]we[-_ ]are|offices?|locations?|investor", re.I)
@@ -60,13 +46,13 @@ class SiteDocument:
 @dataclass
 class SiteEvidence:
     documents: List[SiteDocument] = field(default_factory=list)
-    link_urls: List[str] = field(default_factory=list)     # every homepage link (absolute)
+    link_urls: List[str] = field(default_factory=list)     # every homepage link
     link_texts: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
 
     @property
     def notice(self) -> Optional[SiteDocument]:
-        """The privacy notice, when one was read."""
+        """The privacy notice, if one was read."""
         for d in self.documents:
             if d.kind == "notice":
                 return d
@@ -121,7 +107,7 @@ def _candidates(base_url: str, page) -> Tuple[List[Tuple[int, str, str]], List[s
 
 def _pdf_text(data: bytes) -> str:
     try:
-        from pypdf import PdfReader  # optional dependency
+        from pypdf import PdfReader  # optional package
     except Exception:  # noqa: BLE001
         return ""
     try:
@@ -137,7 +123,7 @@ def _pdf_text(data: bytes) -> str:
 
 
 async def _fetch(client, url: str) -> Tuple[str, List[str], List[str], bool]:
-    """Returns (text, link_urls, link_texts, is_pdf). Empty text on any failure."""
+    """Returns (text, link_urls, link_texts, is_pdf); empty text on failure."""
     from crawler.parser import parse_html
 
     async with client.stream("GET", url) as resp:
@@ -161,7 +147,7 @@ async def _fetch(client, url: str) -> Tuple[str, List[str], List[str], bool]:
 
 
 async def gather_site_evidence(base_url: str, page) -> SiteEvidence:
-    """Read the privacy notice and a few policy/about pages linked from the homepage."""
+    """Reads the privacy notice and a few linked policy/about pages."""
     ranked, urls, texts = _candidates(base_url, page)
     ev = SiteEvidence(link_urls=urls, link_texts=texts)
     if not ranked:
@@ -194,8 +180,7 @@ async def gather_site_evidence(base_url: str, page) -> SiteEvidence:
                 ev.link_urls += links
                 ev.link_texts += ltexts
                 if text.strip():
-                    # A policies page that is itself mostly links to PDFs: the
-                    # notice may be one of those PDFs — read the first one.
+                    # A policies page that is mostly PDF links: read the first PDF as the notice.
                     ev.documents.append(SiteDocument(url=url, kind=kind, text=text, is_pdf=is_pdf))
                 if kind != "notice" and not ev.notice and not is_pdf:
                     pdf = next((l for l in links

@@ -1,45 +1,19 @@
-/* ==========================================================================
-   api.js — the AuditPulse frontend's HTTP client. Exposed as window.Api.
-
-   RECONSTRUCTED FILE — this previously contained a duplicate of
-   authguard.js instead of the real API client, which meant window.Api
-   never existed. Every protected page's authguard.js ran on load, found
-   `!window.Api`, and called location.replace('internal-login.html') —
-   including *while already on* internal-login.html, which is why that
-   page reload-looped forever ("blinking") instead of rendering the form.
-
-   Responsibilities:
-     - One `request()` helper: builds the URL from window.APP_CONFIG,
-       attaches the bearer token, parses JSON, and — on a 401 — clears
-       the local session and routes through window.AuthGuard's
-       onUnauthorized() (falls back to a direct redirect if authguard.js
-       hasn't run on this page, e.g. internal-login.html itself).
-     - camelCase <-> snake_case conversion at the request()/response
-       boundary, since the backend's Pydantic schemas are snake_case
-       (ai_provider, notify_audit_completed, current_step, ...) but every
-       other frontend file (app.js, dashboard.js, audit.js, report.js,
-       scheduler.js, history.js, permissions.js) reads/writes camelCase.
-     - Session storage under APP_CONFIG.STORAGE_KEYS.SESSION.
-     - Namespaced methods matching what those files already call:
-       Api.auth, Api.settings, Api.audits, Api.reports, Api.history,
-       Api.scheduler, Api.ai.
-
-   Two spots are best-effort compositions rather than a 1:1 backend
-   route, because the backend doesn't expose a single matching endpoint:
-     - audits.run() starts an audit, polls /audits/{id}/progress, then
-       fetches /reports/{id} once complete (see its comment below).
-     - reports.getFull() merges /reports/{id} with the four /ai/{id}/*
-       endpoints, matching report.js's own comment that getFull() is
-       "the AI-enriched export" that can fail and fall back to get().
-   If your backend already has different behavior for either of these,
-   treat this file as a starting point, not gospel.
-   ========================================================================== */
+/*
+ * HTTP client for the backend, exposed as window.Api.
+ *
+ * request() builds the URL from APP_CONFIG, adds the token, parses JSON, and on a
+ * 401 clears the session and sends the user to login. It converts between
+ * camelCase (frontend) and snake_case (backend). Namespaces: auth, settings,
+ * audits, reports, history, scheduler, ai.
+ * audits.run() starts an audit and polls until it finishes; reports.getFull()
+ * combines the report with the AI endpoints.
+ */
 
 window.Api = (function () {
   var CFG = window.APP_CONFIG || {};
   var STORAGE_KEY = (CFG.STORAGE_KEYS && CFG.STORAGE_KEYS.SESSION) || 'auditpulse:session';
 
-  /* ------------------------------ helpers ------------------------------ */
+  /* Helpers */
 
   function isPlainObject(v) {
     return v !== null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date);
@@ -53,28 +27,14 @@ window.Api = (function () {
     return s.replace(/([A-Z])/g, function (_, c) { return '_' + c.toLowerCase(); });
   }
 
-  // Keys whose VALUE is a {checkId: result} map rather than a normal nested
-  // object — the inner keys (consent_banner, accept_control,
-  // trackers_blocked_pre_consent, privacy_policy_available, ...) are GDPR/CCPA
-  // check ids that report.js's GDPR_CHECK_ITEMS / CCPA_CHECK_ITEMS look up
-  // verbatim (mirroring the backend's consent.consent_score check order), so
-  // they must survive untouched. Same reasoning as getAttachmentChoices'
-  // `raw: true` below, just scoped to one field instead of the whole
-  // response since the rest of the consent payload (gdprCompliant,
-  // hasCookieBanner, ...) still needs the normal camelCase conversion.
+  // Keys whose inner keys are ids (e.g. GDPR check ids) and must stay as sent.
   var OPAQUE_KEYS = {
     gdpr_checks: true, ccpa_checks: true,
-    // gdpr_check_evidence/ccpa_check_evidence are {checkId: {summary, items,
-    // items_label}} maps — same reasoning as gdpr_checks/ccpa_checks above,
-    // the checkId keys are consent.consent_score.GDPR_CHECK_ORDER /
-    // CCPA_CHECK_ORDER ids that report.js looks up verbatim.
+    // Check-id maps of evidence, kept as sent.
     gdpr_check_evidence: true, ccpa_check_evidence: true,
-    // Phase 1 consent evidence: applicability (region + frameworks) and the
-    // technical consent scan (banner, control inventory, network/cookie
-    // evidence). report.js reads their inner keys verbatim (snake_case).
+    // Consent region and technical scan: kept as sent.
     applicability: true, technical_scan: true,
-    // Phase 4 consent presentation model (reports.consent_view).
-    // (also Customer Journey's report_view — reports.journey_view)
+    // Consent / Journey Map report views.
     report_view: true
   };
 
@@ -85,8 +45,7 @@ window.Api = (function () {
       Object.keys(value).forEach(function (k) {
         var convertedKey = convertKey(k);
         if (opaqueKeys && (opaqueKeys[k] || opaqueKeys[convertedKey])) {
-          // Convert the key itself (gdpr_checks -> gdprChecks) but leave the
-          // value's own keys exactly as the backend sent them.
+          // Convert the key itself but leave the value's keys as the backend sent them.
           out[convertedKey] = value[k];
         } else {
           out[convertedKey] = deepConvertKeys(value[k], convertKey, opaqueKeys);
@@ -100,7 +59,7 @@ window.Api = (function () {
   function toCamel(value) { return deepConvertKeys(value, snakeToCamel, OPAQUE_KEYS); }
   function toSnake(value) { return deepConvertKeys(value, camelToSnake, OPAQUE_KEYS); }
 
-  /* ------------------------------ session ------------------------------- */
+  /* Session */
 
   function getSession() {
     try {
@@ -134,13 +93,11 @@ window.Api = (function () {
     if (window.AuthGuard && window.AuthGuard.onUnauthorized) {
       window.AuthGuard.onUnauthorized();
     } else {
-      // No authguard.js on this page (e.g. internal-login.html itself) —
-      // nothing to bounce back from, so just make sure we're not holding
-      // a stale session around.
+      // No authguard.js on this page (e.g. the login page): just drop the stale session.
     }
   }
 
-  /* ------------------------------ core fetch ----------------------------- */
+  /* Core fetch */
 
   function buildUrl(path) {
     var base = (CFG.API_BASE_URL || 'http://localhost:8000/api/v1').replace(/\/$/, '');
@@ -150,15 +107,14 @@ window.Api = (function () {
   function parseErrorMessage(status, body) {
     if (body && typeof body === 'object') {
       if (typeof body.detail === 'string') return body.detail;
-      // middleware/errors.py wraps every error as { success: false, error: "..." }
+      // errors come as { success: false, error: "..." }
       if (typeof body.error === 'string') return body.error;
       if (Array.isArray(body.detail) && body.detail[0] && body.detail[0].msg) return body.detail[0].msg;
     }
     return 'Request failed (' + status + ').';
   }
 
-  // `raw: true` skips camelCase conversion and JSON parsing — used for blob
-  // downloads (PDF export, evidence zip).
+  // `raw: true` skips conversion and JSON parsing (for file downloads).
   function request(method, path, body, opts) {
     opts = opts || {};
     var token = getToken();
@@ -173,9 +129,7 @@ window.Api = (function () {
     }
 
     return fetch(buildUrl(path), fetchOpts).then(function (res) {
-      // `public: true` (the two sign-in steps) — a 401 there means "wrong
-      // email / expired sign-in attempt", not "your session expired", so
-      // show the server's own message instead of bouncing to login.
+      // `public: true` (sign-in steps): a 401 means wrong email / expired attempt, so show the message instead of redirecting.
       if (res.status === 401 && !opts.public) {
         handleUnauthorized();
         return Promise.reject(new Error('Your session has expired. Please sign in again.'));
@@ -207,18 +161,15 @@ window.Api = (function () {
   var del = function (path, opts) { return request('DELETE', path, null, opts); };
   var getBlob = function (path) { return request('GET', path, null, { blob: true }); };
 
-  /* -------------------------------- auth -------------------------------- */
+  /* Auth */
 
   var auth = {
-    // Step 1 of sign-in: email only. Resolves to
-    //   { step: 'setup'|'verify', challengeToken, email,
-    //     qrCode?, secret?, otpauthUri? }   (qrCode etc. only for 'setup')
-    // No session is stored yet — the challenge token is not a session.
+    // Sign-in step 1 (email). Returns { step: 'setup'|'verify', challengeToken, ... }; no session yet.
     login: function (email) {
       return post('/auth/login', { email: email }, { public: true });
     },
 
-    // Step 2: the 6-digit Google Authenticator code. Stores the session.
+    // Sign-in step 2: the 6-digit code. Stores the session.
     verifyCode: function (challengeToken, code) {
       return post('/auth/verify', { challengeToken: challengeToken, code: code }, { public: true }).then(function (data) {
         setSession({ token: data.token, user: data.user });
@@ -230,9 +181,7 @@ window.Api = (function () {
       return post('/auth/logout', null).then(function () {
         clearSession();
       }).catch(function () {
-        // Even if the server call fails (already-expired token, offline,
-        // etc.), the person clicked "log out" — always drop the local
-        // session and send them to login.
+        // Always clear the session and go to login, even if the server call failed.
         clearSession();
       }).then(function () {
         window.location.href = 'internal-login.html';
@@ -252,7 +201,7 @@ window.Api = (function () {
     getUser: getUser
   };
 
-  /* ------------------------------ settings ------------------------------- */
+  /* Settings */
 
   var settingsApi = {
     get: function () { return get('/settings/'); },
@@ -263,26 +212,18 @@ window.Api = (function () {
     exportJson: function () { return get('/settings/export'); }
   };
 
-  /* ------------------------------- audits -------------------------------- */
+  /* Audits */
 
   var AUDIT_POLL_INTERVAL_MS = 1500;
-  // Consecutive failed polls tolerated before giving up (one dropped request
-  // shouldn't abandon an audit that is still running server-side), and the
-  // overall ceiling on how long we wait for a terminal status.
+  // Failed polls allowed in a row before giving up, and the total wait limit.
   var AUDIT_POLL_MAX_ERRORS = 5;
-  // 45 min: a homepage audit of a large site now runs the full Customer
-  // Journey (dozens of live interaction tests) and takes ~10 min; full-site
-  // audits take longer. The old 10-min ceiling gave up on audits that went
-  // on to finish fine on the server.
+  // 45 minutes: big full-site audits can take a long time.
   var AUDIT_POLL_TIMEOUT_MS = 45 * 60 * 1000;
 
   var audits = {
-    // Starts an audit, polls progress until it finishes, then resolves
-    // with the finished report (id + overall + score grid + findings —
-    // see reports.get()). onProgress(progress) is called after every
-    // poll with { percent, stepId, status, elapsedLabel }, matching what
-    // audit.js's updateProgressUi() expects. Rejects if the audit's
-    // final status comes back "failed".
+    // Starts an audit, polls until it finishes, then resolves with the report.
+    // onProgress gets { percent, stepId, status, elapsedLabel } after each poll.
+    // Rejects if the audit fails.
     run: function (config, onProgress) {
       var startedAt = Date.now();
 
@@ -325,7 +266,7 @@ window.Api = (function () {
                 });
               }
 
-              // Status alone decides when polling stops — never the percent.
+              // Only the status decides when polling stops, never the percent.
               if (progress.status === 'completed') {
                 audits.get(audit.id).then(function (finished) {
                   return reports.get(finished.id).then(function (report) {
@@ -351,20 +292,17 @@ window.Api = (function () {
     getConsent: function (auditId) { return get('/audits/' + auditId + '/consent'); },
     getAnalytics: function (auditId) { return get('/audits/' + auditId + '/analytics'); },
     getJourney: function (auditId) { return get('/audits/' + auditId + '/journey'); },
-    // Cookie Scanner inventory. raw: keys (cookie names, category ids) stay as sent.
+    // Cookie Scanner. raw: cookie names and category ids stay as sent.
     getCookies: function (auditId) { return get('/audits/' + auditId + '/cookies', { raw: true }); },
     exportCookiesCsvBlob: function (auditId) { return getBlob('/audits/' + auditId + '/cookies.csv'); }
   };
 
-  /* ------------------------------- reports -------------------------------- */
+  /* Reports */
 
   var reports = {
     get: function (auditId) { return get('/reports/' + auditId); },
 
-    // The backend has no single "full" endpoint; this merges the plain
-    // report with the four AI endpoints. Any one of them failing rejects
-    // the whole thing, which is exactly what report.js wants — it
-    // already falls back to reports.get() on rejection.
+    // Combines the report with the four AI endpoints; any failure rejects (report.js then falls back to get()).
     getFull: function (auditId) {
       return Promise.all([
         reports.get(auditId),
@@ -374,10 +312,7 @@ window.Api = (function () {
         get('/ai/' + auditId + '/action-plan')
       ]).then(function (results) {
         var report = results[0];
-        // Each /ai endpoint wraps its data ({auditId, summary} / {auditId,
-        // priorities} / {auditId, items}); report.js expects the inner
-        // value. Storing the wrapper showed "[object Object]" as the
-        // executive summary and hid Business Impact and Priorities.
+        // Unwrap each AI response ({summary} / {priorities} / {items}).
         var pick = function (obj, key) { return obj && typeof obj === 'object' && key in obj ? obj[key] : obj; };
         report.executiveSummary = pick(results[1], 'summary');
         report.priorities = pick(results[2], 'priorities');
@@ -394,23 +329,13 @@ window.Api = (function () {
     exportPdfBlob: function (auditId) { return getBlob('/reports/' + auditId + '/export'); },
     exportEvidenceZipBlob: function (auditId) { return getBlob('/reports/' + auditId + '/evidence.zip'); },
 
-    // `raw: true` because this response is a {key: label} map whose KEYS are
-    // data, not field names: "consent_screenshots" is an attachment id the
-    // backend matches on, and the usual snake->camel pass would rewrite it
-    // to "consentScreenshots", which then round-trips back to POST /send as
-    // a key emailer/attachments.py has never heard of — so the attachment is
-    // silently dropped and the email goes out missing a file the user ticked.
+    // raw: the keys are attachment ids the backend matches on; converting them would drop attachments.
     getAttachmentChoices: function () { return get('/reports/email/attachment-choices', { raw: true }); },
     sendToPoc: function (auditId, payload) { return post('/reports/' + auditId + '/send', payload); },
     getEmailHistory: function (auditId) { return get('/reports/' + auditId + '/email-history'); },
 
-    // Account-wide Email History for email-reports.html. Unlike
-    // getEmailHistory() above (one audit), this returns every send across
-    // every audit plus the four unfiltered stat-card counters, so the page
-    // costs one request instead of one per audit.
-    // listEmailHistory({ q, status, page, pageSize })
-    //   -> { total, page, pageSize, stats: { totalSent, successful, failed, reportsShared }, items: [...] }
-    // Query params are built by hand — toSnake() only touches request bodies.
+    // Email History for the whole account: every send plus the stat counters.
+    // listEmailHistory({ q, status, page, pageSize }) -> { total, page, pageSize, stats, items }
     listEmailHistory: function (params) {
       params = params || {};
       var parts = [];
@@ -421,17 +346,12 @@ window.Api = (function () {
       return get('/reports/email/history?' + parts.join('&'));
     },
 
-    // One recorded send, in full (recipients incl. bcc, subject, body,
-    // attachment keys) — what "View" shows and what "Resend" prefills the
-    // composer from.
+    // One sent email in full (for View and Resend).
     getEmailRecord: function (emailId) { return get('/reports/email/history/' + emailId); }
   };
 
-  /* -------------------------------- history -------------------------------- */
-  // GET /history/ is the only endpoint that can filter audits by status, which
-  // is what email-reports.html needs (it only ever lists *completed* audits).
-  // Query params are built by hand rather than run through toSnake(), which
-  // only touches request *bodies*.
+  /* History */
+  // GET /history/ can filter by status (email-reports.html lists completed audits only).
   var historyApi = {
     // list({ q, status, page, pageSize }) -> { total, page, pageSize, items: [audit] }
     list: function (params) {
@@ -455,12 +375,12 @@ window.Api = (function () {
     },
 
     get: function (auditId) { return get('/history/' + auditId); },
-    // Soft delete: the audit moves to "Deleted audits" and can be restored.
+    // Soft delete: can be restored from "Deleted audits".
     remove: function (auditId) { return del('/history/' + auditId); },
     restore: function (auditId) { return post('/history/' + auditId + '/restore', {}); }
   };
 
-  /* ------------------------------- scheduler ------------------------------ */
+  /* Scheduler */
 
   var scheduler = {
     list: function () { return get('/scheduler/'); },
@@ -470,7 +390,7 @@ window.Api = (function () {
     runNow: function (scheduleId) { return post('/scheduler/' + scheduleId + '/run-now', null); }
   };
 
-  /* ---------------------------------- ai ----------------------------------- */
+  /* AI */
 
   var ai = {
     chat: function (auditId, question, history) {

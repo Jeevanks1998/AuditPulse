@@ -1,26 +1,7 @@
 """
-security/ssl.py
-
-Certificate and transport checks that need an actual TLS handshake, not
-just an HTTP response — expiry, chain trust, protocol version, and
-cipher strength. httpx/requests hide all of this once a request
-succeeds, so this module opens its own raw `ssl.SSLSocket` (stdlib
-only, no extra dependency) against host:443 to inspect the handshake
-directly.
-
-Two passes, both against the same socket:
-  1. A *verifying* connection using the platform's default CA trust
-     store (ssl.create_default_context()) — if this fails, the cert is
-     untrusted, expired, self-signed, or hostname-mismatched, and we
-     want to know exactly which.
-  2. A second, *non-verifying* connection only made when (1) failed, so
-     we can still read the certificate's own fields (issuer, dates) to
-     report specifics instead of just "SSL failed".
-
-Blocking by nature (ssl.SSLSocket has no asyncio-native API in the
-stdlib for a bare handshake like this), so it's run in a thread via
-`asyncio.to_thread` — this is the one module in security/ that isn't
-built on httpx.
+Certificate checks with a real TLS handshake: expiry, trust, protocol and
+cipher. If the verified connection fails, a second unverified one reads the
+certificate so the report can say exactly why. Runs in a thread (blocking).
 """
 
 from __future__ import annotations
@@ -42,7 +23,7 @@ DEFAULT_PORT = 443
 EXPIRY_CRITICAL_DAYS = 7    # cert expires this soon -> critical
 EXPIRY_WARNING_DAYS = 30    # cert expires this soon -> warning
 
-# Protocol versions weaker than this are considered deprecated/insecure.
+# Older protocols than these are insecure.
 WEAK_PROTOCOLS = {"SSLv2", "SSLv3", "TLSv1", "TLSv1.1"}
 
 _CERT_DATE_FORMAT = "%b %d %H:%M:%S %Y %Z"
@@ -50,7 +31,7 @@ _CERT_DATE_FORMAT = "%b %d %H:%M:%S %Y %Z"
 
 @dataclass
 class SslInfo:
-    """Raw handshake result, kept around for security_score.py and reporting."""
+    """Raw handshake result."""
 
     checked: bool = False
     trusted: bool = False
@@ -67,13 +48,7 @@ class SslInfo:
 
 
 async def check_ssl(url: str) -> tuple[List[dict], SslInfo]:
-    """
-    Opens a TLS handshake against `url`'s host and returns findings plus
-    the raw SslInfo for security_score.py's blend / report_service
-    detail. Non-https URLs are out of scope here (security/https.py
-    owns the "is this even HTTPS" finding) — returns an unchecked
-    SslInfo with no findings so callers don't double-report.
-    """
+    """TLS handshake with the URL's host; findings plus raw details. http URLs are skipped."""
     parsed = urlparse(url)
     if parsed.scheme != "https":
         return [], SslInfo(checked=False)
@@ -182,7 +157,7 @@ def _handshake(host: str, port: int) -> SslInfo:
     if cert is not None:
         info.trusted = True
     else:
-        # Retry without verification purely to read the cert's own fields for reporting.
+        # Retry without verification only to read the certificate details.
         info.error = error
         lenient_ctx = ssl._create_unverified_context()  # noqa: SLF001 — intentional, read-only inspection
         cert, protocol, cipher, _ = _connect(host, port, lenient_ctx)
@@ -196,8 +171,7 @@ def _handshake(host: str, port: int) -> SslInfo:
         info.not_after = cert.get("notAfter")
         info.days_until_expiry = _days_until(cert.get("notAfter"))
         if not info.trusted and info.subject and host not in info.subject and not info.hostname_mismatch:
-            # crude SAN-vs-host check as a fallback when the ssl module's own
-            # CertificateError text didn't already flag a mismatch
+            # Fallback host-name check when the ssl module didn't flag a mismatch.
             pass
 
     info.protocol = protocol

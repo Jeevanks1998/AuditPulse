@@ -1,31 +1,11 @@
-/* ==========================================================================
-   email-reports.js — email-reports.html page logic (Email History, §10).
-
-   This page is the account-wide record of every report emailed to a client
-   POC: four counters, a filterable table (Website / Recipient / Subject /
-   Attachments / Date / Status), and per-row View and Resend actions.
-
-   It owns no composer of its own — assets/js/email-composer.js defines
-   window.EmailComposer, and both this page and report.html open that same
-   dialog, so a send started here behaves identically to one started from
-   the report itself.
-
-   Backend endpoints:
-     GET /reports/email/history            — rows + unfiltered stats (one
-                                             request for the whole page)
-     GET /reports/email/history/{id}       — one send in full, for View/Resend
-     GET /reports/{id}                     — the report the composer needs
-     GET /history/?status=completed        — the audit picker behind
-                                             "Send a Report"
-
-   Two notes on filtering. Status and website/subject search are applied
-   server-side (SQL, across every page). Recipient search is applied on top,
-   client-side, because recipients live in a JSON column no portable SQL
-   operator can search by element — so a recipient-only match is found among
-   the rows the current server page already returned. The count label says
-   which of the two is in play rather than implying the search covered
-   everything.
-   ========================================================================== */
+/*
+ * Email Reports page: every report emailed for this account, with counters,
+ * a filterable table, and View / Resend (the dialog is email-composer.js).
+ *
+ * Status and website/subject search run on the server. Recipient search runs in
+ * the browser on the current page (recipients are stored as JSON), and the count
+ * label says so.
+ */
 
 (function () {
   var U = window.Utils;
@@ -64,26 +44,24 @@
       total: 0,
       status: '',
       query: '',
-      rows: [],             // the current server page, before recipient filtering
-      attachmentLabels: {}, // key -> human label, from the backend
-      reportCache: {}       // auditId -> ReportOut, so reopening is instant
+      rows: [],             // current server page, before recipient filtering
+      attachmentLabels: {}, // key -> label from the backend
+      reportCache: {}       // auditId -> report, so reopening is instant
     };
 
-    /* Labels for the Attachments column. The backend owns this list
-       (emailer/attachments.py); if the lookup fails the raw keys are shown
-       rather than a guessed label that could misdescribe what was sent. */
+    /* Attachment labels from the backend; if that fails, show the raw keys. */
     window.Api.reports.getAttachmentChoices()
       .then(function (map) {
         state.attachmentLabels = map || {};
         if (state.rows.length) renderRows();
       })
-      .catch(function () { /* keys render as-is */ });
+      .catch(function () { /* keys show as they are */ });
 
     function attachmentLabel(key) {
       return state.attachmentLabels[key] || key;
     }
 
-    /* ------------------------------- stats ------------------------------- */
+    /* Stats */
 
     function renderStats(stats) {
       stats = stats || {};
@@ -98,16 +76,14 @@
       });
     }
 
-    /* ------------------------------- rows -------------------------------- */
+    /* Rows */
 
     function matchesRow(entry, needle) {
       var host = (entry.auditUrl || '').toLowerCase();
       var subject = (entry.subject || '').toLowerCase();
       if (host.indexOf(needle) !== -1 || subject.indexOf(needle) !== -1) return true;
 
-      // Recipient matching, the half SQL can't do. Bcc is searchable too —
-      // it's the sender's own record, and omitting it would make an address
-      // they can see in View un-findable from the search box.
+      // Recipient search (includes BCC: it's the sender's own record).
       var pool = (entry.recipientTo || [])
         .concat(entry.recipientCc || [])
         .concat(entry.recipientBcc || []);
@@ -126,8 +102,7 @@
       var to = entry.recipientTo || [];
       if (!to.length) return '<span class="text-tertiary">No recipients</span>';
 
-      // One address plus a count, rather than a wrapped wall of addresses —
-      // the full list is one click away in View.
+      // One address plus a count; the full list is in View.
       var rest = (to.length - 1) +
         (entry.recipientCc || []).length +
         (entry.recipientBcc || []).length;
@@ -190,9 +165,7 @@
 
     function setPlaceholder(message) {
       if (message) {
-        // 'block', not '': .er-state is display:none in email-reports.css, so
-        // clearing the inline style would fall straight back to hidden and the
-        // loading / empty / error message would never appear.
+        // 'block', not '': the CSS hides .er-state by default.
         stateEl.style.display = 'block';
         stateTextEl.textContent = message;
         tableWrapEl.style.display = 'none';
@@ -209,8 +182,7 @@
         if (!state.total) {
           countEl.textContent = 'No emails';
         } else if (state.query) {
-          // "on this page" because recipient matching only sees rows already
-          // fetched — quoting a grand total here would overstate the search.
+          // "on this page": recipient search only sees fetched rows.
           countEl.textContent = rows.length + ' of ' + state.rows.length + ' on this page';
         } else {
           countEl.textContent = state.total + ' email' + (state.total === 1 ? '' : 's');
@@ -242,15 +214,13 @@
       pagerEl.querySelector('[data-page="next"]').disabled = state.page >= pages;
     }
 
-    /* ------------------------------- loading ------------------------------ */
+    /* Loading */
 
     function load() {
       setPlaceholder('Loading email history\u2026');
 
       return window.Api.reports.listEmailHistory({
-        // Sending the search text server-side lets it narrow across *all*
-        // pages on website/subject; the client-side pass then adds recipient
-        // matches within what came back.
+        // Search text goes to the server (website/subject across all pages).
         q: state.query || undefined,
         status: state.status || undefined,
         page: state.page,
@@ -270,16 +240,12 @@
     }
 
     function reload() {
-      // A new send lands on page 1 — jumping back is what makes it visible.
+      // A new send appears on page 1.
       state.page = 1;
       return load();
     }
 
-    /* --------------------------- overlay scaffolding ---------------------------
-       Both the detail view and the audit picker are read-only dialogs, so
-       they share one shell rather than each growing its own escape/backdrop/
-       focus-restore handling. The composer is not built here — it has its own
-       module, with validation and a focus trap this doesn't need. */
+    /* Shared shell for the two read-only dialogs (detail and audit picker). */
 
     function openOverlay(innerHtml, opts) {
       opts = opts || {};
@@ -329,7 +295,7 @@
       '</div>';
     }
 
-    /* ------------------------------ view detail --------------------------- */
+    /* View */
 
     function detailBodyHtml(entry) {
       var sent = entry.status === 'sent';
@@ -360,8 +326,7 @@
         '</dl>' +
         (entry.body
           ? '<pre class="er-detail__body">' + esc(entry.body) + '</pre>'
-          // Rows written before the body column existed read as "not
-          // recorded" rather than as an email that was sent blank.
+          // Older rows have no saved body.
           : '<p class="email-empty">The message body wasn\u2019t recorded for this send.</p>') +
         (keys.length
           ? '<div class="er-detail__files">' +
@@ -399,8 +364,7 @@
           onClick: function (e, close) {
             var btn = e.target.closest ? e.target.closest('[data-act="resend"]') : null;
             if (!btn) return;
-            // The record is already in hand — hand it straight to the
-            // composer instead of refetching it.
+            // Pass the record straight to the composer.
             close();
             openComposer(entry.auditId, entry, trigger);
           }
@@ -410,12 +374,7 @@
       return dialog;
     }
 
-    /* ---------------------------- composer plumbing ----------------------------
-       The composer renders its defaults from the report itself (URL, score,
-       generated date), so the report has to be in hand before it opens. A
-       resend also passes the previous send as `prefill`, which is what brings
-       back the original recipients, subject, body and attachment checkboxes
-       instead of freshly generated defaults. */
+    /* The composer needs the report first; Resend also passes the previous send as `prefill`. */
 
     function openComposer(auditId, prefill, trigger) {
       if (!window.EmailComposer) {
@@ -441,8 +400,7 @@
         state.reportCache[auditId] = report;
         show(report);
       }).catch(function (err) {
-        // The usual cause is an audit deleted since it was emailed — its
-        // history row outlives it, so say so rather than failing silently.
+        // Usually the audit was deleted after it was emailed.
         window.Notifications.error('Couldn\u2019t open that report',
           (err && err.message) || 'The audit may no longer exist.');
       }).finally(function () {
@@ -450,7 +408,7 @@
       });
     }
 
-    /* ------------------------------ row actions ---------------------------- */
+    /* Row actions */
 
     U.on(tbody, 'click', function (e) {
       var btn = e.target.closest ? e.target.closest('[data-act]') : null;
@@ -463,9 +421,7 @@
       var act = btn.getAttribute('data-act');
       btn.disabled = true;
 
-      // Both actions refetch the record rather than reusing what's on screen:
-      // the row is a summary, and View/Resend need the body and bcc it never
-      // renders. It also means a Resend can't repeat a stale copy of a send.
+      // Refetch the full record (the row doesn't have the body or BCC).
       window.Api.reports.getEmailRecord(emailId).then(function (entry) {
         if (act === 'view') openDetail(entry, btn);
         else openComposer(entry.auditId, entry, btn);
@@ -477,9 +433,7 @@
       });
     });
 
-    /* --------------------------- "Send a Report" ---------------------------
-       This page lists sends, not audits, so a fresh send needs to ask which
-       completed audit it's for before the composer can open. */
+    /* "Send a Report": pick a completed audit first */
 
     function auditPickerHtml(audits) {
       return '<div class="composer er-picker-dialog" role="dialog" aria-modal="true">' +
@@ -529,8 +483,7 @@
               var auditId = Number(item.getAttribute('data-audit-id'));
               if (!auditId) return;
 
-              // Close first: two stacked overlays would both trap focus,
-              // and only one of them is the live dialog.
+              // Close first: two stacked dialogs would both trap focus.
               close();
               openComposer(auditId, null, composeBtn);
             }
@@ -543,7 +496,7 @@
         .finally(function () { composeBtn.disabled = false; });
     });
 
-    /* ------------------------------- filters ------------------------------ */
+    /* Filters */
 
     U.on(tabsEl, 'click', function (e) {
       var tab = e.target.closest ? e.target.closest('.er-tab') : null;
@@ -564,14 +517,12 @@
       load();
     });
 
-    // Debounced: the search box drives a request, and firing one per keystroke
-    // would race responses and let a stale one repaint the table last.
+    // Debounced so responses don't arrive out of order.
     var searchTimer = null;
     U.on(searchInput, 'input', function () {
       state.query = (searchInput.value || '').trim();
 
-      // Filter what's already on screen immediately so typing feels
-      // responsive, then reconcile with the server once typing settles.
+      // Filter what's on screen now, then ask the server once typing stops.
       renderRows();
 
       clearTimeout(searchTimer);
@@ -593,7 +544,7 @@
       load();
     });
 
-    /* --------------------------------- boot -------------------------------- */
+    /* Start */
 
     load();
   });

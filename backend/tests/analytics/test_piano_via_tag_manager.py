@@ -1,15 +1,8 @@
 """
-Piano Analytics loaded by a tag manager after consent (the axa.com setup):
-
-  * the page ships only a TagCommander-style container, no Piano markup
-  * a OneTrust-style banner renders late (3.5 s after load)
-  * after "Accept", the container injects piano-analytics.js, which calls
-    pa.setConfigurations({site, collectDomain}) and sends a hit to
-    <id>.pa-cd.com/event?s=<site>&idclient=…
-
-The analytics pass must wait for the late banner, accept it, wait for the
-consent-gated tags, and then report Piano with its site id — not only the
-tag manager.
+Piano loaded by a tag manager after consent (as on axa.com): the page has only
+a tag-manager container and a late banner; after Accept the container loads
+Piano, which sends a hit. The check must wait, accept and report Piano with its
+site id, not only the tag manager.
 """
 
 import asyncio

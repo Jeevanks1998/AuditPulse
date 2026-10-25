@@ -4,12 +4,8 @@ Revision ID: c9e4a2f7d158
 Revises: b3f7d2e9c104
 Create Date: 2026-10-04 00:00:00.000000
 
-Evidence screenshots were only on the container's local disk, which
-Railway wipes on every redeploy (and which a separate worker service
-doesn't share), so reports lost their consent and Journey Map screenshots.
-This table keeps a compact JPEG copy keyed by the path after
-"/screenshots/" in the stored URL; main.py serves from it when the file
-isn't on disk.
+Screenshots on the server disk are lost on every redeploy. This table keeps a
+JPEG copy; main.py serves it when the file isn't on disk.
 """
 from typing import Sequence, Union
 

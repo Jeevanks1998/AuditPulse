@@ -1,27 +1,10 @@
 """
-reports/journey_view.py
-
-One presentation model for the Customer Journey module, built from a stored
-Journey row (dict), so the dashboard, report page, PDF, JSON export and
-evidence ZIP all show the same journey evidence (same pattern as
-reports/consent_view.py).
-
-Report structure (requirement §15):
-    Discovered Journey Paths · Interaction Details · Analytics Validation ·
-    Journey Health (with what contributed to the score) · Findings ·
-    Recommendations, plus Forms / Downloads / CTAs / Evidence.
-
-Everything here is derived from the stored scan of THIS audit: journeys are
-paths the crawler discovered between real pages and elements, not observed
-visitor behaviour, and nothing is filled in from examples or defaults.
-
-Analytics validation separates what was actually seen for an interaction:
-an analytics request (network hit to GA4 / Adobe / Piano / Meta …), a
-dataLayer push, both, a duplicate, nothing, or "unable to validate" (the
-interaction was not executed, so tracking could not be checked).
-
-Screenshot paths are stored relative to SCREENSHOT_DIR; here they become
-the /screenshots/... URLs main.py serves.
+One Journey Map view used everywhere (dashboard, report, PDF, JSON, ZIP).
+Built only from this audit's scan: journeys are paths found between real
+pages and elements, not real visitor behaviour.
+Tracking per interaction: analytics request, dataLayer push, both,
+duplicate, nothing, or "unable to validate" (not executed).
+Screenshot paths become /screenshots/... URLs.
 """
 
 from __future__ import annotations
@@ -33,9 +16,7 @@ _SEVERITY_RANK = {"critical": 0, "warning": 1, "info": 2}
 _CONVERSION = {"cta", "form", "form_start", "download", "signup", "purchase", "appointment", "phone", "email", "login"}
 _IMPORTANCE = {3: "high", 2: "medium", 1: "low"}
 
-# The only analytics statuses the Journey Map uses (web report, dashboard,
-# PDF). "Tracked" on its own is never shown: it doesn't say whether an
-# analytics tool actually received anything.
+# The only tracking statuses shown. Plain "Tracked" is never used (it doesn't say if a tool received anything).
 ANALYTICS_LABELS = {
     "analytics_hit": "Analytics Hit Detected",
     "datalayer": "DataLayer Event Detected",
@@ -48,7 +29,7 @@ ANALYTICS_LABELS = {
 }
 _TRACKED_RESULTS = {"both", "analytics_hit", "datalayer", "duplicate"}
 
-# Why an action was not executed, by what the crawler classified it as.
+# Why an action wasn't executed, by its classification.
 _SAFETY_REASONS = {
     "purchase": "Safety restricted because this action may create a transaction.",
     "appointment": "Safety restricted because this action may create a booking.",
@@ -57,8 +38,7 @@ _SAFETY_REASONS = {
 }
 _DESTRUCTIVE_REASON = "Safety restricted because this action may sign out, delete or unsubscribe an account."
 
-# Journey types, only ever derived from the classified goal interaction
-# (and, for CTAs and forms, the words on it / where it leads).
+# Journey types, worked out from the goal interaction (and its words / destination).
 _CONTACT_RE = re.compile(r"contact|enquir|inquir|get in touch|talk to|speak to|call us|message|support", re.I)
 _LEAD_RE = re.compile(r"quote|demo|trial|consult|get started|request|sign me|proposal|pricing|estimate|"
                       r"callback|call back|lead|subscribe|apply|register interest", re.I)
@@ -77,7 +57,7 @@ def screenshot_url(path: Optional[str]) -> Optional[str]:
 
 
 def screenshot_file(url: Optional[str]) -> Optional[str]:
-    """/screenshots/journey/... URL -> file path under SCREENSHOT_DIR (or None if missing)."""
+    """/screenshots/journey/... URL -> file path (None if missing)."""
     if not url or not url.startswith("/screenshots/"):
         return None
     from pathlib import Path
@@ -110,11 +90,10 @@ def _is_noise(event: Optional[str]) -> bool:
 
 
 def analytics_result(i: dict) -> dict:
-    """What tracking was actually observed for one interaction."""
+    """What tracking was really seen for one interaction."""
     tr = i.get("tracking") or {}
     st = tr.get("status")
-    # Scans saved before the noise filter existed stored gtag get/set and
-    # cookie-banner events as "interaction" events: ignore those here too.
+    # Older scans stored gtag/cookie-banner housekeeping as events: ignore those.
     events = [e for e in (tr.get("events") or []) if not _is_noise(e.get("event"))]
     if st in ("tracked", "duplicate") and not events and (tr.get("events") or []):
         st = "not_tracked"
@@ -125,8 +104,7 @@ def analytics_result(i: dict) -> dict:
         key = "safety_restricted"
         reason = safety_reason(i)
     elif st in ("tracked", "duplicate"):
-        # Every "tracked" status is backed by the stored events; if the event
-        # list is somehow missing, say so rather than guess the source.
+        # If the event list is missing, say so instead of guessing the source.
         base = "both" if (net and dl) else "analytics_hit" if net else "datalayer" if dl else "unable"
         key = "duplicate" if st == "duplicate" else base
     elif st == "not_tracked":
@@ -162,7 +140,7 @@ def safety_reason(i: dict) -> str:
 
 
 def safety_status(i: dict) -> dict:
-    """Whether the interaction was executed, and if not, why."""
+    """Was the interaction executed, and if not, why."""
     st = i.get("status")
     if st == "skipped" or (st == "not_tested" and i.get("safe") is False):
         return {"key": "not_executed", "label": "Not Tested — Safety Restricted", "reason": safety_reason(i)}
@@ -178,9 +156,7 @@ def safety_status(i: dict) -> dict:
 
 
 def journey_type(goal: dict, goal_type: Optional[str], step_rows: List[dict]) -> Optional[str]:
-    """Lead Generation / Contact / Signup / Appointment / Download / Purchase /
-    Login / Navigation — from the goal interaction the crawler classified.
-    None when the goal can't be identified (no type is invented)."""
+    """Journey type from the goal interaction (Lead, Contact, Signup, ...). None if unknown; never invented."""
     kind = goal.get("classification") or goal_type
     fixed = {"signup": "Signup", "appointment": "Appointment", "download": "Download", "purchase": "Purchase",
              "login": "Login", "phone": "Contact", "email": "Contact", "navigation": "Navigation"}
@@ -261,12 +237,7 @@ def _plural(n: int, one: str, many: Optional[str] = None) -> str:
 
 def _overview(journey: dict, counts: dict, rows: List[dict], tested: List[dict], successful: List[dict],
               findings: List[dict], score: Optional[int]) -> dict:
-    """
-    The plain-language summary at the top of the Journey Map section: what
-    the audit did, what it found, what to fix first and how complete the
-    scan was — every number taken from this scan, written for someone who
-    has never seen the tool.
-    """
+    """Plain-language summary at the top of the Journey Map section, using only this scan's numbers."""
     from urllib.parse import urlparse
 
     pages = journey.get("pages") or []
@@ -480,8 +451,7 @@ def build_journey_view(journey: Optional[dict]) -> Optional[dict]:
         "critical_titles": [f.get("title") for f in critical[:5]],
     }
 
-    # Discovered journey paths: enrich with type, importance and status from
-    # the interactions themselves; most critical problems first.
+    # Journey paths with type, importance and status; worst problems first.
     raw_by_index = {i.get("index"): i for i in interactions}
     journeys = []
     for j in jm.get("journeys") or []:

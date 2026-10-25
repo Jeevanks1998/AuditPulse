@@ -1,18 +1,7 @@
 """
-security/csp.py
-
-Content-Security-Policy checks: presence (as either a response header
-or a <meta http-equiv="Content-Security-Policy"> tag — the meta form
-can't carry frame-ancestors/report-uri but is otherwise valid and
-common on static hosting where response headers aren't configurable),
-and directive-level red flags once a policy exists (wildcard sources,
-'unsafe-inline'/'unsafe-eval', report-only-as-the-only-policy).
-
-Takes an optional `page` (crawler.parser.ParsedPage) alongside the
-response headers so it can be called from either security/__init__.py's
-live-only path (headers, no page) or its combined path (both) without
-double-reporting "missing CSP" — the meta-tag lookup only runs when a
-page is actually provided.
+Content-Security-Policy checks: is there a policy (header or <meta> tag), and
+does it have weak spots (wildcards, 'unsafe-inline' / 'unsafe-eval', report-only).
+The <meta> check only runs when `page` is given.
 """
 
 from __future__ import annotations
@@ -22,16 +11,12 @@ from typing import List, Mapping, Optional
 MODULE = "security"
 CATEGORY = "csp"
 
-# Directives where a wildcard or unsafe keyword meaningfully weakens the policy.
+# Directives where a wildcard or unsafe keyword weakens the policy.
 _SCRIPT_CONTROLLING_DIRECTIVES = ("script-src", "default-src")
 
 
 def check_csp(headers: Mapping[str, str], url: str, page=None) -> List[dict]:
-    """
-    Findings for a missing or weak Content-Security-Policy. `page` is
-    optional — pass a ParsedPage to also check for a meta-tag CSP when
-    no header is present; omit it to check the header only.
-    """
+    """Findings for a missing or weak CSP. Pass `page` to also check a <meta> CSP."""
     lower = {k.lower(): v for k, v in (headers or {}).items()}
     header_policy = lower.get("content-security-policy")
     report_only_policy = lower.get("content-security-policy-report-only")
@@ -103,7 +88,7 @@ def check_csp(headers: Mapping[str, str], url: str, page=None) -> List[dict]:
                                 "(often a bundler/legacy-library default rather than "
                                 "intentional app code).",
             ))
-        break  # default-src only matters here if script-src doesn't override it
+        break  # default-src only matters if script-src doesn't override it
 
     if "object-src" not in directives and "default-src" not in directives:
         findings.append(_finding(
@@ -140,7 +125,7 @@ def _meta_csp(page) -> Optional[str]:
 
 
 def _parse_directives(policy: str) -> dict:
-    """{'script-src': {'self', 'https://example.com'}, ...} — lowercased directive names."""
+    """{'script-src': {'self', ...}, ...} with lower-case directive names."""
     directives: dict = {}
     for chunk in policy.split(";"):
         parts = chunk.strip().split()

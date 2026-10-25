@@ -1,21 +1,7 @@
 """
-accessibility/contrast.py
-
-Page-level color-contrast checks against WCAG 2.x success criterion
-1.4.3 (AA, 4.5:1 normal text / 3:1 large text) and 1.4.6 (AAA, 7:1 /
-4.5:1). This is a best-effort, static check: without a browser actually
-computing the cascade, we can only see color/background-color pairs
-that are declared explicitly, either inline (`style="color:...;
-background-color:..."`) or as a same-selector declaration in a `<style>`
-block. Colors that only resolve via inherited ancestors, external
-stylesheets, or JS-applied classes are invisible to this module —
-accessibility/axe.py (Lighthouse's color-contrast audit, which renders
-the real page) is the source of truth for those; this module exists to
-catch obvious hard-coded failures cheaply and without a network call.
-
-Reads crawler.parser.ParsedPage.soup directly, since neither inline
-style attributes nor <style> block contents are pulled out into
-ParsedPage's normal fields.
+Colour-contrast checks (WCAG AA 4.5:1, large text 3:1) on colours declared
+inline or in <style> blocks. Best effort: inherited and external CSS isn't
+visible here; axe.py covers those on the rendered page.
 """
 
 from __future__ import annotations
@@ -30,8 +16,7 @@ CATEGORY = "contrast"
 
 AA_NORMAL_RATIO = 4.5
 AA_LARGE_RATIO = 3.0
-# A declared font-size (px) at/above this is treated as "large text" for
-# the relaxed 3:1 threshold, mirroring the ~18pt/14pt-bold WCAG definition.
+# Font size (px) treated as "large text" for the 3:1 rule.
 LARGE_TEXT_PX = 24
 
 _COLOR_DECL_RE = re.compile(r"([\w-]+)\s*:\s*([^;]+)")
@@ -46,7 +31,7 @@ _NAMED_COLORS = {
     "orange": (255, 165, 0), "purple": (128, 0, 128), "navy": (0, 0, 128),
 }
 
-MAX_PAIRS_REPORTED = 5  # cap findings per page so one templated block doesn't flood the report
+MAX_PAIRS_REPORTED = 5  # cap per page so one repeated block doesn't flood the report
 
 
 def check_contrast(page: ParsedPage) -> List[dict]:
@@ -123,7 +108,7 @@ def _style_block_pairs(page: ParsedPage) -> List[Tuple[str, str, str, Optional[f
 
 
 def _parse_declarations(css_text: str) -> dict:
-    """{'color': '#normalized', 'background-color': '#normalized', 'font-size': px_float_or_None}."""
+    """Returns {'color', 'background-color', 'font-size'} from a CSS declaration string."""
     out: dict = {}
     for prop, raw_value in _COLOR_DECL_RE.findall(css_text or ""):
         prop = prop.strip().lower()

@@ -40,8 +40,7 @@ def test_india_from_linked_pages_and_documents():
 
 
 def test_repeated_evidence_counts_once():
-    # Ten pages mentioning Pune are still one office location (25), plus
-    # "India" (15): 40 < threshold, so no decision from that alone.
+    # Ten pages mentioning Pune count once (25), plus "India" (15): 40, under the threshold.
     site = SiteEvidence(documents=[SiteDocument(url=f"https://x.com/p{i}", kind="about", text="Our office in Pune")
                                    for i in range(10)])
     page = parse_html("https://x.com/", "<html><body>Hello</body></html>")

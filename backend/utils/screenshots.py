@@ -1,12 +1,5 @@
 """
-utils/screenshots.py
-
-Filesystem lifecycle helpers for captured screenshots, complementing
-`crawler/screenshots.py` (which owns the actual Playwright capture —
-see its docstring) and `consent/screenshots.py` (banner-specific
-crops). This module doesn't capture anything; it manages the files
-those two produce under `settings.SCREENSHOT_DIR`: encoding one for an
-API response, checking disk usage, and pruning old captures.
+Screenshot file helpers (existence, size, delete, data URIs, cleanup). Capturing happens elsewhere.
 """
 
 from __future__ import annotations
@@ -26,9 +19,7 @@ logger = get_logger(__name__)
 
 
 def _manager() -> FileManager:
-    # Constructed per-call (cheap) rather than at import time, so a
-    # SCREENSHOT_DIR change in settings (e.g. in tests) takes effect
-    # without needing to re-import this module.
+    # Created per call so a changed SCREENSHOT_DIR (e.g. in tests) is picked up.
     return FileManager(getattr(settings, "SCREENSHOT_DIR", "screenshots"))
 
 
@@ -37,9 +28,7 @@ def screenshot_exists(path: str) -> bool:
 
 
 def delete_screenshot(path: str) -> bool:
-    """Removes one screenshot file. Returns False (rather than raising)
-    if it's already gone — callers cleaning up after a deleted Audit
-    shouldn't have to check existence first."""
+    """Deletes one screenshot; False if it was already gone."""
     file_path = Path(path)
     if not file_path.is_file():
         return False
@@ -58,13 +47,7 @@ def get_screenshot_size(path: str) -> int:
 
 
 def screenshot_to_data_uri(path: str) -> Optional[str]:
-    """
-    Base64-encodes a screenshot as a `data:image/png;base64,...` URI,
-    for embedding directly in a JSON API response (api/audit.py,
-    api/reports.py) without exposing a separate static-file route.
-    Returns None if the file is missing — same degrade-gracefully
-    contract as `crawler.screenshots.capture_screenshot`.
-    """
+    """Screenshot as a data:image/png;base64 URI; None if missing."""
     file_path = Path(path)
     if not file_path.is_file():
         return None
@@ -76,16 +59,7 @@ def screenshot_to_data_uri(path: str) -> Optional[str]:
 
 
 def screenshot_url_to_path(url: Optional[str]) -> Optional[str]:
-    """
-    Reverses main.py's `/screenshots` StaticFiles mount (which serves
-    settings.SCREENSHOT_DIR by basename — see schemas.audit._screenshot_url)
-    back into a real filesystem path. Used wherever a consumer only has the
-    frontend-facing URL (e.g. ReportPayload.screenshots, built from
-    ConsentOut's *_screenshot_url computed fields) but needs the actual file
-    on disk — the PDF's evidence section and reports/evidence.py's ZIP
-    export both go through here rather than duplicating the mount's naming
-    convention.
-    """
+    """"/screenshots/..." URL -> file path on disk (used by the PDF and evidence ZIP)."""
     if not url:
         return None
     filename = url.rsplit("/", 1)[-1]
@@ -96,13 +70,7 @@ def screenshot_url_to_path(url: Optional[str]) -> Optional[str]:
 
 
 def cleanup_old_screenshots(max_age_days: int = 30) -> int:
-    """
-    Deletes screenshots older than `max_age_days` under
-    settings.SCREENSHOT_DIR. Intended to run periodically (e.g. from
-    scheduler/jobs.py) so a long-running instance doesn't accumulate
-    unbounded disk usage from every historical audit's captures.
-    Returns the number of files removed.
-    """
+    """Deletes screenshots older than `max_age_days`. Returns how many."""
     manager = _manager()
     cutoff = utc_now().timestamp() - (max_age_days * 86400)
     removed = 0
@@ -121,8 +89,7 @@ def cleanup_old_screenshots(max_age_days: int = 30) -> int:
 
 
 def total_screenshot_storage() -> str:
-    """Human-readable total disk usage of settings.SCREENSHOT_DIR
-    (e.g. for a settings/admin page), via `utils.formatter.format_bytes`."""
+    """Total screenshot disk usage, e.g. "12.3 MB"."""
     manager = _manager()
     total = sum(f.stat().st_size for f in manager.list_files(pattern="**/*.png") if f.is_file())
     return format_bytes(total)

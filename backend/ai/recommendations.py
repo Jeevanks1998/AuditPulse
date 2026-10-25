@@ -1,19 +1,8 @@
 """
-ai/recommendations.py
+AI findings for the "ai" module, in the same shape as every other module's findings.
 
-Generates the "ai" module's findings for a completed audit — the same
-Issue-shaped {module, severity, title, description, recommendation} dicts
-every other module (security/, mobile/, forms/, ...) produces, so this
-flows through models.issue.sync_issues_from_findings and reports/ without
-any special-casing. This is what used to live inline in
-services.ai_service._findings_from_anthropic / _heuristic_findings before
-the ai/ package existed; services.ai_service now just calls through to
-`generate_recommendations` below.
-
-No network call is made unless ai.provider.is_configured() — a failed or
-unconfigured call always falls back to `_heuristic_recommendations` rather
-than raising, so a missing credential (or an outage) can never take the
-whole audit pipeline down with it.
+Falls back to fixed recommendations when the AI is unavailable, so a missing
+key or an outage never fails an audit.
 """
 
 from __future__ import annotations
@@ -34,12 +23,7 @@ async def generate_recommendations(
     breakdown: Dict[str, int],
     findings: Optional[List[dict]] = None,
 ) -> List[dict]:
-    """
-    Returns up to MAX_RECOMMENDATIONS Issue-shaped finding dicts (module="ai")
-    describing what an AI reviewer would flag about the audited page, given
-    the other modules' scores and (optionally) their raw findings for extra
-    context.
-    """
+    """Returns up to MAX_RECOMMENDATIONS findings (module="ai") based on the other modules' scores and findings."""
     try:
         return await _recommendations_from_ai(url, breakdown, findings or [])
     except AIProviderError as exc:
@@ -47,9 +31,7 @@ async def generate_recommendations(
         return _heuristic_recommendations(url, breakdown)
 
 
-# --------------------------------------------------------------------------
-# AI-backed path
-# --------------------------------------------------------------------------
+# AI path
 async def _recommendations_from_ai(url: str, breakdown: Dict[str, int], findings: List[dict]) -> List[dict]:
     weak_titles = [f.get("title") for f in findings if f.get("severity") in ("critical", "warning")][:8]
     context = f"module scores out of 100: {breakdown}"
@@ -92,11 +74,9 @@ def _finding(item: dict) -> dict:
     }
 
 
-# --------------------------------------------------------------------------
-# Heuristic fallback — no provider configured, or the call failed
-# --------------------------------------------------------------------------
+# Fallback
 def _heuristic_recommendations(url: str, breakdown: Dict[str, int]) -> List[dict]:
-    """Deterministic fallback so the "ai" module always yields something in local/dev."""
+    """Fallback so the "ai" module always returns something."""
     if not breakdown:
         return []
 

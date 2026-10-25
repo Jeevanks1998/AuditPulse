@@ -4,22 +4,8 @@ Revision ID: 9c3f2a7b5e14
 Revises: 682b36c9a001
 Create Date: 2026-09-09 00:00:00.000000
 
-Phase 2 of the consent-detection rework: GDPR compliance is no longer a
-single `gdpr_compliant` boolean — it's ten independently-testable checks
-(consent banner, accept control, reject control, reject parity, trackers
-blocked pre-consent, cookies blocked pre-consent, consent is granular,
-privacy policy available, consent withdrawal available, reject actually
-blocks tracking; see consent.consent_score.GDPR_CHECK_ORDER).
-
-`gdpr_checks` stores that full breakdown ({check_key: true/false/null})
-so a report can show exactly which requirement failed instead of only
-the roll-up bit. `gdpr_compliant` is kept as-is (now derived from this
-dict at write time via GdprAssessment.compliant) for any existing
-code/dashboards that only care about the overall verdict.
-
-Defaults to an empty dict so pre-existing rows read as "no per-check
-breakdown available" rather than as a real audit that failed every
-check.
+Stores the ten GDPR checks ({check: true/false/null}) so the report shows
+which one failed. gdpr_compliant is kept. Defaults to empty.
 """
 from typing import Sequence, Union
 
@@ -38,9 +24,7 @@ def upgrade() -> None:
         "consent_results",
         sa.Column("gdpr_checks", sa.JSON(), nullable=False, server_default=sa.text("'{}'")),
     )
-    # server_default only exists to backfill pre-existing rows; the model
-    # itself supplies the Python-side default for new rows going forward,
-    # same convention as this table's other JSON columns.
+    # server_default only fills existing rows; the model sets the default for new rows.
     with op.batch_alter_table("consent_results") as batch_op:
         batch_op.alter_column("gdpr_checks", server_default=None)
 

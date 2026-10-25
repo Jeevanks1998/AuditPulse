@@ -1,18 +1,7 @@
 """
-models/screenshot_blob.py
-
-Durable copy of every evidence screenshot (consent banner / preferences /
-reject / accept, Journey Map pages and interactions).
-
-Screenshots are written to settings.SCREENSHOT_DIR on local disk while an
-audit runs. On Railway that disk is wiped on every redeploy/restart, and a
-separate worker service has its own disk — so the files behind the stored
-"/screenshots/..." URLs disappeared and the report showed "Screenshot not
-available". After each audit the new files are copied here (re-encoded as
-compact JPEG) and main.py's /screenshots route falls back to this table.
-
-key = path relative to SCREENSHOT_DIR with "/" separators — exactly the
-part after "/screenshots/" in the URL the report uses.
+Database copy of every evidence screenshot. The server disk is wiped on
+redeploy, so after each audit the files are copied here (as JPEG) and
+/screenshots falls back to this table. key = the path after "/screenshots/".
 """
 
 from datetime import datetime, timezone

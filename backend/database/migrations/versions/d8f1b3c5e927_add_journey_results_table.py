@@ -4,9 +4,8 @@ Revision ID: d8f1b3c5e927
 Revises: c4e2a9b7d316
 Create Date: 2026-10-01 00:00:00.000000
 
-One row per audit for the new "journey" module (journey/ package):
-discovered pages and interactions, test outcomes with screenshot paths,
-forms, downloads, the journey map, tracking validation and QA findings.
+One row per audit for the Journey Map: pages, interactions, test results,
+forms, downloads, the map, tracking checks and findings.
 """
 from typing import Sequence, Union
 

@@ -1,9 +1,4 @@
-/* ==========================================================================
-   scheduler.js — scheduler.html page logic. Fetches/creates/updates
-   recurring audit schedules via window.Api.scheduler (assets/js/api.js,
-   which talks to backend/api/scheduler.py), and renders them into the
-   summary stat cards + #scheduleTableBody.
-   ========================================================================== */
+/* Scheduler page: list, create, edit and run recurring audits. */
 
 (function () {
   var U = window.Utils;
@@ -43,7 +38,7 @@
       });
     }
 
-    // Close any open row action menu when clicking elsewhere on the page.
+    // Close open row menus when clicking elsewhere.
     document.addEventListener('click', function (e) {
       U.qsa('.action-menu.is-open').forEach(function (menu) {
         if (!menu.contains(e.target)) menu.classList.remove('is-open');
@@ -75,7 +70,7 @@
       else if (action === 'delete') confirmDelete(schedule);
     });
 
-    /* ------------------------------ data ------------------------------ */
+    /* Data */
 
     function load() {
       tableBody.innerHTML = '<tr><td colspan="8" class="text-tertiary">Loading schedules…</td></tr>';
@@ -165,7 +160,7 @@
       );
     }
 
-    // "Email" column: who gets the report and how the last send went.
+    // Email column: recipients and the last send result.
     function emailCell(d) {
       if (!d || !d.enabled || !(d.to && d.to.length)) return '<span class="text-tertiary">Off</span>';
       var n = d.to.length + (d.cc ? d.cc.length : 0);
@@ -193,7 +188,7 @@
       return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     }
 
-    /* ------------------------------ actions ------------------------------ */
+    /* Actions */
 
     function runNow(schedule) {
       window.Api.scheduler.runNow(schedule.id)
@@ -237,13 +232,12 @@
       });
     }
 
-    /* ------------------------------ create/edit modal ------------------------------ */
+    /* Create / edit dialog */
 
     var FREQUENCIES = ['Daily', 'Weekly', 'Monthly', 'Yearly'];
     var WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    // A short, practical list — not exhaustive IANA coverage — covering the
-    // zones AuditPulse's userbase is most likely to be in.
+    // Common time zones.
     var TIMEZONES = [
       'UTC', 'Asia/Kolkata', 'Asia/Dubai', 'Asia/Singapore', 'Asia/Tokyo', 'Asia/Shanghai',
       'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Moscow',
@@ -295,7 +289,7 @@
     function openScheduleModal(existing) {
       var isEdit = !!existing;
 
-      // Sensible defaults, or carry over an existing schedule's config if present.
+      // Defaults, or the existing schedule's settings.
       var cfg = {};
       if (existing) {
         var rec = existing.schedule || existing.config || {};
@@ -586,7 +580,7 @@
         if (endInput.disabled) endInput.classList.remove('is-invalid');
       });
 
-      /* ---- email delivery ---- */
+      /* Email delivery */
       var mailBox = overlay.querySelector('.sched-email');
       var mailToggle = overlay.querySelector('#scheduleMailEnabled');
       mailToggle.addEventListener('change', function () {

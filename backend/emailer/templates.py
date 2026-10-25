@@ -1,13 +1,6 @@
 """
-emailer/templates.py
-
-Builds the "Send to POC" email's default subject/body. The body template
-uses {{token}} merge fields — the same six fields and the same syntax as
-the composer's default message in assets/js/email-composer.js
-(EMAIL_BODY_TEMPLATE/fillEmailTemplate) — so the wording matches whether
-it's generated here (the fallback used when a send request omits `body`)
-or on the frontend (what the user actually sees and can edit before
-sending). Keep the two in sync if this template changes.
+Default subject and body for "Send to POC" emails, with {{token}} fields.
+Keep in sync with EMAIL_BODY_TEMPLATE in assets/js/email-composer.js.
 """
 
 from __future__ import annotations
@@ -38,7 +31,7 @@ _TOKEN_RE = re.compile(r"{{\s*([a-zA-Z0-9_]+)\s*}}")
 
 
 def render_template(template: str, values: dict) -> str:
-    """Fills {{token}} merge fields; a token with no value in `values` is left as-is."""
+    """Fills {{token}} fields; unknown tokens are left as they are."""
 
     def _sub(match: "re.Match[str]") -> str:
         val = values.get(match.group(1))
@@ -48,7 +41,7 @@ def render_template(template: str, values: dict) -> str:
 
 
 def _hostname(url: str) -> str:
-    """example.com from any of https://example.com/path, http://www.x.com, or a bare host."""
+    """Host name without www, from a URL or bare host."""
     raw = (url or "").strip()
     if not raw:
         return ""
@@ -58,7 +51,7 @@ def _hostname(url: str) -> str:
 
 
 def _subject_date(generated_at: str) -> str:
-    """'19 Sep 2026' — matches assets/js/email-composer.js's formatSubjectDate()."""
+    """e.g. '19 Sep 2026' (same as email-composer.js)."""
     if not generated_at:
         return ""
     try:

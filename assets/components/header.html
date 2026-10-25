@@ -1,25 +1,10 @@
-<!-- ==========================================================================
-     components/header.html
-     Authenticated app-shell topbar: menu toggle, search, notification bell,
-     theme toggle, profile chip. Wired up by app.js (initSidebar,
-     initThemeToggle, initProfileMenu, initNotificationBell).
-
-     The search placeholder text differs slightly per page in the shipped
-     app ("Search website or report…" vs "Search settings…") — when reusing
-     this fragment, swap data-placeholder / the input's placeholder attribute
-     to match the page.
-
-     Optional loader: assets/js/include.js → Components.include('header')
-     ========================================================================== -->
+<!-- App top bar: menu, notifications, theme toggle, profile (wired up by app.js).
+     Optional loader: Components.include('header') -->
 <header class="topbar">
   <div style="display:flex; align-items:center; gap:12px;">
     <button class="icon-btn menu-toggle" id="menuToggle" aria-label="Toggle menu" style="display:none;">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
     </button>
-    <div class="topbar__search">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-      <input type="text" placeholder="Search website or report…">
-    </div>
   </div>
   <div class="topbar__actions">
     <button class="icon-btn" aria-label="Notifications">

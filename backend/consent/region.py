@@ -1,51 +1,14 @@
 """
-consent/region.py
+Decides which region a site targets, and so which privacy laws to assess:
+  India -> DPDP;  EU/EEA -> GDPR;  UK -> UK GDPR (GDPR checks);
+  California -> CCPA (only a candidate: it depends on the business);
+  unknown -> technical scan only, regional compliance "not assessed".
 
-The central region engine. Decides *where* a site is aimed and therefore
-*which* regional privacy frameworks an audit may assess — before any
-assessment runs:
-
-    Region detected
-           ↓
-    Applicable frameworks
-           ↓
-    consent_score builds the applicable assessment(s) only
-
-Output (RegionResult):
-
-    region                 e.g. "IN" / "EU" / "UK" / "US-CA" / "UNKNOWN"
-    confidence             high | medium | low
-    evidence               human-readable list, e.g. [".in domain",
-                           "India-specific privacy text", "India localisation",
-                           "CMP regional configuration"]
-    applicable_frameworks  e.g. ["dpdp"]  (["gdpr"], ["ccpa"], or [] )
-    applicability_status   "determined" | "not_determined"
-
-Mapping:
-
-    India          → DPDP (Digital Personal Data Protection Act, 2023)
-    EU/EEA         → GDPR + ePrivacy
-    United Kingdom → UK GDPR + PECR (assessed with the GDPR checks)
-    California     → CCPA/CPRA (a *candidate*: the law's thresholds depend
-                     on the business, which a website scan can't see)
-    Unknown        → framework not determined; technical consent scan only;
-                     regional compliance = "Not assessed"
-
-Detection is evidence-based and conservative: each signal adds a weighted
-vote for a region, and a region is only selected when its total reaches
-DECISION_THRESHOLD. A country-code TLD alone qualifies; one weak hint such
-as lang="en-US" does not. An explicit `target_region` always wins.
-
-Signals come from two passes:
-  1. `detect_region` — before anything else in the pipeline: URL, page
-     language, and the page's own text (step 1 of consent.analyze_site).
-  2. `refine_region` — after the live browser pass: what the *rendered*
-     consent banner says (e.g. "Do Not Sell or Share", "DPDP", "GDPR"),
-     i.e. how the CMP was regionally configured for this visit.
-
-consent/ccpa.py, consent/consent_score.py and the rest of consent/ never
-decide applicability themselves — they only detect technical signals or
-build assessments for the frameworks this module returns.
+Each signal (domain, language, page text, policy pages, the banner's wording)
+adds a weighted vote; a region is chosen only above DECISION_THRESHOLD.
+A country domain alone is enough; one weak hint isn't. An explicit
+target_region always wins.
+detect_region() runs first; refine_region() adds what the rendered banner says.
 """
 
 from __future__ import annotations
@@ -57,7 +20,7 @@ from urllib.parse import urlparse
 
 from crawler.parser import ParsedPage
 
-# ---- regions ----------------------------------------------------------------
+# Regions
 REGION_IN = "IN"
 REGION_EU = "EU"
 REGION_UK = "UK"
@@ -72,7 +35,7 @@ REGION_LABELS = {
     REGION_UNKNOWN: "Unknown",
 }
 
-# ---- frameworks ---------------------------------------------------------------
+# Laws
 FW_GDPR = "gdpr"
 FW_CCPA = "ccpa"
 FW_DPDP = "dpdp"
@@ -162,8 +125,7 @@ _SITE_SIGNALS = [
      REGION_IN, 35, "Indian Companies Act filing (e.g. Form MGT-7 annual return)"),
 ]
 
-# What the *rendered* consent banner says about how the CMP was configured
-# for this visit — "CMP regional configuration".
+# What the rendered banner says about how it was set up for this region.
 _CMP_SIGNALS = [
     (re.compile(r"\bdo not sell|\bopt[- ]out of (?:the )?sale|your privacy choices|\bCCPA\b|\bCPRA\b", re.I),
      REGION_US_CA, 30, "CMP regional configuration: US opt-out (CCPA-style) banner"),
@@ -191,13 +153,13 @@ class RegionSignal:
 
 @dataclass
 class RegionResult:
-    regions: List[str] = field(default_factory=list)   # decided regions, strongest first ([] => unknown)
+    regions: List[str] = field(default_factory=list)   # chosen regions, strongest first ([] = unknown)
     confidence: str = "low"                           # high | medium | low
     frameworks: List[str] = field(default_factory=list)
     signals: List[RegionSignal] = field(default_factory=list)
     scores: Dict[str, int] = field(default_factory=dict)
 
-    # --- the five fields the rest of the app persists -------------------------
+    # Fields saved by the rest of the app
     @property
     def region(self) -> str:
         return self.regions[0] if self.regions else REGION_UNKNOWN
@@ -208,7 +170,7 @@ class RegionResult:
 
     @property
     def evidence(self) -> List[str]:
-        """Evidence for the decided region(s); for Unknown, every weak hint seen."""
+        """Evidence for the chosen region(s); for unknown, every weak hint."""
         relevant = [s for s in self.signals if not self.regions or s.region in self.regions]
         seen, out = set(), []
         for s in sorted(relevant, key=lambda s: -s.weight):
@@ -225,7 +187,7 @@ class RegionResult:
     def applicability_status(self) -> str:
         return STATUS_DETERMINED if self.frameworks else STATUS_NOT_DETERMINED
 
-    # --- helpers --------------------------------------------------------------
+    # Helpers
     @property
     def regional_compliance_assessed(self) -> bool:
         return bool(self.frameworks)
@@ -276,7 +238,7 @@ class RegionResult:
         }
 
 
-# Back-compat alias (Phase 1 name).
+# Older name, still used.
 Applicability = RegionResult
 
 
@@ -357,9 +319,7 @@ def _text_signals(text: str, rules, source: str) -> List[RegionSignal]:
 
 
 def _alternate_signals(page: ParsedPage) -> List[RegionSignal]:
-    """EU-language versions of the site (hreflang alternates or a language
-    switcher linking to /fr/, /de/ ...): the site is published for EU
-    audiences even when the URL is a .com and the homepage is English."""
+    """EU-language versions of the site (/fr/, /de/, hreflang) mean it targets EU visitors."""
     langs = set()
     try:
         for link in page.soup.find_all("link", hreflang=True):
@@ -385,8 +345,7 @@ def _alternate_signals(page: ParsedPage) -> List[RegionSignal]:
 
 
 def _site_signals(site) -> List[RegionSignal]:
-    """Signals from consent.site_evidence: linked policy/about pages, the
-    privacy notice (HTML or PDF) and every link URL on those pages."""
+    """Signals from linked policy/about pages, the privacy notice and their links."""
     out: List[RegionSignal] = []
     if site is None:
         return out
@@ -411,8 +370,7 @@ def _site_signals(site) -> List[RegionSignal]:
 
 
 def _dedupe(signals: List[RegionSignal]) -> List[RegionSignal]:
-    """Each kind of evidence counts once (the strongest copy), however many
-    pages repeat it — ten pages saying "Pune" are one office location."""
+    """Each kind of evidence counts once, however many pages repeat it."""
     best: Dict[tuple, RegionSignal] = {}
     order: List[tuple] = []
     for s in signals:
@@ -437,9 +395,7 @@ def detect_region_signals(url: str, page: Optional[ParsedPage] = None, site=None
 
 
 def _homepage_link_signals(url: str, page) -> List[RegionSignal]:
-    """The homepage's own link URLs and texts (e.g. news slugs like
-    "...-in-pune-..." or "...30-years-in-india") — available even when the
-    linked pages are never fetched."""
+    """The homepage's own link URLs and texts (e.g. "...-in-pune-...")."""
     from urllib.parse import urljoin
     hrefs, texts = [], []
     for a in (getattr(page, "anchor_tags", None) or [])[:1500]:
@@ -487,7 +443,7 @@ def detect_region(
     target_region: Optional[str] = None,
     site=None,
 ) -> RegionResult:
-    """Step 1 of the consent pipeline: region from URL, language and page text."""
+    """Step 1: region from the URL, language and page text."""
     explicit = _normalize_explicit(target_region)
     if explicit:
         sig = RegionSignal(explicit, 100, "explicit", f"Target region set for this audit: {target_region}")
@@ -497,11 +453,7 @@ def detect_region(
 
 
 def refine_region(result: RegionResult, runtime_result=None) -> RegionResult:
-    """
-    Step 8: adds what the rendered consent banner says (CMP regional
-    configuration) and re-decides. An explicit target region is never
-    overridden. Returns `result` unchanged when there's nothing new.
-    """
+    """Adds what the rendered banner says and decides again. An explicit region is never changed."""
     if any(s.source == "explicit" for s in result.signals):
         return result
     if runtime_result is None or not getattr(runtime_result, "available", False):
@@ -512,8 +464,7 @@ def refine_region(result: RegionResult, runtime_result=None) -> RegionResult:
             texts.append(panel.get("text_excerpt") or "")
     texts += [c.label for c in (getattr(runtime_result, "controls", None) or [])]
     cmp_signals = _text_signals(" ".join(texts), _CMP_SIGNALS, "cmp")
-    # An opt-in banner with "Reject all" next to "Accept all" on the first
-    # layer is the GDPR / ePrivacy pattern (US banners are opt-out).
+    # "Reject all" next to "Accept all" on the banner is the EU opt-in pattern (US banners are opt-out).
     labels = " | ".join(c.label for c in (getattr(runtime_result, "controls", None) or []) if c.label)
     if (_OPT_IN_REJECT.search(labels) and _OPT_IN_ACCEPT.search(labels)
             and not any(sig.region == REGION_EU for sig in cmp_signals)):
@@ -529,5 +480,5 @@ def determine_applicability(
     page: Optional[ParsedPage] = None,
     target_region: Optional[str] = None,
 ) -> RegionResult:
-    """Phase 1 name for `detect_region` (kept for callers/tests)."""
+    """Older name for detect_region."""
     return detect_region(url, page, target_region)

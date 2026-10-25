@@ -1,13 +1,7 @@
-/* ==========================================================================
-   icons.js — section-heading icons.
-
-   Any element with data-icon="<name>" gets a small coloured icon tile in
-   front of its text (optional data-icon-tone="primary|analytics|consent|
-   journey|success|warning|neutral"). Pure decoration: the tile is
-   aria-hidden and the heading text is unchanged, so page scripts and
-   screen readers are unaffected. Icon paths follow the Lucide style
-   (24x24, 2px stroke) used everywhere else in the app.
-   ========================================================================== */
+/*
+ * Section heading icons: any element with data-icon="<name>" gets a small
+ * coloured icon (optional data-icon-tone). Decorative only (aria-hidden).
+ */
 (function () {
   var P = {
     globe: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',

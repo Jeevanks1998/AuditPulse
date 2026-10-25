@@ -1,10 +1,5 @@
 """
-config/logging.py
-
-Configures application-wide logging. Uses loguru for nicer formatting while
-still routing standard-library `logging` records (from uvicorn, sqlalchemy,
-etc.) through the same sinks, so every log line looks consistent regardless
-of where it came from.
+Logging set-up: loguru, with standard `logging` records (uvicorn, sqlalchemy) sent through it too.
 """
 
 import logging
@@ -17,7 +12,7 @@ from config.settings import settings
 
 
 class InterceptHandler(logging.Handler):
-    """Redirects stdlib `logging` records into loguru."""
+    """Sends standard `logging` records to loguru."""
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
@@ -36,7 +31,7 @@ class InterceptHandler(logging.Handler):
 
 
 def setup_logging() -> None:
-    """Call once at application startup (see main.py)."""
+    """Call once at startup (main.py)."""
     logger.remove()
 
     logger.add(
@@ -67,7 +62,7 @@ def setup_logging() -> None:
             diagnose=False,
         )
 
-    # Route uvicorn / fastapi / sqlalchemy stdlib loggers through loguru
+    # Send uvicorn / fastapi / sqlalchemy logs through loguru
     for name in (
         "uvicorn",
         "uvicorn.error",

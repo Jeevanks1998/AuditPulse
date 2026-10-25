@@ -1,14 +1,5 @@
 """
-forms/captcha.py
-
-Two narrow checks around bot protection on forms that are worth
-protecting: (1) a form that collects credentials or contact info with
-no recognizable CAPTCHA/bot-mitigation widget anywhere on the page,
-and (2) a form still wired to the original reCAPTCHA v1 API, which
-Google shut down (it stopped verifying new sites years ago). Detection
-is pattern-based against known script src / widget markup — it can't
-tell whether a detected CAPTCHA is actually configured correctly, only
-whether one appears to be present at all.
+Checks for bot protection on login/contact forms, and for the retired reCAPTCHA v1.
 """
 
 from __future__ import annotations

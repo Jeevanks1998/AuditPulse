@@ -1,16 +1,7 @@
 """
-Full-application end-to-end check for the Customer Journey module.
-
-Real API + real database + real audit pipeline + Playwright, against the
-local fixture shop (tests/journey/site), then the real report.html and
-dashboard.html in a browser:
-
-  1. start the fixture shop, the frontend (static) and the API (uvicorn)
-  2. log in, POST /api/v1/audits/ with modules ["journey", "consent"], depth=full
-  3. GET /audits/{id}/journey and assert on discovery, safety, tracking,
-     map and findings
-  4. export.json / PDF / evidence.zip (evidence/journey/<page>/interaction_*.png)
-  5. open report.html#journey and dashboard.html, click a map step, screenshot
+End-to-end check of the Journey Map with the real app against the local
+fixture shop: run a full-site journey + consent audit, check the API results,
+exports and screenshots, then open report.html and dashboard.html.
 
 Usage (from backend/):
     DATABASE_URL=postgresql+asyncpg://user:pass@127.0.0.1:5432/db \\

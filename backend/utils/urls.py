@@ -1,14 +1,5 @@
 """
-utils/urls.py
-
-URL parsing/normalization helpers shared by the crawler, SEO/links
-checks, and API request validation. `hostname_of` mirrors
-`models.website.hostname_of` (kept there rather than imported from
-here, since that copy's docstring — "mirrors Utils.hostnameOf on the
-frontend" — predates this module and models/ shouldn't depend on
-utils/ for one three-line function); everything else here is new
-surface area for crawler/links/seo modules to reach for instead of
-re-deriving URL logic per-file.
+URL helpers: add scheme, validate, host name, main domain, same-site checks, tracking-parameter removal, normalising.
 """
 
 from __future__ import annotations
@@ -17,17 +8,13 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 _SCHEME_RE_PREFIX = ("http://", "https://")
 
-# Common tracking params stripped by `strip_tracking_params` — analytics
-# noise that shouldn't affect "is this the same page" comparisons
-# (crawler dedup, seo.canonical, links.internal).
+# Tracking parameters removed before comparing URLs.
 _TRACKING_PARAM_PREFIXES = ("utm_",)
 _TRACKING_PARAMS = {"fbclid", "gclid", "gclsrc", "msclkid", "mc_cid", "mc_eid", "ref", "ref_src"}
 
 
 def ensure_scheme(url: str, default_scheme: str = "https") -> str:
-    """`example.com` -> `https://example.com`; leaves URLs that already
-    have a scheme untouched. Input to most of the functions below, and
-    handy for user-supplied URLs (api/audit.py) that may omit `https://`."""
+    """`example.com` -> `https://example.com`; URLs with a scheme are unchanged."""
     value = (url or "").strip()
     if not value:
         return value
@@ -37,10 +24,7 @@ def ensure_scheme(url: str, default_scheme: str = "https") -> str:
 
 
 def is_valid_url(url: str) -> bool:
-    """True if `url` parses to an absolute http(s) URL with a hostname.
-    Rejects `mailto:`, `javascript:`, relative paths, and bare hostnames
-    without a scheme (run through `ensure_scheme` first if that's fine
-    for the caller)."""
+    """True for an absolute http(s) URL with a host name."""
     if not url:
         return False
     try:
@@ -51,20 +35,14 @@ def is_valid_url(url: str) -> bool:
 
 
 def hostname_of(url: str) -> str:
-    """Best-effort lowercase hostname, `www.` stripped. Accepts a bare
-    hostname or a full URL. See module docstring re: models.website's
-    identical copy."""
+    """Lower-case host name without `www.` (URL or bare host)."""
     parsed = urlparse(url if "//" in url else f"//{url}")
     host = (parsed.hostname or url or "").lower()
     return host[4:] if host.startswith("www.") else host
 
 
 def root_domain(url: str) -> str:
-    """Best-effort registrable domain (`blog.example.co.uk` -> `example.co.uk`).
-    Heuristic (last two labels, or three for a couple of common two-part
-    TLDs) rather than a full public-suffix-list lookup — good enough for
-    "are these two hosts probably the same site" comparisons
-    (links/external.py, seo/canonical.py), not for anything security-sensitive."""
+    """Rough main domain (`blog.example.co.uk` -> `example.co.uk`). Not for security decisions."""
     host = hostname_of(url)
     if not host:
         return ""
@@ -78,30 +56,24 @@ def root_domain(url: str) -> str:
 
 
 def is_same_domain(url_a: str, url_b: str) -> bool:
-    """True if both URLs share a registrable root domain — `is_internal_link`
-    is the stricter exact-hostname version of this."""
+    """True if both URLs share a main domain (is_internal_link is the stricter version)."""
     root_a, root_b = root_domain(url_a), root_domain(url_b)
     return bool(root_a) and root_a == root_b
 
 
 def is_internal_link(link: str, base_url: str) -> bool:
-    """True if `link` (absolute or relative) resolves to the same
-    hostname as `base_url` — used by crawler/links.py and
-    links/internal.py to classify links found on a crawled page."""
+    """True if `link` resolves to the same host name as `base_url`."""
     resolved = urljoin(base_url, link)
     return hostname_of(resolved) == hostname_of(base_url)
 
 
 def join_url(base: str, path: str) -> str:
-    """Thin, explicitly-named wrapper over `urllib.parse.urljoin` for
-    resolving a relative href/src against the page it was found on."""
+    """Resolves a relative link against its page (urljoin)."""
     return urljoin(base, path)
 
 
 def strip_tracking_params(url: str) -> str:
-    """Removes utm_*/fbclid/gclid/etc. query params, preserving the rest
-    in their original order. Used before treating two URLs as "the same
-    page" for crawl deduplication and canonical-URL comparisons."""
+    """Removes utm_* / fbclid / gclid etc., keeping other parameters in order."""
     parsed = urlparse(url)
     kept = [
         (key, value)
@@ -113,16 +85,7 @@ def strip_tracking_params(url: str) -> str:
 
 
 def normalize_url(url: str, *, strip_fragment: bool = True, strip_trailing_slash: bool = True) -> str:
-    """
-    Canonicalizes a URL for comparison/dedup purposes:
-      - lowercases scheme + host
-      - strips tracking params (see `strip_tracking_params`)
-      - drops the fragment (`#section`) by default
-      - drops a trailing "/" from the path (except the root path itself)
-
-    Not meant for display — only for "have we already crawled this page"
-    style equality checks (crawler.py, sitemap.py).
-    """
+    """URL for comparison only: lower-case scheme/host, no tracking parameters, no #fragment, no trailing slash."""
     parsed = urlparse(ensure_scheme(url))
     path = parsed.path or "/"
     if strip_trailing_slash and len(path) > 1 and path.endswith("/"):

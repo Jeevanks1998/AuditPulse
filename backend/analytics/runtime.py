@@ -1,33 +1,13 @@
 """
-analytics/runtime.py
+Live analytics check: opens the page in a real browser and confirms the
+tracking actually works (finding the code is not proof).
 
-The live half of analytics/. Every other file in this package answers
-"is a tracker's code present in the markup" (ga4.py, gtm.py, adobe.py,
-...) — that's Detection, and per the implementation requirements' §2
-Core Validation Principle, detection alone never proves a tracker
-actually works. This module answers Runtime Validation instead: it
-opens the audited page in a real browser, watches the network tab, and
-confirms a Page View request is actually sent, that scrolling and
-clicking produce whatever events the implementation is supposed to
-send for them, and that no vendor double-fires its Page View.
+Steps: load the page (page view), accept cookies, scroll, click a safe
+element, then sort every captured request by tool and event and check for
+double page views.
 
-Flow (§3.2):
-    1. clean browser context
-    2. load the page, capture requests during load  -> Page View check
-    3. scroll, capture new requests                 -> Scroll check
-    4. click a safe interactive element, capture new requests -> Click check
-    5. classify every captured request by vendor + event
-    6. duplicate Page View check per vendor
-    7. build one VendorRuntimeResult per vendor actually observed
-
-Same degrade-gracefully contract as the rest of this codebase's
-Playwright-backed modules (consent/network.py, consent/runtime.py,
-crawler/screenshots.py): any failure yields available=False rather
-than raising, so a runtime failure can never take down the rest of the
-audit pipeline. A vendor that was never observed at runtime is
-reported as runtime_tested=True / page_view_status="failed" (or
-"not_tested" if the whole pass didn't run) — never silently upgraded
-to a pass.
+Never raises: on failure available=False. A tool that was never seen is
+reported as failed (or "not tested" if the check didn't run), never as passed.
 """
 
 from __future__ import annotations
@@ -46,18 +26,14 @@ MODULE = "analytics"
 CATEGORY = "runtime"
 
 SETTLE_MS = 1_500
-CONSENT_SETTLE_MS = 3_000  # tag managers load their vendors after the consent callback
-# After consent, keep waiting while tag/analytics requests are still
-# arriving (a tag manager loads a vendor's library, which then sends its
-# first hit), up to this long in total.
+CONSENT_SETTLE_MS = 3_000  # tag managers load tools after the consent callback
+# After consent, keep waiting while tracking requests keep arriving, up to this long.
 CONSENT_SETTLE_MAX_MS = 9_000
 QUIET_MS = 1_500
 SCROLL_SETTLE_MS = 1_200
 CLICK_SETTLE_MS = 1_500
 
-# Buttons/links a click-test must never hit — clicking Accept/Reject would
-# contaminate this pass with consent side-effects that consent/runtime.py
-# already tests independently and far more carefully.
+# Never click consent buttons here; the Consent module tests those.
 _CONSENT_LABEL_RE = re.compile(
     r"^\s*(accept|reject|allow|agree|decline|deny|disagree|manage|customi[sz]e|preferences|"
     r"cookie settings|settings)\b",
@@ -77,17 +53,10 @@ class CapturedRequest:
     identifier: Optional[str] = None
 
 
-# --------------------------------------------------------------------------
-# Per-vendor request classification. Each rule matches on domain + path
-# substrings (deliberately loose, same trade-off consent/network.py makes)
-# and knows how to pull an event name / page-view flag / account id out of
-# the query string for that vendor's collection endpoint.
-# --------------------------------------------------------------------------
+# Request classifiers, one per tool: match the domain/path and read the event and ID.
 
 def _ga4_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedRequest]:
-    # A GA4 hit is any /g/collect request carrying a G- measurement id — sent
-    # to google-analytics.com, stats.g.doubleclick.net, or a site's own
-    # server-side GTM domain alike.
+    # A GA4 hit is any /g/collect request with a G- ID (Google or a site's own server).
     tid = (qs.get("tid") or [""])[0]
     if urlparse(url).path.endswith("/g/collect") and tid.upper().startswith("G-"):
         event = (qs.get("en") or [None])[0]
@@ -106,46 +75,27 @@ def _ga4_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedReques
 
 def _gtm_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedRequest]:
     if "googletagmanager.com" not in url:
-        # Server-side / first-party GTM: <own domain>/gtm.js?id=GTM-XXXX
+        # Server-side GTM: <own domain>/gtm.js?id=GTM-XXXX
         cid = (qs.get("id") or [""])[0]
         if urlparse(url).path.endswith("/gtm.js") and cid.upper().startswith("GTM-"):
             return CapturedRequest(url=url, phase="", vendor_key="gtm", event_name="container_load",
                                    is_page_view=True, identifier=cid)
         return None
-    # GTM-specific signatures only (§1.2) — a real container load
-    # (/gtm.js) or its noscript fallback (/ns.html). Deliberately
-    # excludes /gtag/js: that endpoint loads Google's *gtag.js* library,
-    # which is how GA4 (and Google Ads) tags are installed directly
-    # (without a GTM container) even though it's served from
-    # googletagmanager.com — see _gtag_classify below. Conflating the
-    # two used to misreport a site running GA4-via-gtag.js as running
-    # Google Tag Manager, when no GTM container was ever installed.
+    # Only a real container load (/gtm.js) or its noscript fallback (/ns.html).
+    # /gtag/js is gtag.js (GA4 installed directly), not GTM; see _gtag_classify.
     if "/gtm.js" not in url and "/ns.html" not in url:
         return None
     cid = (qs.get("id") or [None])[0]
     if cid and not cid.upper().startswith("GTM-"):
-        return None  # id present but not a GTM container id — not actually GTM
-    # GTM's own network signal is just "the container loaded" — unlike GA4/Adobe/etc.
-    # it never sends its own page_view/scroll/click hits (those come from whatever
-    # tags *inside* the container fire, which show up under their own vendor key).
-    # Treating a successful container load as this vendor's "Page View" equivalent
-    # matches §3.4's recommended display ("GTM ... Data Layer: Passed").
+        return None  # not a GTM container ID
+    # GTM's only own signal is the container loading; it counts as GTM's page view.
     return CapturedRequest(url=url, phase="", vendor_key="gtm", event_name="container_load",
                             is_page_view=True, identifier=cid)
 
 
 def _gtag_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedRequest]:
-    """
-    gtag.js (googletagmanager.com/gtag/js?id=...) is Google's direct
-    tag-loading library — it's how a page installs GA4 (id starting
-    "G-"), Google Ads (id starting "AW-"), or a handful of other Google
-    products *without* a GTM container in between. It is never GTM
-    itself, so this is kept as its own classifier rather than folded
-    into _gtm_classify (§1.2's "correct gtag.js classification" fix).
-    Only the GA4 case (id starts "G-") is attributed to the ga4 vendor
-    key here; other gtag.js consumers (Ads, Floodlight) aren't analytics
-    vendors this package tracks, so their loads are left unclassified
-    rather than guessed at.
+    """gtag.js (googletagmanager.com/gtag/js) installs GA4 or Google Ads without GTM.
+    Only G- IDs are counted (as GA4); other uses are ignored.
     """
     if "googletagmanager.com" not in url or "/gtag/js" not in url:
         return None
@@ -161,7 +111,7 @@ def _adobe_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedRequ
     if not host.endswith(".omtrdc.net"):
         return None
     pe = (qs.get("pe") or [None])[0]
-    is_pv = pe is None or pe == "pv"  # Adobe's "s.t()" page-view call sends no `pe` param; `pe=lnk_o` is a link/click
+    is_pv = pe is None or pe == "pv"  # s.t() page views have no `pe`; pe=lnk_o is a link click
     event_name = "page_view" if is_pv else ("click" if pe == "lnk_o" else pe)
     return CapturedRequest(url=url, phase="", vendor_key="adobe", event_name=event_name,
                             is_page_view=is_pv, identifier=(qs.get("s_account") or qs.get("account") or [None])[0])
@@ -169,26 +119,22 @@ def _adobe_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedRequ
 
 def _piano_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedRequest]:
     host = urlparse(url).hostname or ""
-    # pa-cd.com is Piano Analytics' current collection domain (e.g.
-    # <id>.pa-cd.com/event?s=...); xiti.com / aticdn.net are the AT Internet
-    # legacy ones.
+    # pa-cd.com is Piano's current domain; xiti.com / aticdn.net are older.
     path = urlparse(url).path or ""
     known_host = any(d in host for d in ("aticdn.net", "piano.io", "xiti.com", "pa-cd.com"))
-    # Piano also collects through a site's own (CNAME) domain, e.g.
-    # stats.example.com/event?s=123&idclient=… — recognisable by the
-    # endpoint + numeric site id + Piano's visitor id parameter.
+    # Piano on a site's own domain: /event + numeric site id + idclient.
     first_party = (path.endswith("/event") or path.endswith("/hit.xiti")) \
         and (qs.get("s") or [""])[0].isdigit() and ("idclient" in qs or "idclient" in url)
     if not (known_host or first_party):
         return None
     if path.endswith(".js"):
-        return None                      # the SDK file itself (piano-analytics.js / smarttag.js) is not a hit
+        return None                      # the SDK file itself is not a hit
     if "event" not in url and "hit" not in url and "collect" not in url:
         return None
     raw = (qs.get("events") or qs.get("event") or [None])[0]
     event = raw
     if raw and raw.lstrip().startswith("["):
-        # Piano Analytics (pa-cd.com) sends events=[{"name":"page.display",...}]
+        # Piano sends events=[{"name":"page.display",...}]
         try:
             import json as _json
             parsed = _json.loads(raw)
@@ -196,8 +142,7 @@ def _piano_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedRequ
                 event = parsed[0].get("name") or raw
         except ValueError:
             event = raw
-    # Legacy AT Internet hits with no event name are page views; in Piano
-    # Analytics the page view event is called "page.display".
+    # Old AT Internet hits without an event are page views; Piano calls it "page.display".
     is_pv = event is None or event == "page.display"
     return CapturedRequest(url=url, phase="", vendor_key="piano", event_name=event or "page_view",
                             is_page_view=is_pv, identifier=(qs.get("s") or qs.get("site") or [None])[0])
@@ -241,9 +186,7 @@ def _tiktok_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedReq
 
 
 def _tagcommander_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedRequest]:
-    """TagCommander (Commanders Act) container: cdn.tagcommander.com/<site>/tc_<Name>_<n>.js
-    or a *.commander1.com host. Like GTM, its own signal is the container
-    loading; the tags it fires show up under their own vendors."""
+    """TagCommander container (cdn.tagcommander.com/.../tc_Name_n.js or *.commander1.com). Its own signal is the container load."""
     p = urlparse(url)
     host = (p.hostname or "").lower()
     if not (host.endswith("tagcommander.com") or host.endswith("commander1.com")):
@@ -310,31 +253,19 @@ class AnalyticsRuntimeResult:
     vendors: Dict[str, VendorRuntimeResult] = field(default_factory=dict)
     clicked_element: Optional[str] = None
     tested_at: Optional[str] = None
-    # Whether the Scroll / Click phase actually ran to completion —
-    # independent of whether it produced a matching request. A phase that
-    # never ran (context/browser died mid-pass, or — for click — no safe
-    # clickable element existed on the page at all) must report as
-    # "not tested" downstream, never as a "failed" that looks identical to
-    # a phase that ran cleanly and genuinely found nothing. See
-    # _build_vendor_results and merge_static_detected_vendors.
+    # Did the scroll/click step actually run? If not, report "not tested", not "failed".
     scroll_tested: bool = False
     click_tested: bool = False
-    # What happened to the cookie banner before Scroll/Click: many sites
-    # (OneTrust auto-blocking, Didomi, TagCommander privacy) fire *no*
-    # analytics until consent is given, so the pass accepts it the way a
-    # real visitor would. "no_banner" | "accepted (<label>)" | ...
+    # What happened to the cookie banner, e.g. "no_banner" or "accepted (<label>)".
     consent_state: Optional[str] = None
     # Small JS-global evidence read from the rendered page (dataLayer,
     # tag-manager objects). Kept tiny: this whole dataclass is stored as JSON.
     page_globals: Dict[str, object] = field(default_factory=dict)
-    # Every analytics / advertising / tag-manager service seen loading in the
-    # live browser (any vendor in consent.network's catalog, not only the
-    # ones with a dedicated validator above). List of
-    # {vendor, category, requests, collection_requests, hosts, phases}.
+    # Every tracking service seen loading in the browser: {vendor, category, requests, collection_requests, hosts, phases}.
     observed_tags: List[dict] = field(default_factory=list)
 
 
-# Read after load. Only booleans/counts — never page content.
+# Read after load. Counts and flags only, never page content.
 _PAGE_GLOBALS_JS = r"""() => ({
   dataLayer: Array.isArray(window.dataLayer) ? window.dataLayer.length : null,
   // Entries that are not the cookie banner's own consent bookkeeping
@@ -388,9 +319,7 @@ def _now() -> float:
 
 
 async def _settle_after_consent(page, activity: dict) -> None:
-    """Wait CONSENT_SETTLE_MS, then longer while tag/analytics requests keep
-    arriving, up to CONSENT_SETTLE_MAX_MS. A fixed 3 s missed vendors that a
-    tag manager loads only after the consent callback."""
+    """Wait, then keep waiting while tracking requests arrive (up to CONSENT_SETTLE_MAX_MS)."""
     start = _now()
     await page.wait_for_timeout(CONSENT_SETTLE_MS)
     while (_now() - start) * 1000 < CONSENT_SETTLE_MAX_MS and (_now() - activity["last"]) * 1000 < QUIET_MS:
@@ -398,16 +327,12 @@ async def _settle_after_consent(page, activity: dict) -> None:
 
 
 async def _accept_consent(page) -> str:
-    """Click the banner's Accept control (same helpers consent/ and journey/ use)."""
+    """Clicks the banner's Accept button."""
     try:
         from consent.buttons import ACCEPT_CLICK_ORDER
         from consent.runtime import _click_control, inventory_banner
 
-        # Poll for a late, client-rendered banner (same wait the Consent
-        # module uses). One immediate check missed CMPs such as OneTrust on
-        # slow pages: the pass reported "no_banner", never accepted, and
-        # every consent-gated tag (e.g. Piano fired by TagCommander) stayed
-        # silent, so the vendor was missing from the report.
+        # Wait for a late banner (e.g. OneTrust on slow pages); otherwise consent-gated tags never fire.
         try:
             from consent.runtime import _wait_for_banner
             inv, handles = await _wait_for_banner(page)
@@ -425,12 +350,7 @@ async def _accept_consent(page) -> str:
 
 
 async def run_analytics_runtime(url: str) -> AnalyticsRuntimeResult:
-    """Runtime pass with one retry in a fresh browser.
-
-    A page that never loaded (Chromium killed for memory, a network blip,
-    a slow first byte) would otherwise leave every vendor "Not tested" for
-    the whole audit.
-    """
+    """Runs the live check, retrying once in a fresh browser if the page didn't load."""
     import asyncio
 
     result = await _run_analytics_runtime_once(url)
@@ -442,12 +362,7 @@ async def run_analytics_runtime(url: str) -> AnalyticsRuntimeResult:
 
 
 async def _run_analytics_runtime_once(url: str) -> AnalyticsRuntimeResult:
-    """
-    Full §3.2 runtime pass for one URL: Page View on load, Scroll,
-    then a Click on a safe (non-consent) interactive element, each in
-    the same fresh browser context so later requests can be attributed
-    to the action that (probably) triggered them.
-    """
+    """One live check of `url`: page view on load, scroll, then a safe click."""
     try:
         from playwright.async_api import async_playwright
     except ImportError:
@@ -488,11 +403,7 @@ async def _run_analytics_runtime_once(url: str) -> AnalyticsRuntimeResult:
         if phase["current"] not in o["phases"]:
             o["phases"].append(phase["current"])
 
-    # available only flips True once the page has actually loaded — Page
-    # View, Scroll, and Click are all meaningless without a loaded page, so
-    # a navigation failure must report every vendor as "not tested" rather
-    # than a false "failed" (see merge_static_detected_vendors, which reads
-    # this flag to decide between the two).
+    # available becomes True only once the page loads; otherwise every tool is "not tested".
     result = AnalyticsRuntimeResult(available=False, tested_at=datetime.now(timezone.utc).isoformat())
 
     try:
@@ -503,24 +414,18 @@ async def _run_analytics_runtime_once(url: str) -> AnalyticsRuntimeResult:
                 page = await context.new_page()
                 page.on("request", _on_request)
 
-                # --- load / Page View ------------------------------------------------
+                # Load / page view
                 await goto_page(page, url, timeout=max(NAVIGATION_TIMEOUT_MS, 30_000))
                 await page.wait_for_timeout(SETTLE_MS)
                 result.available = True
 
-                # --- consent -----------------------------------------------------------
-                # Still the "load" phase: hits fired right after the visitor
-                # accepts are this page view's analytics, not a click event.
+                # Consent (hits right after Accept still count as the page view)
                 result.consent_state = await _accept_consent(page)
                 if result.consent_state.startswith("accepted"):
                     await _settle_after_consent(page, activity)
 
-                # --- rendered page evidence -----------------------------------------
-                # Many sites (Next.js, React, tag managers) inject their tags
-                # with JavaScript, so the raw HTML the server downloads has
-                # none of them. analytics.analyze_site re-runs its static
-                # detectors on this rendered DOM. Not stored in the DB (it is
-                # not a dataclass field), only handed back to the caller.
+                # Rendered page: JavaScript-added tags aren't in the raw HTML, so the
+                # static detectors re-run on this DOM. Returned to the caller, not saved.
                 try:
                     result.page_globals = await page.evaluate(_PAGE_GLOBALS_JS)
                 except Exception:  # noqa: BLE001
@@ -530,11 +435,7 @@ async def _run_analytics_runtime_once(url: str) -> AnalyticsRuntimeResult:
                 except Exception:  # noqa: BLE001
                     result._rendered_html = None
 
-                # --- scroll ------------------------------------------------------------
-                # Isolated in its own try/except: a scroll-phase failure (e.g. the
-                # context/browser is torn down mid-action) must not also discard the
-                # Page View evidence already captured above, and must report the
-                # scroll column as "not tested" rather than a false "failed".
+                # Scroll (its own try, so a failure here keeps the page-view evidence)
                 phase["current"] = "scroll"
                 try:
                     try:
@@ -548,8 +449,7 @@ async def _run_analytics_runtime_once(url: str) -> AnalyticsRuntimeResult:
                 except Exception as exc:  # noqa: BLE001
                     logger.info(f"analytics/runtime.py: scroll phase failed for {url}: {exc}")
 
-                # Second look at the page: tags injected late (after consent,
-                # on scroll) are in the DOM / window by now.
+                # Look again: late tags (after consent or scroll) are in the page now.
                 try:
                     late = await page.evaluate(_PAGE_GLOBALS_JS)
                     for k, v in (late or {}).items():
@@ -559,11 +459,7 @@ async def _run_analytics_runtime_once(url: str) -> AnalyticsRuntimeResult:
                 except Exception:  # noqa: BLE001 — keep the first snapshot
                     pass
 
-                # --- click -------------------------------------------------------------
-                # Same isolation as scroll. Also: a safe clickable element genuinely
-                # not existing on the page (clicked is None, no exception) means click
-                # behaviour truly can't be tested here — that's "not tested" evidence,
-                # not proof the vendor's click tracking is broken.
+                # Click. No safe element to click means "not tested", not broken tracking.
                 phase["current"] = "click"
                 try:
                     clicked = await _click_safe_element(page)
@@ -589,13 +485,7 @@ async def _run_analytics_runtime_once(url: str) -> AnalyticsRuntimeResult:
 
 
 async def _click_safe_element(page) -> Optional[str]:
-    """
-    Clicks the first visible, non-consent-related <button> or in-page
-    <a href="#..."> so the click-event test doesn't also trigger (and
-    get confused with) a full page navigation or a consent action.
-    Returns a short description of what was clicked, or None if
-    nothing suitable was found.
-    """
+    """Clicks the first visible non-consent <button> or in-page link. Returns what was clicked, or None."""
     candidates = page.locator("button, a[href^='#']")
     try:
         count = await candidates.count()
@@ -620,13 +510,7 @@ async def _click_safe_element(page) -> Optional[str]:
 def _build_vendor_results(
     captured: List[CapturedRequest], scroll_tested: bool = True, click_tested: bool = True,
 ) -> Dict[str, VendorRuntimeResult]:
-    """
-    `scroll_tested`/`click_tested` reflect whether those phases actually ran
-    to completion (see run_analytics_runtime) — independent of whether a
-    vendor's request showed up in them. A vendor observed at Page View but
-    with its phase marked untested reports that column as NOT_TESTED, never
-    a false FAILED indistinguishable from "we looked and saw nothing".
-    """
+    """Builds per-tool results. A step that didn't run is reported "not tested", not "failed"."""
     by_vendor: Dict[str, List[CapturedRequest]] = {}
     for req in captured:
         by_vendor.setdefault(req.vendor_key, []).append(req)
@@ -640,11 +524,7 @@ def _build_vendor_results(
         page_views_on_load = [r for r in load_reqs if r.is_page_view]
         identifier = next((r.identifier for r in requests if r.identifier), None)
 
-        # GTM only ever emits one request (the container loading) — it has no
-        # concept of its own scroll/click network hit, so those columns are
-        # "not applicable" rather than a misleading "failed" for this vendor.
-        # Any tag GTM fires *inside* the container shows up under that tag's
-        # own vendor key (e.g. ga4) instead.
+        # GTM and TagCommander send no scroll/click hits of their own: "not applicable".
         if vendor_key in ("gtm", "tagcommander"):
             scroll_status = NOT_APPLICABLE
             click_status = NOT_APPLICABLE
@@ -666,7 +546,7 @@ def _build_vendor_results(
             ) else NOT_APPLICABLE,
             duplicate_page_view=len(page_views_on_load) > 1,
             captured_request_count=len(requests),
-            request_urls=[r.url for r in requests][:25],  # capped — evidence, not a full HAR dump
+            request_urls=[r.url for r in requests][:25],  # capped
             event_names=sorted({r.event_name for r in requests if r.event_name}),
         )
         results[vendor_key] = vendor
@@ -679,13 +559,7 @@ def check_runtime_analytics(
     page_url: str,
     static_detected: Optional[Dict[str, bool]] = None,
 ) -> List[dict]:
-    """
-    Findings from an already-run AnalyticsRuntimeResult. `static_detected`
-    (vendor_key -> bool, from analytics.detect_*().detected) lets this
-    flag the Core Validation Principle's central case: a tracker present
-    in markup that never actually fires — the gap detection-only results
-    always miss. Empty list when runtime data wasn't available at all.
-    """
+    """Findings from the live check, including tags in the code that never fire. [] if it didn't run."""
     if not result.available:
         return []
 
@@ -736,41 +610,12 @@ def merge_static_detected_vendors(
     result: AnalyticsRuntimeResult,
     static_detected: Dict[str, bool],
 ) -> None:
-    """
-    §1.2 — "Keep static Analytics detection separate from runtime
-    validation... for every detected vendor, preserve the static
-    detection result even if no runtime request is observed."
-
-    `_build_vendor_results` only ever creates a VendorRuntimeResult for
-    a vendor whose traffic was actually captured — a vendor that's
-    detected in markup but never fires at runtime (the Core Validation
-    Principle's central failure case) simply has no entry in
-    `result.vendors` at all. Left alone, that means report.js's vendor
-    table (built from `runtime_result.vendors`, §1.3) would silently
-    drop that vendor's row instead of showing it as detected-but-failed.
-
-    This mutates `result.vendors` in place, adding one entry for every
-    statically-detected vendor missing from it, so every detected
-    vendor is guaranteed a row:
-
-      - runtime pass didn't run at all (`result.available` is False):
-        every status stays NOT_TESTED/NOT_APPLICABLE (the dataclass
-        defaults) — never reported as a failure when nothing was
-        actually tested.
-      - runtime pass ran but this vendor was never observed: Page View
-        is real evidence of absence, so it's marked FAILED (matching
-        what `check_runtime_analytics` already assumes when
-        `result.vendors.get(vendor_key)` is None). Scroll/Click only get
-        that same FAILED treatment if their own phase actually ran to
-        completion (`result.scroll_tested`/`click_tested`) — a phase
-        that never ran (context died mid-pass, or click had nothing
-        safe to click) reports NOT_TESTED instead, same distinction
-        `_build_vendor_results` makes for vendors that *were* observed.
-        custom_event_status stays NOT_APPLICABLE — its absence isn't
-        itself evidence of anything.
-
-    Never overwrites an existing entry — a vendor runtime actually
-    captured traffic for is real, richer evidence and always wins.
+    """Adds a row for every tool found in the code but not seen in the browser,
+    so the report never drops it:
+      - check didn't run: statuses stay "not tested"
+      - check ran, tool never seen: page view "failed"; scroll/click "failed"
+        only if that step ran
+    Existing rows (real browser evidence) are never overwritten.
     """
     for vendor_key, detected in (static_detected or {}).items():
         if not detected or vendor_key in result.vendors:
@@ -807,22 +652,10 @@ def _finding(severity: str, title: str, description: str, recommendation: str) -
     }
 
 
-# ==========================================================================
-# Shared runtime helpers (reused by journey/ — Customer Journey).
-#
-# journey/ must not grow a second browser implementation, so the pieces it
-# needs live here next to the existing runtime pass:
-#
-#   open_runtime_browser()       the same Chromium launch this module uses
-#   classify_analytics_request() the same vendor classifiers as _classify,
-#                                plus GA4 batched POST bodies (several
-#                                `en=` events per hit) and parameters
-#   DATALAYER_HOOK_JS            init script reporting every dataLayer.push
-#                                (and gtag() call) with a timestamp, across
-#                                navigations, through an exposed binding
-#
-# Nothing in run_analytics_runtime above changes behaviour.
-# ==========================================================================
+# Shared helpers also used by journey/ (one browser implementation):
+#   open_runtime_browser()       - Chromium launch
+#   classify_analytics_request() - same classifiers, plus batched GA4 POST bodies
+#   DATALAYER_HOOK_JS            - reports every dataLayer.push / gtag() call
 
 import contextlib  # noqa: E402
 
@@ -868,8 +701,7 @@ DATALAYER_HOOK_JS = r"""
 })();
 """ % {"binding": DATALAYER_BINDING}
 
-# Events every vendor sends on its own for page lifecycle — not evidence that
-# a specific *interaction* was tracked.
+# Lifecycle events every tool sends by itself; not proof an interaction was tracked.
 LIFECYCLE_EVENTS = frozenset({
     "page_view", "pageview", "PageView", "session_start", "first_visit", "user_engagement",
     "scroll", "container_load", "gtag_script_load", "session_event", "activity",
@@ -880,7 +712,7 @@ LIFECYCLE_EVENTS = frozenset({
 
 @contextlib.asynccontextmanager
 async def open_runtime_browser():
-    """The one Chromium launch used by analytics runtime checks and journey/."""
+    """Chromium launch used by analytics checks and journey/."""
     from playwright.async_api import async_playwright
 
     async with async_playwright() as pw:
@@ -892,7 +724,7 @@ async def open_runtime_browser():
 
 
 def _ga4_body_events(url: str, body: str) -> List[CapturedRequest]:
-    """GA4 batches events in the POST body, one `en=...&ep.x=...` line each."""
+    """GA4 batches events in the POST body, one per line."""
     out: List[CapturedRequest] = []
     base_qs = parse_qs(urlparse(url).query)
     for line in (body or "").splitlines():
@@ -908,7 +740,7 @@ def _ga4_body_events(url: str, body: str) -> List[CapturedRequest]:
 
 
 def event_parameters(url: str, body_line: str = "") -> Dict[str, str]:
-    """Readable event parameters from a vendor hit (GA4 ep./epn., Meta cd[], generic)."""
+    """Readable event parameters from a hit (GA4, Meta, generic)."""
     qs = parse_qs(urlparse(url).query)
     if body_line:
         qs.update(parse_qs(body_line))
@@ -924,10 +756,7 @@ def event_parameters(url: str, body_line: str = "") -> Dict[str, str]:
 
 
 def classify_analytics_request(url: str, post_data: Optional[str] = None) -> List[CapturedRequest]:
-    """
-    Same vendor classification as `_classify`, returning every event the hit
-    carries (a GA4 POST can batch several). Empty list = not an analytics hit.
-    """
+    """Classifies a hit and returns every event in it. [] = not an analytics hit."""
     base = _classify(url)
     if base is None:
         return []

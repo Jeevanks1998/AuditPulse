@@ -1,12 +1,5 @@
 """
-schemas/email.py
-
-Request/response models for the POC email endpoints in api/reports.py
-(§9.1 Send to POC UI, §10 Email History). `EmailSendRequest.attachments`
-is a list of the attachment keys emailer.attachments.ATTACHMENT_CHOICES
-exposes (§9.2) — the frontend's checkbox list sends back whichever the
-user left checked, never a hardcoded set (§14: "Do not hardcode
-vendor-specific results" applies equally to attachment choices).
+Request/response models for "Send to POC" and Email History.
 """
 
 from datetime import datetime
@@ -16,17 +9,13 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class EmailSendRequest(BaseModel):
-    # Caps stop the "Send to POC" feature being used to mass-mail through
-    # our SMTP account.
+    # Limits so this can't be used to mass-mail.
     to: List[EmailStr] = Field(min_length=1, max_length=20)
     cc: List[EmailStr] = Field(default_factory=list, max_length=20)
     bcc: List[EmailStr] = Field(default_factory=list, max_length=20)
     subject: Optional[str] = Field(default=None, max_length=300)
     body: Optional[str] = Field(default=None, max_length=20_000)
-    # Keys from emailer.attachments.ATTACHMENT_CHOICES, e.g.
-    # ["pdf", "consent_screenshots", "analytics_runtime", "cookie_evidence",
-    #  "network_evidence", "evidence_zip"]. Defaults to just the PDF if
-    # the caller sends nothing — never silently attaches everything.
+    # Attachment keys (e.g. ["pdf", "evidence_zip"]). Defaults to just the PDF.
     attachments: List[str] = Field(default_factory=lambda: ["pdf"], max_length=10)
 
     @field_validator("attachments")
@@ -43,16 +32,7 @@ class EmailSendResult(BaseModel):
 
 
 class EmailHistoryOut(BaseModel):
-    """
-    One recorded send attempt. Carries the *entire* email — recipients
-    (including bcc), subject, body, attachment keys — rather than a
-    display summary, because the Email Reports page's "Resend" action
-    reopens the composer prefilled from this payload, and any field left
-    out here is a field the resend would silently lose.
-
-    `audit_url` is denormalized in from the joined Audit row so the table
-    can show a Website column without one extra request per row.
-    """
+    """One sent email in full (incl. BCC and body), so Resend can reload it. audit_url is added for the table."""
 
     id: int
     audit_id: int
@@ -67,24 +47,19 @@ class EmailHistoryOut(BaseModel):
     error_message: Optional[str] = None
     sent_at: datetime
 
-    # Joined in by the service layer, not columns on models.ReportEmail.
+    # Added by the service, not database columns.
     audit_url: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class EmailHistoryStats(BaseModel):
-    """The four counters above the Email Reports table (§10).
+    """The four counters on the Email Reports page, always for the whole account (not the filtered view)."""
 
-    Always computed across the account's whole history, never across the
-    currently filtered page — a stat card that moved every time you typed
-    in the search box would be reporting on the filter, not on the account.
-    """
-
-    total_sent: int = 0        # every attempt, successful or not
+    total_sent: int = 0        # every attempt
     successful: int = 0
     failed: int = 0
-    reports_shared: int = 0    # distinct audits that were successfully emailed at least once
+    reports_shared: int = 0    # audits emailed successfully at least once
 
 
 class EmailHistoryPage(BaseModel):

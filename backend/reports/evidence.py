@@ -1,14 +1,5 @@
 """
-reports/evidence.py
-
-Builds the complete evidence ZIP (§5.2): the PDF report plus every
-screenshot, cookie, and network-evidence JSON file captured for an audit,
-bundled as one downloadable archive (api/reports.py's
-`/{audit_id}/evidence.zip`, and the "evidence_zip" attachment key in
-emailer/attachments.py's "Send to POC" modal). Everything here is read
-straight off a single already-built ReportPayload (§8) — this module
-doesn't re-derive or re-fetch anything, it only packages what
-reports/generator.py already computed.
+Builds the evidence ZIP: the PDF plus every screenshot and cookie/network JSON, all from one ReportPayload.
 """
 
 from __future__ import annotations
@@ -26,10 +17,7 @@ def evidence_zip_filename(audit_id: int) -> str:
 
 
 def build_evidence_zip(payload: ReportPayload, *, pdf_bytes: bytes = None) -> bytes:
-    """Returns the evidence ZIP's raw bytes. `pdf_bytes` is optional — the
-    ZIP is still built (minus the PDF entry) if the caller doesn't have one
-    cached/generated yet, same degrade-gracefully contract as the rest of
-    the export pipeline."""
+    """Returns the ZIP bytes. Without `pdf_bytes` the ZIP is built without the PDF."""
     buffer = BytesIO()
 
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -59,8 +47,7 @@ def build_evidence_zip(payload: ReportPayload, *, pdf_bytes: bytes = None) -> by
         if payload.consent is not None:
             zf.writestr("consent-evidence.json", json.dumps(payload.consent, indent=2, default=str))
 
-        # Phase 4: the consent evidence broken out by question, from the same
-        # presentation model the report page and PDF render.
+        # Consent evidence, from the same view as the report and PDF.
         view = payload.consent_view
         if view:
             def _dump(name: str, data) -> None:
@@ -78,7 +65,7 @@ def build_evidence_zip(payload: ReportPayload, *, pdf_bytes: bytes = None) -> by
             _dump("scan-pipeline.json", {"pipeline": view.get("pipeline", []), "legs": view.get("legs", []),
                                          "scan_id": (view.get("status") or {}).get("scan_id")})
 
-        # Cookie Scanner: full inventory as JSON + CSV.
+        # Cookie Scanner: JSON + CSV.
         if payload.cookie_inventory:
             from reports.cookie_view import inventory_csv
 
@@ -86,8 +73,7 @@ def build_evidence_zip(payload: ReportPayload, *, pdf_bytes: bytes = None) -> by
                         json.dumps(payload.cookie_inventory, indent=2, default=str))
             zf.writestr("cookies/cookie-inventory.csv", inventory_csv(payload.cookie_inventory))
 
-        # Customer Journey evidence (requirement §16):
-        #   evidence/journey/<page>/interaction_NNN_{before,highlighted,after}.png
+        # Journey Map screenshots: evidence/journey/<page>/interaction_NNN_{before,highlighted,after}.png
         jv = payload.journey_view
         if jv:
             from reports.journey_view import screenshot_file

@@ -1,26 +1,9 @@
 """
-consent/behavior.py
+Does the site really hold tracking back until consent, or only show a banner?
 
-Answers the single question models.consent.Consent.banner_blocks_scripts_pre_consent
-exists to store: does this site actually hold non-essential scripts
-back until the visitor consents, or does it just show a banner while
-tracking regardless (the single most common real-world consent
-violation).
-
-Combines two independent signals, neither of which is trustworthy
-alone:
-
-  - static: consent.consent_mode's default-call detection — a
-    Consent Mode default of 'denied' for storage types is a strong
-    declared-intent signal, but it's just a claim in the page's own
-    JS; nothing stops a site from setting it and loading trackers
-    unconditionally anyway.
-  - live (optional): consent.network's pre-consent request capture —
-    ground truth for what actually fired, but requires Playwright and
-    is skipped gracefully when unavailable (see consent/network.py).
-
-When only the static signal is available, the verdict is "declared but
-unverified" rather than a hard pass — see `verified` on the result.
+Two signals: the Consent Mode default (a claim in the page's code) and, when
+available, the live capture of requests before consent (proof). With only
+the claim, the result is marked unverified.
 """
 
 from __future__ import annotations
@@ -37,9 +20,9 @@ CATEGORY = "behavior"
 
 @dataclass
 class BehaviorResult:
-    blocks_scripts_pre_consent: bool  # best-available verdict — what models.consent.Consent stores
-    verified: bool                    # True only when live network data backed the verdict
-    declared_denied_by_default: bool  # from Consent Mode's default call, if present
+    blocks_scripts_pre_consent: bool  # best available answer (saved to the database)
+    verified: bool                    # True only when live requests confirmed it
+    declared_denied_by_default: bool  # from the Consent Mode default call
 
 
 def evaluate_behavior(
@@ -48,8 +31,7 @@ def evaluate_behavior(
 ) -> BehaviorResult:
     declared_denied = False
     if consent_mode is not None and consent_mode.default_call_found:
-        # "denied" (or absent, which the platform treats as denied) across storage types
-        # counts as declaring pre-consent blocking; any explicit "granted" does not.
+        # No "granted" in the default means tracking is declared off until consent.
         declared_denied = "granted" not in consent_mode.default_params.values()
 
     if network is not None and network.available:
@@ -60,7 +42,7 @@ def evaluate_behavior(
             declared_denied_by_default=declared_denied,
         )
 
-    # No live data — fall back to the declared signal, flagged as unverified.
+    # No live data: use the declared default, marked unverified.
     return BehaviorResult(
         blocks_scripts_pre_consent=declared_denied,
         verified=False,
@@ -87,7 +69,7 @@ def check_behavior(result: BehaviorResult, page_url: str) -> List[dict]:
                                "explicit consent check rather than loading them unconditionally.",
         }]
 
-    # blocks_scripts_pre_consent True but unverified
+    # blocks scripts, but unverified
     return [{
         "module": MODULE,
         "category": CATEGORY,

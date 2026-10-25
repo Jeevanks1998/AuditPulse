@@ -1,17 +1,6 @@
 """
-analytics/gtm.py
-
-Detects Google Tag Manager: the head <script> loader
-(googletagmanager.com/gtm.js?id=GTM-XXXXXXX) and the recommended
-<noscript><iframe ...ns.html?id=GTM-XXXXXXX> fallback that's supposed
-to sit right after <body>. GTM's own install instructions ask for
-both — the script for JS-enabled visitors, the noscript iframe so
-tags requiring it can still fire (and so the container is at least
-countable) for visitors without JS. Sites frequently paste only the
-first block and drop the second.
-
-Reads crawler.parser.ParsedPage.soup directly, same rationale as the
-other analytics/* modules.
+Detects Google Tag Manager: the <script> loader and the <noscript> iframe
+that should follow <body>. Sites often add only the script.
 """
 
 from __future__ import annotations
@@ -27,16 +16,9 @@ CATEGORY = "gtm"
 
 GTM_SCRIPT_RE = re.compile(r"googletagmanager\.com/gtm\.js\?id=(GTM-[A-Z0-9]+)", re.IGNORECASE)
 GTM_NOSCRIPT_RE = re.compile(r"googletagmanager\.com/ns\.html\?id=(GTM-[A-Z0-9]+)", re.IGNORECASE)
-# The standard GTM install snippet Google's own setup instructions provide
-# never appears as a literal <script src="...gtm.js?id=GTM-...">: it's an
-# inline IIFE that builds and injects that URL at runtime, with the
-# container id passed in as a plain string argument. GTM_INLINE_ID_RE
-# catches that real-world case by matching a bare GTM-XXXXXXX token
-# anywhere in an inline script body — deliberately looser than
-# GTM_SCRIPT_RE since there's no fixed surrounding call shape to anchor
-# on, but scoped to only fire on script tags that also reference
-# googletagmanager.com (checked separately below) so it can't match an
-# unrelated "GTM-..." string elsewhere on the page.
+# The standard GTM snippet builds the gtm.js URL in JavaScript, so the ID is
+# just a string in an inline script. Only used on scripts that mention
+# googletagmanager.com.
 GTM_INLINE_ID_RE = re.compile(r"\b(GTM-[A-Z0-9]+)\b")
 
 
@@ -49,7 +31,7 @@ class GTMDetection:
 
 
 def detect_gtm(page: ParsedPage) -> GTMDetection:
-    """Scans this page's <script> and <noscript> tags for GTM containers."""
+    """Looks for GTM containers in <script> and <noscript> tags."""
     result = GTMDetection()
     ids: List[str] = []
 
@@ -61,9 +43,7 @@ def detect_gtm(page: ParsedPage) -> GTMDetection:
             ids.append(match.group(1))
             continue
 
-        # Standard dynamically-injected snippet: no literal src, but the
-        # inline body references googletagmanager.com and carries the
-        # container id as a string literal (see GTM_INLINE_ID_RE above).
+        # Standard inline snippet: no src, ID passed as a string.
         body = tag.string or tag.get_text() or ""
         if "googletagmanager.com/gtm.js" in body:
             inline_ids = GTM_INLINE_ID_RE.findall(body)
@@ -84,7 +64,7 @@ def detect_gtm(page: ParsedPage) -> GTMDetection:
 
 
 def check_gtm(page: ParsedPage) -> List[dict]:
-    """Findings for GTM install issues on this page. Absence of GTM is not itself a finding."""
+    """Findings for GTM install problems. No GTM at all is not a finding."""
     detection = detect_gtm(page)
     findings: List[dict] = []
 

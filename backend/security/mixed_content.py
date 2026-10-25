@@ -1,17 +1,6 @@
 """
-security/mixed_content.py
-
-Page-level scan for mixed content: an https:// page pulling in
-resources over plain http://. Purely static — reads the already-parsed
-crawler.parser.ParsedPage, no network call of its own — so it runs
-alongside seo/accessibility's page-level checks on every crawled page,
-same shape as accessibility/contrast.py.
-
-Splits findings into "active" mixed content (scripts, stylesheets,
-iframes — things that can execute or restyle the page, which modern
-browsers block outright) and "passive" (images, video, audio — browsers
-still load these but flag the page as insecure), since the two have
-meaningfully different real-world impact.
+Finds http:// resources on an https:// page. "Active" ones (scripts, styles,
+iframes) are blocked by browsers; "passive" ones (images, media) mark the page insecure.
 """
 
 from __future__ import annotations
@@ -26,11 +15,10 @@ CATEGORY = "mixed_content"
 
 MAX_EXAMPLES = 5
 
-# (tag name, attribute) pairs that can trigger *active* mixed content —
-# blocked by browsers outright on an https page, unlike passive resources.
+# (tag, attribute) pairs that load active content.
 _ACTIVE_SOURCES = (
     ("script", "src"),
-    ("link", "href"),   # stylesheets specifically; filtered further below
+    ("link", "href"),   # stylesheets only (filtered below)
     ("iframe", "src"),
 )
 _PASSIVE_SOURCES = (
@@ -44,7 +32,7 @@ _PASSIVE_SOURCES = (
 def check_mixed_content(page: ParsedPage) -> List[dict]:
     """Findings for http:// resources referenced from an https:// page."""
     if urlparse(page.url).scheme != "https":
-        return []  # mixed content is only meaningful on an already-secure page
+        return []  # only relevant on an https page
 
     active = _find_insecure(page, _ACTIVE_SOURCES, stylesheets_only=True)
     passive = _find_insecure(page, _PASSIVE_SOURCES, stylesheets_only=False)

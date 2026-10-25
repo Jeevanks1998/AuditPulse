@@ -1,18 +1,10 @@
-/* ==========================================================================
-   journey-render.js — Customer Journey UI (report page section + dashboard
-   card). Renders JourneyOut.report_view (backend reports/journey_view.py)
-   exactly as the backend built it: nothing here invents a step, a status or
-   a number. Exposes window.JourneyRender.
-   ========================================================================== */
+/* Journey Map UI (report section and dashboard card), rendered from report_view as is. Exposes window.JourneyRender. */
 
 (function () {
   var U = window.Utils;
   var esc = function (v) { return U.escapeHtml(v == null ? '' : String(v)); };
 
-  // Analytics result per interaction (reports/journey_view.analytics_result):
-  // what was actually observed, never inferred.
-  // The only analytics statuses the Journey Map shows ("Tracked" alone is
-  // ambiguous and never used).
+  // Tracking result per interaction (what was seen). Plain "Tracked" is never used.
   var ANALYTICS_CHIP = {
     analytics_hit: ['tracked', 'Analytics Hit Detected'],
     datalayer: ['datalayer', 'DataLayer Event Detected'],
@@ -23,8 +15,7 @@
     safety_restricted: ['skipped', 'Not Tested — Safety Restricted'],
     not_applicable: ['not_applicable', '—']
   };
-  // Older stored scans without a per-source split: only "not detected" and
-  // "duplicate" can be stated; anything else can't be validated from them.
+  // Older scans: only "not detected" and "duplicate" can be stated.
   var LEGACY_TRACK = { not_tracked: 'not_detected', duplicate: 'duplicate', not_applicable: 'not_applicable' };
   var TEST_CHIP = {
     success: ['success', 'Worked'], failed: ['failed', 'Failed'],
@@ -53,7 +44,7 @@
       '</tbody></table></div>';
   }
 
-  /* ------------------------------ health ------------------------------ */
+  /* Health */
   function renderHealth(view) {
     var ex = view.health_explained || {};
     var pct = function (v) { return v == null ? '—' : Math.round(v * 100) + '%'; };
@@ -97,7 +88,7 @@
       esc((view.counts || {}).dynamic_elements || 0) + ' of them rendered by JavaScript after load (not in the server HTML).</p>';
   }
 
-  /* ------------------------------ map ------------------------------ */
+  /* Map */
   function stepButton(node, nid) {
     if (!node) return '';
     if (node.kind === 'page') {
@@ -205,7 +196,7 @@
     });
   }
 
-  /* ------------------------------ interaction details ------------------------------ */
+  /* Interaction details */
   var INTERACTION_FILTERS = [
     ['all', 'All discovered'], ['executed', 'Executed'], ['not_executed', 'Not Tested — Safety Restricted'],
     ['failed', 'Failed'], ['gap', 'Executed — Not Detected'], ['datalayer', 'DataLayer Event Detected'], ['unable', 'Unable to Validate']
@@ -229,7 +220,7 @@
     try {
       var u = new URL(d, r.page || undefined), p = new URL(r.page);
       if (u.host === p.host && /^https?:$/.test(u.protocol)) return (u.pathname || '/') + u.search;
-    } catch (e) { /* not a URL (tel:, mailto:, javascript) */ }
+    } catch (e) { /* not a URL (tel:, mailto:, javascript:) */ }
     return d;
   }
 
@@ -288,7 +279,7 @@
     draw();
   }
 
-  /* ------------------------------ analytics validation ------------------------------ */
+  /* Tracking validation */
   function renderCoverage(view) {
     var tr = view.tracking || {};
     var cov = tr.coverage_by_type || [];
@@ -404,8 +395,7 @@
     }).join('') + '</ul>';
   }
 
-  /* Plain-language summary at the top: what the audit did, what it found,
-     what to fix first, and how complete the scan was. */
+  /* Summary at the top: what was done, found, what to fix first, how complete. */
   function renderOverview(view) {
     var o = view.overview;
     if (!o) return '';
@@ -432,7 +422,7 @@
     '</div>';
   }
 
-  /* ------------------------------ public ------------------------------ */
+  /* Public */
   function renderReport(journey, ids) {
     var get = function (id) { return document.getElementById(id); };
     var set = function (id, html) { var el = id && get(id); if (el) el.innerHTML = html; return el; };
@@ -473,7 +463,7 @@
     var pick = function (index) {
       var nid = nodeIdForIndex(view, index);
       if (!(view.map.nodes || {})[nid]) {
-        // Not part of a journey path: show its evidence directly.
+        // Not on a journey path: show its evidence directly.
         var row = (view.interactions || []).filter(function (r) { return r.index === index; })[0];
         if (!row) return;
         var fake = { kind: 'interaction', index: index, label: row.label, path: row.page_path, type_label: row.type_label };

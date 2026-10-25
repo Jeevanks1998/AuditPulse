@@ -1,35 +1,13 @@
 """
-api/auth.py
+Sign-in: email, then a Google Authenticator code. No passwords.
 
-Authentication routes. The User model itself lives in models/user.py
-(re-exported below so existing `from api.auth import User` imports across
-the codebase keep working).
+  POST /auth/login  {email}  -> step "setup" (show QR code) or "verify" (ask
+                               for code), plus a short-lived challenge token
+  POST /auth/verify {challenge_token, code} -> the session token
 
-Sign-in is email -> Google Authenticator. There is no password:
-
-    POST /auth/login   {email}
-        Checks the account exists, is active and has AuditPulse access,
-        then returns which screen to show next:
-          - step "setup"  : first login, or the admin reset the
-                            authenticator -> QR code to scan
-          - step "verify" : authenticator already paired -> ask for code
-        plus a short-lived challenge_token (NOT a session).
-
-    POST /auth/verify  {challenge_token, code}
-        Checks the 6-digit TOTP code. On a setup challenge this also
-        marks the authenticator as configured (mfa_enabled = True,
-        auth_setup_required = False). Returns the real session token.
-
-The TOTP itself is plain RFC 6238 via pyotp — any authenticator app
-works (Google Authenticator, Microsoft Authenticator, Authy, 1Password).
-No Google API key or account is involved.
-
-There is intentionally no /auth/register here — accounts are provisioned
-exclusively by an administrator through the Access Portal sync
-(api/access_management.py). See the note above the route definitions.
-
-Also exposes `get_current_user`, the dependency every other router in
-api/ uses to identify the caller.
+Any TOTP app works. Accounts are only created by the Access Portal sync
+(api/access_management.py); there is no sign-up here.
+Also provides get_current_user, used by every other router.
 """
 
 import secrets
@@ -53,35 +31,26 @@ from schemas.user import LoginStepOut, TokenOut, TotpVerifyIn, UserLogin, UserOu
 
 router = APIRouter()
 
-# Name shown above the 6-digit code in Google Authenticator.
+# Name shown above the code in the authenticator app.
 TOTP_ISSUER = "AuditPulse"
 
-# Challenge tokens only bridge step 1 -> step 2 of login. Setup gets a bit
-# longer because the person may need to install the app first.
+# How long a login challenge lasts. Setup is longer (time to install the app).
 CHALLENGE_TTL_MINUTES = {"mfa_setup": 15, "mfa_login": 5}
 
-# Simple brute-force guard on the 6-digit code: after MAX_CODE_FAILURES
-# wrong codes the account is locked out of code entry for
-# CODE_LOCKOUT_SECONDS. In-process memory is enough for a single Railway
-# instance; the /auth/* rate limiter (middleware/rate_limit.py) still
-# applies on top of this.
+# After MAX_CODE_FAILURES wrong codes, block code entry for CODE_LOCKOUT_SECONDS.
 MAX_CODE_FAILURES = 5
 CODE_LOCKOUT_SECONDS = 5 * 60
 _code_failures: Dict[int, Tuple[int, float]] = {}
 
-# auto_error=False so an unauthenticated request reaches get_current_user and
-# gets a clean 401 with a WWW-Authenticate header, rather than FastAPI's
-# generic "Not authenticated" from the security dependency itself.
+# auto_error=False so get_current_user returns a clean 401.
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_PREFIX}/auth/login", auto_error=False
 )
 
 
-# --------------------------------------------------------------------------
-# Token helpers
-# --------------------------------------------------------------------------
+# Tokens
 def generate_api_key() -> str:
-    """ap_live_<20 hex chars> — matches the shape seeded in the frontend mock db."""
+    """ap_live_<20 hex chars>"""
     return "ap_live_" + secrets.token_hex(10)
 
 
@@ -92,12 +61,12 @@ def _encode(subject: str, typ: str, expires_minutes: int) -> str:
 
 
 def create_access_token(subject: str, expires_minutes: Optional[int] = None) -> str:
-    """A real session. Only ever issued after a correct authenticator code."""
+    """A session token, only issued after a correct code."""
     return _encode(subject, "access", expires_minutes or settings.ACCESS_TOKEN_EXPIRE_MINUTES)
 
 
 def create_challenge_token(subject: str, typ: str) -> str:
-    """Bridges /auth/login -> /auth/verify. Rejected everywhere else."""
+    """Links /auth/login to /auth/verify; not accepted anywhere else."""
     return _encode(subject, typ, CHALLENGE_TTL_MINUTES[typ])
 
 
@@ -120,15 +89,11 @@ def _decode(token: str, allowed_types: Tuple[str, ...], error_detail: str) -> di
 
 
 def decode_access_token(token: str) -> str:
-    # Only "access" tokens are sessions. Challenge tokens, and tokens
-    # issued by the old password login (no "typ"), are refused — so
-    # everyone signs in through the authenticator after this deploy.
+    # Only "access" tokens are sessions; challenge tokens and old password-login tokens are refused.
     return _decode(token, ("access",), "Could not validate credentials")["sub"]
 
 
-# --------------------------------------------------------------------------
-# TOTP helpers
-# --------------------------------------------------------------------------
+# Authenticator (TOTP)
 def _qr_data_uri(otpauth_uri: str) -> str:
     return segno.make(otpauth_uri, error="m").svg_data_uri(scale=5, border=2)
 
@@ -152,8 +117,7 @@ def _record_failure(user_id: int) -> None:
 
 
 def _check_account(user: Optional[User]) -> User:
-    """The same account checks for both login steps, so an account that is
-    disabled between step 1 and step 2 can't finish signing in."""
+    """Account checks used by both login steps."""
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -171,9 +135,7 @@ def _check_account(user: Optional[User]) -> User:
         )
     return user
 
-# --------------------------------------------------------------------------
-# Dependency: current user — imported by every other router in api/
-# --------------------------------------------------------------------------
+# Current user dependency
 async def get_current_user(
     token: Optional[str] = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
@@ -190,19 +152,12 @@ async def get_current_user(
     user = result.scalar_one_or_none()
 
     if user is None or not user.is_active or not user.auditpulse_access:
-        # Mid-session revocation: the Access Portal can flip either flag
-        # off after a token was already issued (see api/access_management.py).
-        # A generic message here is deliberate — this dependency backs
-        # every other route's auth, not just /auth/login, so it isn't the
-        # place to distinguish "inactive" from "no AuditPulse access" the
-        # way the login route below does; the person just gets signed out
-        # either way and has to go through login to see which one it was.
+        # The portal can disable an account after sign-in; the session ends either way.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive"
         )
     if not user.mfa_enabled or user.auth_setup_required:
-        # The admin reset this person's authenticator after the session was
-        # issued — end the session so they set up the new one at login.
+        # Authenticator was reset after sign-in: end the session so they set it up again.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Your authenticator was reset. Please sign in again.",
@@ -211,29 +166,14 @@ async def get_current_user(
     return user
 
 
-# --------------------------------------------------------------------------
-# Routes
-#
-# Deliberately just four: login, verify, logout, me. There is no self-service
-# /auth/register (and no /auth/login-email — see git history) — every
-# AuditPulse account must already exist, created and activated by an
-# administrator via the Access Portal sync (api/access_management.py).
-# None of the routes below may create a User row; if you're tempted to
-# add "if user doesn't exist: create it" anywhere in this file, don't —
-# account creation only ever happens in api/access_management.py.
-# --------------------------------------------------------------------------
+# Routes: login, verify, logout, me.
+# Never create users here; accounts only come from api/access_management.py.
 
 
 @router.post("/login", response_model=LoginStepOut)
 async def login(payload: UserLogin, db: AsyncSession = Depends(get_db)):
-    """Step 1 — email only. Checked in order, no account ever created here:
-
-      1. Does the account exist?           -> 401
-      2. Is the account active?            -> "Your account is inactive"
-      3. Does it have AuditPulse access?   -> "You don't have AuditPulse access"
-      4. Is the authenticator configured?
-            no  -> step "setup"  (new secret + QR code)
-            yes -> step "verify" (ask for the 6-digit code)
+    """Step 1, email only. Checks: account exists, is active, has AuditPulse access.
+    Then: no authenticator yet -> "setup" (QR code); otherwise -> "verify".
     """
     email = payload.email.strip().lower()
     result = await db.execute(select(User).where(func.lower(User.email) == email))
@@ -247,9 +187,7 @@ async def login(payload: UserLogin, db: AsyncSession = Depends(get_db)):
             email=user.email,
         )
 
-    # First-time setup (or after an admin reset): issue a fresh secret.
-    # It is saved now but mfa_enabled stays False until the person proves
-    # they scanned it by entering a correct code in /auth/verify.
+    # First setup (or after a reset): new secret. mfa_enabled stays False until a correct code.
     secret = pyotp.random_base32()
     user.mfa_secret = secret
     user.mfa_enabled = False
@@ -269,7 +207,7 @@ async def login(payload: UserLogin, db: AsyncSession = Depends(get_db)):
 
 @router.post("/verify", response_model=TokenOut)
 async def verify(payload: TotpVerifyIn, db: AsyncSession = Depends(get_db)):
-    """Step 2 — the 6-digit Google Authenticator code. Returns the session."""
+    """Step 2: the 6-digit code. Returns the session."""
     claims = _decode(
         payload.challenge_token,
         ("mfa_setup", "mfa_login"),
@@ -287,7 +225,7 @@ async def verify(payload: TotpVerifyIn, db: AsyncSession = Depends(get_db)):
             detail="Your authenticator was reset. Please enter your email again.",
         )
     if not is_setup and (user.auth_setup_required or not user.mfa_enabled):
-        # Admin reset the authenticator after step 1 — start over with setup.
+        # Authenticator was reset after step 1: start again.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Your authenticator was reset. Please enter your email again.",
@@ -320,8 +258,7 @@ async def verify(payload: TotpVerifyIn, db: AsyncSession = Depends(get_db)):
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(current_user: User = Depends(get_current_user)):
-    # Stateless JWTs: nothing to invalidate server-side. If you need
-    # server-side revocation later, blocklist the token's jti in Redis here.
+    # Tokens are stateless; nothing to revoke server-side.
     return None
 
 

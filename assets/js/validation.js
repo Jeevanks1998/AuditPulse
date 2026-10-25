@@ -1,7 +1,4 @@
-/* ==========================================================================
-   validation.js — field-level validation used by login and audit forms.
-   Exposed as window.Validation.
-   ========================================================================== */
+/* Form field checks for the login and audit forms (window.Validation). */
 
 window.Validation = (function () {
 
@@ -18,7 +15,7 @@ window.Validation = (function () {
     try {
       var u = new URL(withProtocol);
       if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
-      // Require at least one dot in the hostname (rules out "https://localhost", "https://a")
+      // Hostname needs a dot (rules out https://localhost).
       return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(u.hostname);
     } catch (e) {
       return false;
@@ -49,9 +46,7 @@ window.Validation = (function () {
     return ok;
   }
 
-  // audit.html manages the .is-invalid class on the wrapping element itself
-  // (rather than the input), so this only reports validity + toggles the
-  // shared error message; the caller decides what to style.
+  // Only reports validity and the error message; the caller styles the field.
   function validateUrlField(input, errorEl) {
     if (!input) return true;
     var ok = isValidUrl(input.value);

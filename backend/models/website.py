@@ -1,16 +1,6 @@
 """
-models/website.py
-
-A Website is the normalized "thing being audited" — one row per
-(user, hostname). Audits keep their own free-text `url` (the exact page
-that was crawled, e.g. https://example.com/pricing) but link back to a
-Website so the dashboard/history can group and trend multiple audits of
-the same site over time, and so scheduler.py can attach a recurring job
-to a tracked site rather than a raw string.
-
-`get_or_create_website` is the single place that resolves a URL to a
-Website row; api/audit.py and api/scheduler.py both call it when an
-audit is created so the mapping only lives in one place.
+A site being audited: one row per (user, host name), so audits of the same
+site can be grouped over time. get_or_create_website() finds or creates it.
 """
 
 from datetime import datetime, timezone
@@ -48,9 +38,7 @@ class Website(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
-    # ----------------------------------------------------------------
     # Relationships
-    # ----------------------------------------------------------------
     user: Mapped["User"] = relationship("User", back_populates="websites")
     audits: Mapped[List["Audit"]] = relationship(
         "Audit", back_populates="website", order_by="Audit.created_at.desc()"
@@ -61,16 +49,13 @@ class Website(Base):
 
 
 def hostname_of(url: str) -> str:
-    """Best-effort hostname extraction, mirrors Utils.hostnameOf on the frontend."""
+    """Host name of a URL (same as Utils.hostnameOf in the frontend)."""
     parsed = urlparse(url if "//" in url else f"//{url}")
     return (parsed.hostname or url).lower()
 
 
 async def get_or_create_website(db: AsyncSession, user_id: int, url: str) -> Website:
-    """
-    Resolve (user_id, hostname) to a Website row, creating one if this is
-    the first time this user has audited this hostname.
-    """
+    """Finds this user's Website for the URL's host name, creating it the first time."""
     host = hostname_of(url)
     result = await db.execute(
         select(Website).where(Website.user_id == user_id, Website.hostname == host)
@@ -79,12 +64,12 @@ async def get_or_create_website(db: AsyncSession, user_id: int, url: str) -> Web
     if website is None:
         website = Website(user_id=user_id, url=url, hostname=host)
         db.add(website)
-        await db.flush()  # assign an id without committing the caller's transaction
+        await db.flush()  # get an id without committing
     return website
 
 
 async def record_audit_result(website: Website, overall_score: Optional[int], when: datetime) -> None:
-    """Bump a Website's rollup fields after one of its audits completes."""
+    """Updates a Website's summary fields after an audit completes."""
     website.audit_count += 1
     website.last_audited_at = when
     if website.first_audited_at is None:

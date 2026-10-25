@@ -1,22 +1,7 @@
 """
-middleware/rate_limit.py
-
-Fixed-window request throttling. Backed by Redis (settings.REDIS_URL —
-the same instance Celery already uses as its broker, see
-config.settings and workers/celery_worker.py) so the limit is shared
-across every uvicorn worker process instead of each process enforcing
-its own separate quota; falls back to a per-process in-memory counter if
-Redis is unreachable, so a Redis outage degrades the limiter's accuracy
-rather than taking the whole API down with it (same "best effort, never
-block the request on infra being down" philosophy as
-crawler/screenshots.py's capture_screenshot).
-
-Scope: rate-limited by user id when middleware/auth.py resolved one
-(request.state.user_id — JWT or API key), otherwise by client IP, so an
-authenticated caller isn't penalized for sharing a NAT/proxy IP with
-other users. `/auth/*` gets its own tighter window (RATE_LIMIT_AUTH_*)
-since that's the brute-force-relevant surface (login/register), separate
-from the general API quota.
+Request limits per time window. Uses Redis so every process shares the count;
+falls back to memory if Redis is down. Counted per user when known,
+otherwise per IP. /auth/* has a stricter limit.
 """
 
 import time
@@ -33,15 +18,11 @@ from config.settings import settings
 
 AUTH_PATH_PREFIX = f"{settings.API_V1_PREFIX}/auth"
 
-# --------------------------------------------------------------------------
-# Redis client (lazy — the first request that needs it creates the
-# connection pool; a bad REDIS_URL only ever downgrades to the in-memory
-# fallback below, it never crashes app start-up).
-# --------------------------------------------------------------------------
+# Redis client, created on first use. A bad REDIS_URL falls back to memory; it never stops start-up.
 _redis_client: Optional[aioredis.Redis] = None
-_redis_unavailable = False  # sticky after one failure, so we don't retry-storm on every request
+_redis_unavailable = False  # stays True after one failure, so we don't retry on every request
 
-# In-memory fallback: {scope_key: (window_start_epoch, count)}
+# Memory fallback: {key: (window_start, count)}
 _memory_counters: dict[str, tuple[int, int]] = {}
 
 
@@ -55,9 +36,7 @@ def _get_redis() -> Optional[aioredis.Redis]:
 
 
 async def _increment(scope_key: str, window_seconds: int) -> int:
-    """Increments and returns the request count for the current fixed
-    window, via Redis if it's reachable, otherwise the in-memory dict.
-    """
+    """Adds one to this window's count (Redis or memory) and returns it."""
     global _redis_unavailable
 
     now = int(time.time())
@@ -75,7 +54,7 @@ async def _increment(scope_key: str, window_seconds: int) -> int:
             _redis_unavailable = True
             logger.warning(f"rate_limit: Redis unavailable, falling back to in-memory limiting: {exc}")
 
-    # In-memory fallback
+    # Memory fallback
     stored_window, count = _memory_counters.get(scope_key, (window_start, 0))
     if stored_window != window_start:
         count = 0
@@ -100,9 +79,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
 
     async def dispatch(self, request: Request, call_next):
-        # Evidence images are always exempt: one report page loads dozens of
-        # screenshots at once, which used to trip the API limit (429) and
-        # show "Screenshot not available".
+        # Screenshots are never limited: one report loads dozens at once.
         if not settings.RATE_LIMIT_ENABLED or request.url.path.startswith("/screenshots/") or any(
             request.url.path.startswith(p) for p in settings.RATE_LIMIT_EXEMPT_PATHS
         ):

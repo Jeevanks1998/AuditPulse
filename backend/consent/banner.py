@@ -1,19 +1,7 @@
 """
-consent/banner.py
-
-Static detection of a cookie-consent banner in a fetched page's HTML:
-either a recognized CMP's (Consent Management Platform) markup
-signature, or a generic heuristic match on id/class/text patterns for
-sites running a homegrown banner. Read-only, no live rendering — same
-tradeoff analytics/ga4.py makes reading ParsedPage.soup instead of
-executing JS: a banner injected purely client-side after page load
-won't be seen here (consent/behavior.py's Playwright path covers that
-gap when available).
-
-This only answers "is a banner present and which CMP, if any" —
-button parity lives in consent/buttons.py, granular category controls
-in consent/preferences.py, so each stays independently testable/
-weightable in consent/consent_score.py.
+Finds a cookie banner in the raw HTML: a known consent tool (CMP) or a
+generic id/class/text match. Banners added later by JavaScript are found by
+the browser check (runtime.py). Buttons and preferences are checked elsewhere.
 """
 
 from __future__ import annotations
@@ -27,7 +15,7 @@ from crawler.parser import ParsedPage
 MODULE = "consent"
 CATEGORY = "banner"
 
-# (cmp key, display name, regex over class/id attrs, regex over script src)
+# (key, name, regex for class/id, regex for script src)
 _CMP_SIGNATURES = [
     ("onetrust", "OneTrust", re.compile(r"onetrust|optanon", re.IGNORECASE),
      re.compile(r"cdn\.cookielaw\.org|onetrust\.com", re.IGNORECASE)),
@@ -60,7 +48,7 @@ _CMP_SIGNATURES = [
      re.compile(r"consentmanager\.net", re.IGNORECASE)),
 ]
 
-# Generic fallback: an id/class token that strongly implies a hand-rolled banner.
+# Generic id/class that suggests a home-made banner.
 _GENERIC_MARKUP_RE = re.compile(
     r"cookie[-_]?(banner|consent|notice|bar|popup)|consent[-_]?(banner|bar|popup)",
     re.IGNORECASE,
@@ -74,10 +62,10 @@ _GENERIC_TEXT_RE = re.compile(
 @dataclass
 class BannerDetection:
     detected: bool = False
-    cmp_key: Optional[str] = None            # e.g. "onetrust"; None if generic/homegrown
+    cmp_key: Optional[str] = None            # e.g. "onetrust"; None if home-made
     cmp_name: Optional[str] = None           # e.g. "OneTrust"
     detected_via: List[str] = field(default_factory=list)  # ["markup", "script", "text"]
-    element_hint: Optional[str] = None       # id/class of the matched element, for consent/screenshots.py
+    element_hint: Optional[str] = None       # id/class of the banner, for the screenshot
 
 
 def detect_banner(page: ParsedPage) -> BannerDetection:

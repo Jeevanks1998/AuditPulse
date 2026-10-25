@@ -1,15 +1,6 @@
 """
-analytics/tiktok.py
-
-Detects the TikTok Pixel. Unlike most other tags here, TikTok's base
-snippet doesn't add a <script src="..."> tag directly — it's a small
-inline IIFE that defines `ttq`, then has ttq.load('PIXEL_ID') fetch
-the real events.js loader itself at runtime. So the reliable signals
-are all inline: the ttq.load(...) call (which carries the pixel ID)
-and the ttq.page() call that fires the initial page-view event.
-
-Reads crawler.parser.ParsedPage.soup directly, same rationale as the
-other analytics/* modules.
+Detects the TikTok Pixel. Its snippet is inline only: ttq.load('PIXEL_ID')
+(carries the ID) and ttq.page() (the page view).
 """
 
 from __future__ import annotations
@@ -36,7 +27,7 @@ class TikTokDetection:
 
 
 def detect_tiktok(page: ParsedPage) -> TikTokDetection:
-    """Scans this page's <script> tags for TikTok Pixel signals."""
+    """Looks for the TikTok Pixel in the page's scripts."""
     result = TikTokDetection()
     pixel_ids: List[str] = []
     found_hint = False
@@ -58,7 +49,7 @@ def detect_tiktok(page: ParsedPage) -> TikTokDetection:
 
 
 def check_tiktok(page: ParsedPage) -> List[dict]:
-    """Findings for TikTok Pixel configuration issues. Absence of the pixel is not itself a finding."""
+    """Findings for TikTok Pixel problems. No pixel is not a finding."""
     detection = detect_tiktok(page)
     findings: List[dict] = []
 

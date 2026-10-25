@@ -1,22 +1,8 @@
 """
-journey/journey_tracking.py
-
-Connects each tested interaction to the analytics activity it produced:
-
-    interaction → browser action → network requests + dataLayer pushes
-                → vendor (GA4 / GTM / Piano / Adobe / Meta / …) → event
-
-Reuses analytics/runtime.py — the same vendor classifiers (GA4, GTM,
-gtag, Adobe, Piano, Clarity, Hotjar, Meta, LinkedIn, TikTok), the GA4
-batched-POST parsing and the dataLayer hook — instead of re-implementing
-any vendor logic here.
-
-For every interaction it answers:
-  * was an analytics request generated, which vendor, which event,
-    which parameters?
-  * was the event duplicated?
-  * was the event missing?
-  * did it happen before or after the interaction?
+Links each tested interaction to the analytics it triggered: requests and
+dataLayer pushes -> vendor -> event. Uses the classifiers in
+analytics/runtime.py. Answers: was an event sent, by which tool, with which
+parameters; was it duplicated or missing; before or after the action?
 """
 
 from __future__ import annotations
@@ -37,8 +23,7 @@ from analytics.runtime import (
 
 import re
 
-# Not interaction tracking: gtag commands that only read/configure, consent
-# platform (CMP) bookkeeping, GTM visibility/timer housekeeping.
+# Not interaction tracking: gtag config commands, consent-tool and GTM housekeeping events.
 _NOISE_EVENTS = frozenset({"gtag:get", "gtag:config", "gtag:set", "gtag:js", "gtag:consent", "consent_update",
                            "consent_default", "gtm.elementVisibility", "gtm.timer", "gtm.historyChange-v2"})
 _NOISE_EVENT_RE = re.compile(r"^(onetrust|optanon|cookiebot|didomi|usercentrics|tc_|tcf|trustcommander|axeptio|"
@@ -62,8 +47,7 @@ class TrackedEvent:
 
     @property
     def is_lifecycle(self) -> bool:
-        """Page/tag bookkeeping, not a reaction to the user's action: page loads,
-        gtag config/get/set commands, consent-banner (CMP) events."""
+        """Page/tag housekeeping (page loads, gtag config, consent events), not a reaction to the user."""
         ev = self.event or ""
         return not ev or ev in LIFECYCLE_EVENTS or ev in _NOISE_EVENTS or bool(_NOISE_EVENT_RE.search(ev))
 
@@ -126,11 +110,11 @@ class TrackingCapture:
 @dataclass
 class InteractionTracking:
     status: str = NOT_TESTED          # tracked | not_tracked | duplicate | not_tested | not_applicable
-    events: List[dict] = field(default_factory=list)          # interaction events (after the action)
+    events: List[dict] = field(default_factory=list)          # events after the action
     lifecycle_events: List[dict] = field(default_factory=list)  # page_view etc. caused by navigation
     vendors: List[str] = field(default_factory=list)
     duplicates: List[str] = field(default_factory=list)
-    before_action: List[dict] = field(default_factory=list)     # same-name events seen before the action
+    before_action: List[dict] = field(default_factory=list)     # same events seen before the action
     note: str = ""
 
     def as_dict(self) -> dict:
@@ -146,12 +130,7 @@ def evaluate_interaction(
     pre_window_start: Optional[float] = None,
     analytics_present: bool = True,
 ) -> InteractionTracking:
-    """
-    Attributes analytics activity to one interaction: everything from the
-    moment of the action to the end of its settle window. Lifecycle events
-    (page_view, gtm.js, session_start…) prove the destination page is
-    tracked, not that the *interaction* was — they're reported separately.
-    """
+    """Analytics activity for one interaction, from the action to the end of its wait. Page-load events are reported separately."""
     window = capture.between(action_started, window_end)
     interaction = [e for e in window if not e.is_lifecycle]
     lifecycle = [e for e in window if e.is_lifecycle and e.event]
@@ -162,7 +141,7 @@ def evaluate_interaction(
         vendors=sorted({e.vendor for e in interaction}),
     )
 
-    # Duplicate: the same vendor sent the same event more than once for one action.
+    # Duplicate: the same tool sent the same event more than once.
     counts: Dict[str, int] = {}
     for e in interaction:
         if e.source != "network":

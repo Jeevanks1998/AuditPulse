@@ -15,19 +15,10 @@
   .field__error.is-visible { display: block; }
   .field input.is-invalid { border-color: var(--color-error) !important; box-shadow: 0 0 0 3px var(--color-error-soft) !important; }
 
-  /* -----------------------------------------------------------------------
-     internal-login.html — the only sign-in page for AuditPulse.
-     
-     INTERNAL-ONLY LOGIN — email -> Google Authenticator (no password)
-     - No public landing, no self-service sign-up
-     - Accounts are provisioned by administrator only (Access Portal)
-     - Step 1: email
-     - First login / after admin reset: scan QR code, enter 6-digit code
-     - Afterwards: email -> 6-digit code -> dashboard
-     - Inactive accounts are rejected at login
-     
-     See: backend/api/access_management.py for user provisioning
-     ----------------------------------------------------------------------- */
+  /*
+   * The only sign-in page: email, then Google Authenticator (no passwords).
+   * Accounts are created by an admin in the Access Portal; inactive ones are rejected.
+   */
   .il-shell {
     min-height: 100vh;
     display: flex;

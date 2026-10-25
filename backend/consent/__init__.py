@@ -1,73 +1,21 @@
 """
-consent/
+Consent and cookie checks, one file per topic:
 
-A dedicated, granular consent/cookie-compliance check package — one
-file per concern — that gives services.audit_service.run_audit_pipeline
-something real to write into models.consent.Consent instead of its
-current `_write_consent_result` placeholder (random score, hardcoded
-`_ga` cookie). Every check function returns findings in the same
-{module, category, severity, title, description, recommendation} shape
-services.audit_service / models.issue already persist, so nothing
-downstream (Issue sync, report.html, history) needs to change to
-consume them — same contract as seo/ and analytics/.
+  banner        - is there a cookie banner, and which tool (CMP)
+  buttons       - Accept / Reject / Settings available and equally easy
+  consent_mode  - Google Consent Mode signals
+  preferences   - can visitors change their choice later
+  cookies       - cookies set before consent
+  behavior      - is tracking really held back until consent
+  network       - live capture of requests before consent (browser)
+  screenshots   - screenshot of the banner (browser)
+  runtime       - clicks Accept / Reject / Settings and records what happens (browser)
+  ccpa          - US privacy signals (Do Not Sell, GPC)
+  region        - which region and laws apply
+  consent_score - 0-100 score, GDPR / CCPA check lists and the saved summary
 
-    banner        — is a consent banner/CMP present at all
-    buttons       — accept/reject/manage button parity (dark-pattern check)
-    consent_mode  — Google Consent Mode v1/v2 signal detection
-    preferences   — persistent way to revisit/withdraw consent later
-    cookies       — bridges the standalone cookies/ package (detector,
-                    categories, expiry, validator, storage) into this
-                    audit, plus pre-consent cookie exposure findings
-    behavior      — derives banner_blocks_scripts_pre_consent from
-                    consent_mode's declared default + (optionally)
-                    network's live-captured evidence
-    network       — OPTIONAL, Playwright-based: live capture of every
-                    request fired before consent is given
-    screenshots   — OPTIONAL, Playwright-based: element-clipped
-                    screenshot of the banner itself for the report
-    runtime       — OPTIONAL, Playwright-based: the click-through
-                    counterpart to network — actually clicks Accept /
-                    Reject / Personalize and re-captures cookies and
-                    network traffic after each, so behavior.py's
-                    verdict can be backed by what the controls really
-                    do rather than only what fires before either is
-                    clicked. See consent/runtime.py.
-    ccpa          — CCPA/CPRA technical signals only ("Your Privacy
-                    Choices", "Do Not Sell or Share", GPC handling) —
-                    never decides whether CCPA applies
-    region        — the region engine: region, confidence, evidence,
-                    applicable_frameworks, applicability_status
-    consent_score — turns any list of these findings into a weighted
-                    0-100 score (score_consent); builds the ten-check
-                    GDPR breakdown (build_gdpr_assessment /
-                    GdprAssessment — see GDPR_CHECK_ORDER) and the
-                    six-check CCPA breakdown (build_ccpa_assessment /
-                    CcpaAssessment — see CCPA_CHECK_ORDER) instead of
-                    two single compliant bits; and assembles the full
-                    models.consent.Consent-ready row (build_consent_summary,
-                    which now calls both internally)
-
-banner/buttons/consent_mode/preferences/cookies are page-level and
-synchronous, same as seo/ and analytics/ — everything they need is
-already sitting in crawler.parser.ParsedPage plus, for cookies, the raw
-Set-Cookie headers from that page's fetch. network/screenshots are the
-exception: both require an actual browser (Playwright) and are always
-optional, degrading to "no data" rather than raising when unavailable —
-`analyze_site` below is the only entry point that touches them.
-
-Usage — wiring this into the real pipeline (crawler.crawler.Crawler
-already produces a ParsedPage per page; the caller also needs that
-page's raw `Set-Cookie` header values, e.g. via
-`response.headers.get_list("set-cookie")`, since crawler/crawler.py
-doesn't currently expose them):
-
-    from consent import run_page_checks, analyze_site
-
-    findings = run_page_checks(page, cookies=page_cookies, first_party_hostname=hostname)
-
-    # or, for the full picture including live pre-consent network capture:
-    result = await analyze_site(audit.url, page, cookies=page_cookies, first_party_hostname=hostname)
-    consent_row = Consent(audit_id=audit.id, **vars(result.summary))
+Browser checks are optional: if they can't run they report "not tested".
+analyze_site() runs everything; run_page_checks() runs only static checks.
 """
 
 from __future__ import annotations
@@ -146,12 +94,7 @@ def run_page_checks(
     first_party_hostname: Optional[str] = None,
     analytics_detected: bool = False,
 ) -> List[dict]:
-    """
-    Every static (non-Playwright) check in this package, run once for one
-    already-fetched, already-parsed page. Uses an unverified `behavior`
-    verdict (declared Consent Mode default only) — see `analyze_site` for
-    the live, verified pipeline.
-    """
+    """Static checks only (no browser) for one parsed page. analyze_site() is the full check."""
     banner = detect_banner(page)
     buttons = detect_buttons(page)
     consent_mode = detect_consent_mode(page)
@@ -176,7 +119,7 @@ def run_page_checks(
 
 @dataclass
 class ConsentAuditResult:
-    """Lightweight container mirroring analytics.AnalyticsAuditResult's shape."""
+    """Result container: findings, score and summary."""
     findings: List[dict]
     score: ConsentScoreResult
     summary: ConsentSummary
@@ -231,24 +174,11 @@ async def analyze_site(
     scan_id: Optional[str] = None,
     cookie_scan_urls: Optional[List[str]] = None,
 ) -> ConsentAuditResult:
-    """
-    The consent pipeline — a fresh, dynamic scan every call (nothing from a
-    previous scan is read or reused):
-
-         1. Detect region
-         2. Detect banner
-         3. Detect actual controls
-         4. Capture pre-consent network            (fresh browser context)
-         5. Capture pre-consent cookies
-         6. Run runtime                            (fresh context per leg)
-         7. Capture Accept/Reject/Preferences states
-         8. Determine applicable framework
-         9. Build applicable assessment
-        10. Build evidence
-        11. Build screenshots
-
-    Live steps degrade gracefully when Playwright is unavailable — they're
-    reported as "not tested", never as a pass.
+    """Full consent check, fresh every time:
+      1 region, 2 banner, 3 controls, 4 requests before consent,
+      5 cookies before consent, 6-7 Accept / Reject / Settings in a real browser,
+      8 which laws apply, 9 assessment, 10 evidence, 11 screenshots.
+    Browser steps that can't run are "not tested", never passed.
     """
     scan_id = scan_id or new_scan_id()
     started = datetime.now(timezone.utc)
@@ -272,13 +202,13 @@ async def analyze_site(
     step(1, "Detect region", "done", f"{region.region_label} ({region.confidence} confidence)"
          + (f"; {read} linked page(s)/document(s) read" if read else ""))
 
-    # 2. Banner (static markup; the runtime re-detects it in the rendered page)
+    # 2. Banner (static; the browser check re-checks the rendered page)
     banner = detect_banner(page)
     step(2, "Detect banner", "done",
          ("static markup: " + (banner.cmp_name or "generic banner")) if banner.detected
          else "not in static HTML (checked again in the live browser)")
 
-    # 3. Actual controls (banner-scoped, static) -------------------------------
+    # 3. Controls
     buttons = detect_buttons(page)
     consent_mode = detect_consent_mode(page)
     preferences = detect_preferences_link(page)
@@ -287,7 +217,7 @@ async def analyze_site(
          f"{len(buttons.controls)} control(s) in static banner markup" if buttons.container_found
          else "no banner controls in static HTML")
 
-    # 4. Pre-consent network (fresh context) ----------------------------------
+    # 4. Requests before consent
     network_result: Optional[PreConsentNetworkResult] = None
     if enable_live_checks:
         network_result = await capture_pre_consent_requests(url)
@@ -299,14 +229,14 @@ async def analyze_site(
 
     behavior = evaluate_behavior(consent_mode=consent_mode, network=network_result)
 
-    # 5. Pre-consent cookies (server Set-Cookie; the runtime adds the browser jar)
+    # 5. Cookies before consent (server headers; the browser check adds the rest)
     cookie_result = analyze_cookies(
         cookies or [], page=page, first_party_hostname=first_party_hostname,
         blocks_scripts_pre_consent=behavior.blocks_scripts_pre_consent if behavior.verified else None,
     )
     step(5, "Capture pre-consent cookies", "done", f"{len(cookies or [])} Set-Cookie header cookie(s)")
 
-    # 6–7. Runtime + Accept/Reject/Preferences states --------------------------
+    # 6-7. Browser check: Accept / Reject / Settings
     runtime_result: Optional[ConsentRuntimeResult] = None
     if enable_runtime_checks:
         runtime_result = await run_consent_runtime(url, scan_id=scan_id, browse_urls=cookie_scan_urls)
@@ -327,13 +257,13 @@ async def analyze_site(
         step(6, "Run runtime", "skipped")
         step(7, "Capture Accept/Reject/Preferences states", "skipped")
 
-    # 8. Applicable framework (+ CMP regional configuration seen at runtime) ----
+    # 8. Which laws apply
     region = refine_region(region, runtime_result)
     step(8, "Determine applicable framework", "done",
          ", ".join(region.applicable_frameworks) if region.applicable_frameworks
          else "not determined — regional compliance not assessed")
 
-    # 10 (findings) — built before scoring so step 9's score reflects them ------
+    # 10. Findings (built before the score so the score includes them)
     findings: List[dict] = []
     banner_findings = check_banner(page)
     findings += banner_findings
@@ -353,21 +283,19 @@ async def analyze_site(
             runtime_result, url,
             include_pre_consent=not (network_result is not None and network_result.available),
         )
-        # The static "no banner" finding only reflects raw HTML; the rendered
-        # banner contradicts it.
+        # The rendered page has a banner, so drop the static "no banner" finding.
         if banner_findings and resolve_banner_detection(banner.detected, runtime_result)[0]:
             findings = [f for f in findings if f not in banner_findings]
-        # The rendered banner's control inventory is the single source of truth.
+        # Use the rendered banner's buttons instead of the static ones.
         if runtime_result.available and runtime_result.banner_detected:
             findings = [f for f in findings if f not in static_button_findings]
             findings += check_buttons(page, banner_detected=True, detection=runtime_result.buttons_detection())
 
-    # DPDP notice requirements (India) become findings so they are scored and
-    # listed with everything else.
+    # India DPDP notice checks become scored findings.
     if region.applies("dpdp"):
         findings += _dpdp_notice_findings(site_evidence, url)
 
-    # 9. Applicable assessment(s) ---------------------------------------------
+    # 9. Score and assessments
     score = score_consent(findings)
     scan_meta = {
         "scan_id": scan_id,
@@ -398,7 +326,7 @@ async def analyze_site(
          ", ".join(region.applicable_frameworks) or "technical consent scan only")
     step(10, "Build evidence", "done", f"{len(findings)} finding(s), {len(summary.consent_controls)} control(s)")
 
-    # 11. Screenshots (this scan's own files) ---------------------------------
+    # 11. Screenshots
     banner_screenshot_path = None
     if runtime_result is not None and runtime_result.initial_banner_screenshot:
         banner_screenshot_path = runtime_result.initial_banner_screenshot

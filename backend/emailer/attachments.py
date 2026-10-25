@@ -1,12 +1,5 @@
 """
-emailer/attachments.py
-
-Resolves the attachment keys the "Send to POC" modal's checkboxes send
-(§9.2's "Suggested attachment options") into real (filename, mimetype,
-bytes) tuples — never fabricated placeholders, per §14. Every attachment
-is built from the same ReportPayload (§8) the PDF/JSON/evidence-ZIP
-exports already use; this module just picks which pieces of it to
-package for one email.
+Builds the files for "Send to POC" emails from the chosen attachment keys, using the same report data as the exports.
 """
 
 from __future__ import annotations
@@ -27,7 +20,7 @@ class ResolvedAttachment:
     content: bytes
 
 
-# Human-readable labels for the frontend's checkbox list (§9.2).
+# Checkbox labels shown in the dialog.
 ATTACHMENT_CHOICES: Dict[str, str] = {
     "pdf": "Audit Report PDF",
     "consent_screenshots": "Consent screenshots",
@@ -45,12 +38,7 @@ def resolve_attachments(
     audit_id: int,
     pdf_bytes: Optional[bytes] = None,
 ) -> List[ResolvedAttachment]:
-    """
-    Returns only the attachments that were both requested *and* actually
-    have data for this audit (e.g. "consent_screenshots" is silently
-    skipped, not sent empty, when the consent module didn't run) — the
-    caller (emailer.service) records which keys were actually attached.
-    """
+    """Returns only attachments that were asked for and have data (e.g. no consent screenshots if consent didn't run)."""
     resolved: List[ResolvedAttachment] = []
     seen = set(keys)
 

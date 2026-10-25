@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
-# ==============================================================================
-# One-time setup of an Oracle Cloud Always Free Ubuntu server (Arm or x86).
-# Run as the default "ubuntu" user:   bash setup.sh
-# Re-running it is safe: it updates the code and restarts everything.
-# Needs /opt/auditpulse/env/auditpulse.env and access.env to exist first.
-# ==============================================================================
+# One-time server setup (Ubuntu; Arm or x86). Run as "ubuntu": bash setup.sh
+# Safe to re-run: updates the code and restarts everything.
+# Needs /opt/auditpulse/env/auditpulse.env and access.env first.
 set -euo pipefail
 ROOT=/opt/auditpulse
 AP_REPO=${AP_REPO:-https://github.com/Jeevanks1998/AuditPulse.git}

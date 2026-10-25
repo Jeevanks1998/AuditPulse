@@ -1,15 +1,8 @@
-/* ==========================================================================
-   report.js — report.html page logic. Reads ?id=<auditId> from the URL,
-   fetches that audit's real report from the backend (see assets/js/api.js
-   Api.reports), and renders the banner, score grid, critical issues, AI
-   recommendations, per-module score chips/findings, and the consent-banner
-   screenshot from it. Also wires the share / print / download-PDF actions
-   to the real backend endpoints.
-
-   The "Send to POC" dialog (window.EmailComposer) is NOT defined here —
-   see assets/js/email-composer.js, which report.html loads alongside this
-   file. Open it with EmailComposer.open({ auditId, report, trigger, onSent }).
-   ========================================================================== */
+/*
+ * Report page: loads ?id=<auditId> and renders the banner, scores, issues,
+ * module details, screenshots and the share / print / PDF actions.
+ * The "Send to POC" dialog is in email-composer.js.
+ */
 
 (function () {
   var U = window.Utils;
@@ -18,25 +11,15 @@
   var FAIL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
   var WARN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>';
 
-  // Sized, non-shrinking wrapper for any status icon rendered *outside* a
-  // .check-item__icon circle. A bare <svg viewBox> with no width/height
-  // stretches to its container, which is what blew the "Why did X fail?"
-  // X up to card size. Sizing lives in report.css (.status-icon).
+  // Fixed-size status icon (an unsized SVG grows to fill its container).
   function statusIcon(kind) {
     var svg = kind === 'pass' ? PASS_ICON : (kind === 'warn' ? WARN_ICON : FAIL_ICON);
     return '<span class="status-icon status-icon--' + kind + '" aria-hidden="true">' + svg + '</span>';
   }
 
-  // report.html section ids that findings/score-grid modules can actually
-  // map to. Modules the backend computes but this page has no section for
-  // (e.g. the removed Performance module on older saved audits) still show up in the score grid,
-  // they just won't be clickable-to-scroll or get a detail section.
+  // Section ids that modules can link to; others still show in the score grid.
   var MODULE_CHECK_GRID_IDS = {};
-  // Mirrors backend consent.consent_score.GDPR_CHECK_ORDER / GDPR_CHECK_LABELS —
-  // keep the key list and order in sync with that module. `severity` /
-  // `failReason` are display-only (not persisted anywhere) — they drive
-  // the "Why?" failure explanation in renderConsent below, derived
-  // straight from these same checks rather than a separate issue list.
+  // Keep in sync with backend GDPR_CHECK_ORDER. severity/failReason are display-only (the "Why?" text).
   var GDPR_CHECK_ITEMS = [
     { key: 'consent_banner', label: 'Consent banner', severity: 'critical',
       failReason: 'No consent banner or CMP was detected' },
@@ -56,15 +39,12 @@
       failReason: 'Privacy policy was not detected' },
     { key: 'consent_withdrawal_available', label: 'Consent withdrawal available', severity: 'warning',
       failReason: 'No persistent way to withdraw consent later was found' },
-    // required: false — mirrors backend consent.consent_score
-    // ._REQUIRED_FOR_COMPLIANCE excluding this one key: it depends on the
-    // optional Playwright runtime pass, so it's routinely untested on a
-    // static-only audit and must not count against the overall verdict.
+    // Not required: it needs the live browser check (same as the backend).
     { key: 'reject_blocks_tracking', label: 'Reject actually blocks tracking', severity: 'critical',
       failReason: 'Reject does not actually stop tracking', required: false }
   ];
 
-  // Mirrors backend consent.consent_score.CCPA_CHECK_ORDER / CCPA_CHECK_LABELS.
+  // Keep in sync with backend CCPA_CHECK_ORDER.
   var CCPA_CHECK_ITEMS = [
     { key: 'privacy_policy_available', label: 'Privacy policy available', severity: 'warning',
       failReason: 'Privacy policy was not detected' },
@@ -76,21 +56,14 @@
       failReason: 'No persistent, reachable opt-out mechanism was found' },
     { key: 'gpc_honored', label: 'Global Privacy Control (GPC) signal handling detected', severity: 'warning',
       failReason: 'Global Privacy Control (GPC) signal doesn\u2019t appear to be honored' },
-    // required: false — mirrors backend consent.consent_score
-    // ._CCPA_REQUIRED_FOR_COMPLIANCE excluding this one key, same reason
-    // GDPR's reject_blocks_tracking is excluded above: it needs the
-    // optional runtime pass.
+    // Not required: it needs the live browser check.
     { key: 'opt_out_behavior_verified', label: 'Opt-out actually stops tracking', severity: 'critical',
       failReason: 'Opt-out does not actually stop tracking', required: false }
   ];
 
   var MODULE_SCORE_CHIP_IDS = {};
 
-  // Module label + "Healthy/Needs Attention/Issues Found" status wording,
-  // mirroring backend/reports/generator.py's MODULE_LABELS /
-  // OVERALL_STATUS_LABELS exactly (§3.3/§3.4/§11) so the on-screen Overall
-  // Status and module names never drift from what the PDF prints for the
-  // same audit.
+  // Module names and status words (same as the backend and PDF).
   var MODULE_LABELS = {
     performance: 'Performance', accessibility: 'Accessibility',
     security: 'Security', ux: 'UX', images: 'Images', links: 'Links',
@@ -98,13 +71,8 @@
   };
   var OVERALL_STATUS_LABELS = { good: 'Healthy', mid: 'Needs attention', bad: 'Issues found' };
 
-  /* ------------------------- shared report-derived helpers ------------------------- */
-  // These mirror reports/generator.py's count_by_severity / weakest_module /
-  // score_band + OVERALL_STATUS_LABELS and pdf/summary.py's _group_findings —
-  // computed client-side from the same real `report.findings` /
-  // `report.scoreGrid` the export.json endpoint returns, so the numbers
-  // shown here can never drift from what the PDF (built from the identical
-  // payload) shows for the same audit (§9/§11 "No Dummy Data Rule").
+  /* Report helpers */
+  // Computed from the same findings and scores as the PDF, so the numbers match.
 
   function severityCounts(findings) {
     var counts = { critical: 0, warning: 0, info: 0 };
@@ -130,12 +98,7 @@
     return MODULE_LABELS[module] || (module ? module.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); }) : 'General');
   }
 
-  // Collapses findings/steps that share the same (title, module) into one
-  // group with an affected-item count — mirrors pdf/summary.py's
-  // _group_findings and pdf/recommendations.py's _group_steps (§3.6/§3.8:
-  // "Do not repeat the same contrast recommendation for every selector;
-  // group the recommendation and show the affected selectors/count
-  // separately"), so a duplicated finding shows up once here too.
+  // Groups findings with the same title and module, with a count.
   function groupByTitleModule(items) {
     var order = [];
     var byKey = {};
@@ -155,20 +118,9 @@
     return id ? '<span class="finding-id-badge">' + U.escapeHtml(id) + '</span> ' : '';
   }
 
-  /* ------------------------- Module Details accordion (Phase 9) -------------------------
-     The module sections (#analytics/#consent/#journey)
-     are native <details>/<summary> elements. Native <details> already handles plain
-     open/close and (in every current browser) auto-opens on direct #hash navigation —
-     this just adds the two things the browser can't do on its own: opening the right
-     module when a score-grid card is clicked (a scrollIntoView call, not a real
-     navigation, so it doesn't trigger the browser's fragment-in-<details> behavior),
-     and forcing every module open before printing/PDF export so the printed output
-     always shows everything regardless of what's expanded on screen. */
+  /* Module details: opens the right section when a score card is clicked, and opens all of them for printing. */
 
-  /* Module details are shown as tabs (Consent / Analytics / Customer
-     Journey): the three <details> stay in the page (so every renderer and
-     deep link keeps working) and the tab bar decides which one is open.
-     CSS (.is-tabbed) hides the closed ones and their summary rows. */
+  /* Module details as tabs; the <details> elements stay so links keep working. */
   var currentModuleTab = null;
 
   function selectModuleTab(id, scroll) {
@@ -212,28 +164,21 @@
   }
 
   function wireModuleAccordions() {
-    // Includes .analytics-subsection so the nested Analytics groups (§Phase
-    // 10) are force-opened for print/PDF export the same way the top-level
-    // module accordions are — otherwise a collapsed sub-section would be
-    // silently missing from the printed report.
+    // Also open the Analytics sub-sections for printing.
     var accordions = U.qsa('.module-accordion, .analytics-subsection');
     if (!accordions.length) return;
 
-    // Sidebar "Audit Modules" links point at #analytics etc. — open the
-    // target accordion on click so it's expanded by the time the browser
-    // scrolls to it (belt-and-braces alongside the native auto-open).
+    // Open the target section when a sidebar link is clicked.
     U.qsa('a[href^="#"]').forEach(function (link) {
       var id = link.getAttribute('href').slice(1);
       if (document.getElementById(id)) U.on(link, 'click', function () { openModuleAccordion(id); });
     });
 
-    // Deep link support, e.g. report.html?id=123#consent
+    // Deep links, e.g. report.html?id=123#consent
     if (location.hash) openModuleAccordion(location.hash.slice(1));
     U.on(window, 'hashchange', function () { openModuleAccordion(location.hash.slice(1)); });
 
-    // beforeprint forces every module open so printed/PDF output shows
-    // everything regardless of what's expanded on screen; afterprint puts
-    // back whatever was actually open beforehand.
+    // Open everything before printing; restore afterwards.
     var reopenIds = [];
     U.on(window, 'beforeprint', function () {
       reopenIds = [];
@@ -251,10 +196,7 @@
     });
   }
 
-  // Colors a module's score chip (score-chip--good/mid/bad, same modifier
-  // classes the rest of the app uses) and sets its accordion status icon
-  // to match — mirrors U.scoreBand so the icon can never disagree with
-  // the number sitting right next to it.
+  // Colours a module's score chip and status icon by score band.
   function setModuleStatus(chipId, iconId, score) {
     var chip = document.getElementById(chipId);
     var icon = document.getElementById(iconId);
@@ -288,14 +230,7 @@
     var sendToPocBtn = document.getElementById('sendToPocBtn');
     var emailComposeBtn = document.getElementById('emailComposeBtn');
 
-    // The sidebar links in report.html are written as plain "report.html" /
-    // "report.html#email-reports" / "report.html#analytics" — none of them
-    // carry ?id=. Clicking one therefore reloaded the page with NO audit id,
-    // so nothing loaded (scores stayed "- / 100") and the Email Reports /
-    // Send to POC handlers below were never attached (the auditId guard
-    // returns first). Re-attach the current id to every link that points at
-    // report.html so they stay on the same audit; "?id=X#hash" from the
-    // same page is a same-document jump, not a reload.
+    // Add ?id= to sidebar links to report.html so they stay on this audit.
     if (auditId) {
       U.qsa('.sidebar__link').forEach(function (link) {
         var raw = link.getAttribute('href') || '';
@@ -307,11 +242,7 @@
       });
     }
 
-    // Evidence screenshots live on the API server's disk. Files from audits
-    // run before the server was redeployed (or before persistent storage
-    // was attached) are gone, and a broken image with its alt text spilling
-    // out looked like a bug. Swap any image that fails to load for a clear
-    // placeholder, and stop its link from opening a "Not Found" page.
+    // Screenshots that no longer exist on the server get a clear placeholder instead of a broken image.
     var missingShots = 0;
     document.addEventListener('error', function (e) {
       var img = e.target;
@@ -342,15 +273,12 @@
       }
     }, true);
 
-    // Wired unconditionally (before the auditId guard below) so the
-    // module accordions — sidebar deep-links, print-all-open — still
-    // work even if there's no report to load yet.
+    // Set up before the auditId check so it works without a report.
     wireModuleTabs();
     wireModuleAccordions();
 
     if (!auditId) {
-      // Opened from a sidebar link (e.g. "Cookie Scanner" -> report.html#cookies)
-      // without an audit id: jump to the most recent completed audit.
+      // Opened without an id (e.g. from the sidebar): show the latest completed audit.
       window.Api.audits.getRecent().then(function (list) {
         var done = (list || []).filter(function (a) { return a.status === 'completed'; })[0];
         if (done) {
@@ -364,15 +292,12 @@
       return;
     }
 
-    var currentReport = null; // populated once the fetch below resolves
+    var currentReport = null; // set once the report loads
 
-    // The Email Reports card is always on the page (it's a sidebar target), and
-    // the history only needs the audit id — not the report body. Loading it here
-    // rather than at the end of the render chain means a render error in any
-    // section above can't leave the card sitting empty with no explanation.
+    // Load email history early, so a render error elsewhere can't leave it empty.
     loadEmailHistory();
 
-    /* ------------------------------ banner actions ------------------------------ */
+    /* Banner actions */
 
     U.on(shareBtn, 'click', function () {
       window.Api.reports.share(auditId).then(function (shareUrl) {
@@ -413,11 +338,7 @@
       });
     });
 
-    // Two entry points, one composer: the "More" menu item in the report
-    // banner and the button on the Email Reports card. Both go through the
-    // shared window.EmailComposer (assets/js/email-composer.js — the same
-    // one email-reports.html opens), each passing its own trigger so focus
-    // returns to the right control when the dialog closes.
+    // Both "Send to POC" buttons open the shared composer, each returning focus to itself.
     function openEmailComposer(trigger) {
       window.EmailComposer.open({
         auditId: auditId,
@@ -436,9 +357,7 @@
       openEmailComposer(emailComposeBtn);
     });
 
-    /* ------------------------------ "More" dropdown ------------------------------
-       Holds Print / Evidence ZIP / Send to POC — same buttons, same handlers,
-       just tucked away so the banner isn't five buttons wide (Phase 1). */
+    /* "More" menu: Print / Evidence ZIP / Send to POC */
     var moreDropdown = document.getElementById('reportMoreDropdown');
     var moreBtn = document.getElementById('reportMoreBtn');
 
@@ -456,8 +375,7 @@
       moreBtn.setAttribute('aria-expanded', String(willOpen));
     });
 
-    // Print/Evidence handlers below already close nothing on their own since
-    // they don't navigate away — close the menu once the action is triggered.
+    // Close the menu after an action.
     U.on(printBtn, 'click', closeMoreMenu);
     U.on(evidenceBtn, 'click', closeMoreMenu);
 
@@ -468,10 +386,7 @@
       if (e.key === 'Escape') closeMoreMenu();
     });
 
-    /* ------------------------------ Ask AI ------------------------------
-       Free-text Q&A grounded in this audit (POST /ai/{auditId}/chat).
-       chatHistory accumulates { question, answer } turns and is sent back
-       each time so the backend has multi-turn context. */
+    /* Ask AI: questions about this audit; earlier turns are sent for context. */
     (function initAskAi() {
       var form = document.getElementById('chatForm');
       var input = document.getElementById('chatInput');
@@ -526,13 +441,11 @@
       });
     })();
 
-    /* --------------------------- fetch + render --------------------------- */
+    /* Load and render */
 
     Promise.all([
       window.Api.reports.getFull(auditId).catch(function () {
-        // The AI-enriched export can be slower / can fail if the AI layer
-        // errors; fall back to the plain (score grid + findings) report
-        // rather than showing nothing.
+        // If the AI version fails, use the plain report.
         return window.Api.reports.get(auditId);
       }),
       window.Api.audits.getConsent(auditId).catch(function () { return null; }),
@@ -555,26 +468,22 @@
       renderJourney(results[3]);
       renderCookies(results[4]);
       showTabsForModulesRun({ consent: results[1], analytics: results[2], journey: results[3],
-                              // Cookies tab: shown whenever Consent or Journey ran, even with no
-                              // cookie data, so the tab explains why instead of being missing.
+                              // Cookies tab: shown whenever Consent or Journey ran.
                               cookies: (results[1] || results[3]) ? (results[4] || { available: false }) : null });
       document.title = 'Audit Report — ' + U.hostnameOf(currentReport.url) + ' — AuditPulse';
     }).catch(function (err) {
       window.Notifications.error('Couldn\'t load report', err.message || 'This report may not exist or may still be running.');
     });
 
-    /* ------------------------------- renderers ------------------------------- */
+    /* Renderers */
 
-    /* Show only the tabs of modules this audit ran. The score grid alone
-       isn't enough: a module can run without producing a score (a Journey
-       Map scan with no tested interaction), and then every tab was shown
-       and Consent opened with "This audit didn't include the consent module". */
+    /* Show only tabs for modules that ran (a module can run without a score). */
     function showTabsForModulesRun(moduleResults) {
       var ran = DETAIL_TABS.filter(function (m) {
         return !!moduleResults[m] || (currentReport.scoreGrid || []).some(function (c) { return c.module === m; });
       });
       if (!ran.length) {
-        // No module ran (e.g. the website blocked the audit): nothing to show here.
+        // No module ran (e.g. the site blocked the audit).
         var sec = document.getElementById('details');
         if (sec) sec.hidden = true;
         return;
@@ -642,8 +551,7 @@
       if (favicon) favicon.textContent = U.faviconLetter(report.url);
       if (urlEl) urlEl.textContent = host;
       if (metaEl) metaEl.textContent = 'Completed ' + U.formatRelativeTime(new Date(report.generatedAt).getTime());
-      // No module produced a score (e.g. a Journey Map audit where no
-      // interaction could be tested): show "Not scored", never a fake 0.
+      // Nothing scored: show "Not scored", never 0.
       if (!(report.scoreGrid || []).length) {
         if (label) label.textContent = '–';
         if (circle) U.setRingProgress(circle, 0);
@@ -660,9 +568,7 @@
       }
     }
 
-    /* ============================ At a glance ============================
-       One card: AI summary sentence, a tile per module (click = open that
-       module's details) and the severity counts (click = filter issues). */
+    /* At a glance: summary, a card per module, severity counts. */
 
     var SEV_ORDER = { critical: 0, warning: 1, info: 2 };
     var SEV_LABEL = { critical: 'Critical', warning: 'Warning', info: 'Info' };
@@ -723,8 +629,7 @@
         }
       });
 
-      // Only show tabs for modules this audit actually ran (a Journey Map
-      // audit has no Consent / Analytics results, and vice versa).
+      // Only show tabs for modules this audit ran.
       var ran = (report.scoreGrid || []).map(function (c) { return c.module; })
         .filter(function (m) { return DETAIL_TABS.indexOf(m) !== -1; });
       if (ran.length) {
@@ -757,13 +662,10 @@
       }
     }
 
-    /* ============================ Issues to fix ============================
-       Every finding once (same title + module grouped), worst first. Each row
-       opens to: what we found / why it matters (business impact) / how to fix
-       (action plan step or the finding's own recommendation) / link to the
-       module evidence. Replaces the old Critical Findings, Business Impact,
-       AI Recommendations and Action Plan sections, which repeated the same
-       findings four times. */
+    /*
+     * Issues to fix: every finding once (grouped), worst first. Each row opens to
+     * what was found, why it matters, how to fix it, and a link to the evidence.
+     */
 
     var ISSUES_INITIAL = 10;
     var issueState = { sev: 'all', module: 'all', q: '', expandAll: false, items: [] };
@@ -920,7 +822,7 @@
       }
       var more = document.getElementById('issueShowMore');
       if (more) U.on(more, 'click', function () { issueState.expandAll = true; renderIssueList(); });
-      // Printed / PDF-from-browser output lists every issue, unfiltered.
+      // Printing shows every issue, unfiltered.
       U.on(window, 'beforeprint', function () {
         issueState.sev = 'all'; issueState.module = 'all'; issueState.q = ''; issueState.expandAll = true;
         if (search) search.value = '';
@@ -961,35 +863,13 @@
       });
     }
 
-    // Turns a raw API tri-state value into { ok, tested } per the contract
-    // the backend actually sends (Optional[bool] — Python None survives
-    // JSON as null, and api.js's toCamel() never invents the key at all
-    // when the backend simply hasn't included it, which shows up here as
-    // undefined): true -> pass, false -> fail, null/undefined -> not
-    // tested. Deliberately NOT `!!value`/`Boolean(value)`, which collapses
-    // false and null/undefined into the same falsy value and is exactly
-    // how a check with a genuine FALSE result previously rendered as
-    // "(not tested)" instead of a failure. Centralized here so every
-    // GDPR/CCPA/runtime check row derives "tested" the same explicit way
-    // instead of re-deriving `!== null && !== undefined` ad hoc at each
-    // call site.
+    // API value -> { ok, tested }: true = pass, false = fail, null/missing = not tested (not `!!value`).
     function checkResultFromValue(value) {
       return { ok: value === true, tested: value === true || value === false };
     }
 
-    // The overall GDPR/CCPA verdict, computed from the actual per-check
-    // results rather than trusted as a single boolean the backend hands
-    // over (or, worse, inferred from whether checksMap merely exists/has
-    // keys — an empty or partially-populated object is exactly the "not
-    // enough data" case this is supposed to catch, not a pass or fail).
-    // "Required" checks mirror the backend's _REQUIRED_FOR_COMPLIANCE /
-    // _CCPA_REQUIRED_FOR_COMPLIANCE (every check except the runtime-only
-    // ones flagged `required: false` on GDPR_CHECK_ITEMS/CCPA_CHECK_ITEMS
-    // above):
-    //   - any required check is a confirmed FALSE           -> 'fail'
-    //   - every required check is a confirmed TRUE           -> 'pass'
-    //   - otherwise (a required check is null/undefined, and
-    //     none of them failed outright)                      -> 'not_tested'
+    // Overall GDPR/CCPA result from the required checks:
+    // any required check false -> 'fail'; all true -> 'pass'; otherwise 'not_tested'.
     function complianceStatus(checkItems, checksMap) {
       var requiredResults = checkItems
         .filter(function (item) { return item.required !== false; })
@@ -1007,17 +887,7 @@
       return '<div class="check-item ' + cls + '"><span class="check-item__icon">' + icon + '</span><span class="check-item__label">' + U.escapeHtml(item.label) + (tested ? '' : ' (not tested)') + '</span></div>';
     }
 
-    // GDPR/CCPA-specific check row: same pass/fail/pending row as
-    // renderCheckItemRow, but for a tested, failed check it also unfolds
-    // a Reason (the check's fixed failReason text, from GDPR_CHECK_ITEMS /
-    // CCPA_CHECK_ITEMS) / Evidence / Detected-<whatever> block sourced
-    // from the backend's gdprCheckEvidence/ccpaCheckEvidence (consent
-    // .consent_score.GdprCheck.evidence — see api.js's OPAQUE_KEYS for why
-    // its inner keys survive untouched). Nothing here is hardcoded to
-    // trackers specifically: whatever evidence.items/itemsLabel the
-    // backend sends for a given check is what renders, so a different
-    // failed check with its own evidence (or none at all) is handled the
-    // same way with no code change.
+    // GDPR/CCPA check row; a failed check also shows its reason and the backend's evidence.
     function renderConsentCheckDetailRow(item, failReason, evidence) {
       var tested = item.tested !== false;
       var cls = !tested ? 'check-item--pending' : (item.ok ? 'check-item--pass' : 'check-item--fail');
@@ -1048,23 +918,15 @@
       return html;
     }
 
-    // Renders one compliance roll-up (GDPR or CCPA) with improved structure:
-    // - Header with compliance status (pass/fail/not_tested)
-    // - "Checks" section showing all checks with pass/fail/pending status
-    // - "Why did X fail?" section showing only failed checks with reasons
-    // Derives the failure list straight from `checksMap` (consent.gdprChecks / 
-    // consent.ccpaChecks) and the matching *_CHECK_ITEMS array above — nothing 
-    // here is hardcoded to GDPR or CCPA specifically.
-    // `status` is 'pass' | 'fail' | 'not_tested', from complianceStatus()
+    // One GDPR or CCPA section: all checks, then "Why did X fail?" for failed ones. `status` from complianceStatus().
     function renderComplianceSummary(label, status, checkItems, checksMap, evidenceMap) {
       var failed = checkItems.filter(function (c) { return checksMap[c.key] === false; });
       var passed = checkItems.filter(function (c) { return checksMap[c.key] === true; });
 
-      // No inner header here: the section's own accordion title
-      // ("GDPR Compliance" + status icon) already shows the verdict.
+      // No inner header: the section title already shows the result.
       var html = '';
 
-      // "Checks" section — all checks shown with their status
+      // All checks
       html += '<div style="margin-bottom: 16px;">' +
         '<div class="text-sm" style="color: var(--text-tertiary); font-weight: 600; margin: 0 0 10px; padding: 0 0 6px; border-bottom: 1px solid var(--border, #e5e7eb);">Checks</div>' +
         '<div style="display: grid; gap: 0; padding: 0;">';
@@ -1078,8 +940,7 @@
           '<span class="check-item__icon" style="font-size: 0.9em;">' + itemIcon + '</span>' +
           '<span class="check-item__label" style="font-size: 0.9em;">' + U.escapeHtml(item.label) + 
           (itemStatus.tested ? '' : ' (not tested)') +
-          // Why it couldn't be tested, straight from the backend's own reason
-          // (e.g. runtime cookie timing unavailable) — older audits have none.
+          // Why it couldn't be tested (backend reason; older audits have none).
           (!itemStatus.tested && evidenceMap && evidenceMap[item.key] && evidenceMap[item.key].reason
             ? '<span style="display: block; font-size: 0.85em; color: var(--text-tertiary);">' +
               U.escapeHtml(evidenceMap[item.key].reason) + '</span>'
@@ -1089,7 +950,7 @@
       
       html += '</div></div>';
 
-      // "Why did X fail?" section — only shown for failures
+      // Failed checks only
       if (status === 'fail' && failed.length) {
         html += '<div style="background: var(--bg-secondary, #f9fafb); border-radius: var(--radius-md); padding: 12px; border-left: 3px solid var(--color-fail, #dc2626);">' +
           '<div class="text-sm" style="color: var(--text-primary); font-weight: 600; margin: 0 0 10px;">Why did ' + U.escapeHtml(label) + ' fail?</div>' +
@@ -1130,7 +991,7 @@
       return html;
     }
 
-    // ---- Phase 1: applicability + technical consent scan -----------------
+    // Region and technical consent scan
     var ACTION_TEXT = {
       accept_all: 'Accept all', accept: 'Accept', reject_all: 'Reject all', reject: 'Reject',
       reject_non_essential: 'Reject non-essential (necessary only)', manage_preferences: 'Manage preferences',
@@ -1293,9 +1154,7 @@
       return st === 'pass' ? 'good' : st === 'fail' ? 'bad' : 'mid';
     }
 
-    // ---- Phase 4: consent evidence from ConsentOut.report_view -------------
-    // (backend reports/consent_view.py — the same model the PDF, JSON export
-    // and evidence ZIP render, so every surface shows identical evidence.)
+    // Consent evidence from report_view (same as the PDF and exports)
     var KIND_LABEL = { tracking: 'Tracking', observation: 'Observation', infrastructure: 'Infrastructure', other: 'Unclassified' };
     var STATE_CHIP = { pass: ['pass', 'Passed'], fail: ['fail', 'Failed'], not_tested: ['', 'Not tested'], not_assessed: ['', 'Not assessed'] };
 
@@ -1303,8 +1162,7 @@
       return '<span class="cev-chip' + (cls ? ' cev-chip--' + cls : '') + '">' + U.escapeHtml(text) + '</span>';
     }
 
-    /* The exact requests behind a tile (e.g. Tracking before consent):
-       vendor + the address the browser called, nothing generic. */
+    /* The exact requests behind a tile (vendor + address). */
     function tileDetails(items) {
       if (!items || !items.length) return '';
       var row = function (i) {
@@ -1488,7 +1346,7 @@
         else { dash.innerHTML = ''; dash.style.display = 'none'; }
       }
 
-      // Foundation checks (legacy audits only — the Phase 4 tiles replace them)
+      // Foundation checks (older audits only)
       if (foundationGrid && useView) {
         foundationGrid.innerHTML = '';
         foundationGrid.style.display = 'none';
@@ -1500,17 +1358,16 @@
         foundationGrid.innerHTML = foundationItems.map(renderCheckItemRow).join('');
       }
 
-      // Runtime behavior checks (shown only if tested) — a null verdict
-      // means "not tested", never a silent pass.
+      // Live checks (only if tested); null means not tested.
       if (runtimeWrap) {
         if (useView) {
-          // The Phase 4 tiles (Reject works / Accept works / Preferences panel) show these verdicts.
+          // The tiles above show these results.
           runtimeWrap.style.display = 'none';
         } else if (consent.runtimeTested) {
           runtimeWrap.style.display = '';
           if (runtimeGrid) {
             var rr = consent.runtimeResult || {};
-            // runtime_result isn't an opaque key in api.js, so its keys arrive camelCased.
+            // runtime_result keys arrive in camelCase.
             var pick = function (camel, snake) { return rr[camel] !== undefined ? rr[camel] : rr[snake]; };
             var runtimeItems = [
               Object.assign({ label: 'Reject blocks tracking' }, checkResultFromValue(pick('rejectBlocksTracking', 'reject_blocks_tracking'))),
@@ -1528,9 +1385,7 @@
         }
       }
 
-      // Applicability decides which regional assessments are shown. Audits
-      // recorded before applicability existed (empty object) keep the
-      // legacy view: both GDPR and CCPA rendered.
+      // Only laws that apply are shown; older audits show both GDPR and CCPA.
       var app = consent.applicability || {};
       var hasApp = !!(app.frameworks && app.frameworks.length);
       var applies = function (fw) {
@@ -1582,7 +1437,7 @@
         }
       }
 
-      // GDPR compliance details
+      // GDPR
       if (gdprSection && !applies('gdpr')) {
         gdprSection.style.display = 'none';
       } else if (gdprGrid && gdprSection) {
@@ -1591,14 +1446,12 @@
         var gdprStatus = complianceStatus(GDPR_CHECK_ITEMS, gdprChecks);
         gdprGrid.innerHTML = renderComplianceSummary('GDPR', gdprStatus, GDPR_CHECK_ITEMS, gdprChecks, gdprEvidence);
         gdprSection.style.display = '';
-        // Set GDPR section status — same pass/fail/not_tested verdict
-        // renderComplianceSummary just rendered, not the raw gdprCompliant
-        // boolean.
+        // Same result as the section above.
         var gdprBand = gdprStatus === 'pass' ? 'good' : gdprStatus === 'fail' ? 'bad' : 'mid';
         setAnalyticsSectionStatus('consentGdprStatusIcon', gdprBand);
       }
 
-      // CCPA compliance details
+      // CCPA
       if (ccpaSection && !applies('ccpa')) {
         ccpaSection.style.display = 'none';
       } else if (ccpaGrid && ccpaSection) {
@@ -1607,9 +1460,7 @@
         var ccpaStatus = complianceStatus(CCPA_CHECK_ITEMS, ccpaChecks);
         ccpaGrid.innerHTML = renderComplianceSummary('CCPA', ccpaStatus, CCPA_CHECK_ITEMS, ccpaChecks, ccpaEvidence);
         ccpaSection.style.display = '';
-        // Set CCPA section status — same pass/fail/not_tested verdict
-        // renderComplianceSummary just rendered, not the raw ccpaCompliant
-        // boolean.
+        // Same result as the section above.
         var ccpaBand = ccpaStatus === 'pass' ? 'good' : ccpaStatus === 'fail' ? 'bad' : 'mid';
         setAnalyticsSectionStatus('consentCcpaStatusIcon', ccpaBand);
       }
@@ -1617,10 +1468,7 @@
       if (shotWrap && useView) {
         shotWrap.innerHTML = renderShotsView(view);
       } else if (shotWrap) {
-        // Prefer the full runtime evidence set (initial banner, Personalize,
-        // after Reject, after Accept — consent.runtime's four capture
-        // points, §5) and fall back to the single static banner capture
-        // when the runtime pass didn't run or wasn't available.
+        // Use the four browser screenshots; fall back to the single banner screenshot.
         var shots = [
           { label: 'Initial banner', url: consent.bannerScreenshotUrl },
           { label: 'Personalize / Manage Preferences', url: consent.preferencesScreenshotUrl },
@@ -1651,7 +1499,7 @@
       }
     }
 
-    // vendor_key -> display name, mirrors backend analytics.analytics_score.TRACKER_DISPLAY_NAMES.
+    // Tool key -> name (same as backend TRACKER_DISPLAY_NAMES).
     var VENDOR_LABELS = {
       ga4: 'Google Analytics 4', gtm: 'Google Tag Manager', adobe: 'Adobe Analytics',
       piano: 'Piano Analytics', clarity: 'Microsoft Clarity', hotjar: 'Hotjar',
@@ -1665,11 +1513,7 @@
       return '<span style="color: var(--text-tertiary);">Not tested</span>';
     }
 
-    // Sets one of the small sub-section status icons (Configuration,
-    // Detection & Runtime, Event Validation, Coverage) — same good/mid/bad
-    // banding and icon set as setModuleStatus, just reused at the
-    // sub-section scale so a reader can judge each collapsed row without
-    // opening it.
+    // Status icon for an Analytics sub-section.
     function setAnalyticsSectionStatus(iconId, band) {
       var icon = document.getElementById(iconId);
       if (!icon) return;
@@ -1714,9 +1558,7 @@
 
       if (chip) { chip.style.display = ''; chip.textContent = analytics.analyticsScore + ' / 100'; }
 
-      // Overall Analytics Status — mirrors OVERALL_STATUS_LABELS off the
-      // same score band the chip above already shows, so the headline
-      // verdict can never disagree with the number sitting next to it.
+      // Overall Analytics status, from the same score band as the chip.
       if (overallStatus && overallBadge) {
         var overallBand = U.scoreBand(analytics.analyticsScore);
         var overallIcon = overallBand === 'good' ? PASS_ICON : (overallBand === 'mid' ? WARN_ICON : FAIL_ICON);
@@ -1731,10 +1573,7 @@
           { label: 'Any tracker detected', ok: (analytics.trackersDetected || []).length > 0 },
           { label: 'Tag Manager detected', ok: analytics.tagManagerDetected },
           { label: 'Data layer present', ok: analytics.dataLayerPresent },
-          // tested = was the environment even capable of running runtime
-          // validation (runtimeAvailable); ok = did it actually complete
-          // (runtimeTested). A capable environment that still didn't
-          // validate is a real failure, not just "not tested".
+          // tested = the live check could run; ok = it completed.
           { label: 'Runtime-validated', ok: !!analytics.runtimeTested, tested: !!analytics.runtimeAvailable,
             notTestedReason: 'runtime validation is unavailable in this environment' }
         ];
@@ -1747,19 +1586,15 @@
         }).join('');
       }
 
-      // vendor_configs only contains keys for vendors actually detected —
-      // this is the single source of truth for both the Configuration
-      // section and which rows the Detection & Runtime table shows.
+      // Only detected tools appear in vendorConfigs.
       var vendorConfigs = analytics.vendorConfigs || {};
       var detectedKeys = Object.keys(vendorConfigs);
       var runtimeVendors = (analytics.runtimeResult && analytics.runtimeResult.vendors) || {};
 
-      // Configuration status — good once at least one vendor is actually
-      // detected on the page, bad when nothing was found at all.
+      // Configuration: good if any tool was found.
       setAnalyticsSectionStatus('analyticsConfigStatusIcon', detectedKeys.length ? 'good' : 'bad');
 
-      // Analytics Configuration (§1.3) — actual detected ID(s) per vendor,
-      // never a value for a vendor the backend didn't detect.
+      // Configuration: IDs per detected tool.
       if (configTable) {
         if (!detectedKeys.length) {
           configTable.innerHTML = '<p class="text-sm" style="color: var(--text-tertiary);">No analytics vendors detected on this page.</p>';
@@ -1782,12 +1617,7 @@
         }
       }
 
-      // Detection & Runtime (§1.3) — built from *both* static detection
-      // (vendorConfigs, always present once a vendor is found in markup)
-      // and runtime results (runtimeVendors, only present once the
-      // runtime pass has run) so a detected-but-not-fired vendor stays
-      // visible with a Failed/Not tested runtime column instead of
-      // disappearing from the table entirely.
+      // Detection & live check: every detected tool, even if it never fired.
       if (vendorTable) {
         if (!detectedKeys.length) {
           vendorTable.innerHTML = '';
@@ -1818,8 +1648,7 @@
         }
       }
 
-      // Say *why* the live check didn't run instead of a silent row of
-      // "Not tested" (the error is saved with the audit's runtime result).
+      // Explain why the live check didn't run.
       if (vendorTable && !analytics.runtimeAvailable && detectedKeys.length) {
         var rtErr = (analytics.runtimeResult && analytics.runtimeResult.error) || '';
         vendorTable.insertAdjacentHTML('beforeend',
@@ -1837,10 +1666,7 @@
           '. Scroll and Click were not tested.</p>');
       }
 
-      // Detection & Runtime status — mid when runtime validation wasn't
-      // performed at all (nothing failed, it just wasn't checked), good
-      // when every detected vendor's page view fired, mid when only some
-      // did, bad when none did despite runtime having actually run.
+      // Status: mid if not run, good if all page views fired, mid if some, bad if none.
       if (!analytics.runtimeAvailable) {
         setAnalyticsSectionStatus('analyticsDetectionStatusIcon', detectedKeys.length ? 'mid' : 'bad');
       } else {
@@ -1852,15 +1678,11 @@
         setAnalyticsSectionStatus('analyticsDetectionStatusIcon', detectionBand);
       }
 
-      // Analytics Event Validation (§1.3) — actual runtime evidence only;
-      // empty (not a "failed" table) when the runtime pass never ran.
+      // Event validation: live evidence only.
       if (eventValidation) {
         var runtimeKeys = Object.keys(runtimeVendors);
 
-        // Event Validation status — mid when runtime never ran (untested,
-        // not failed), bad when it ran but captured nothing, mid when any
-        // vendor shows a duplicate page view (a real but non-fatal data
-        // problem), good otherwise.
+        // Status: mid if not run, bad if nothing captured, mid on duplicates, else good.
         if (!analytics.runtimeAvailable) {
           setAnalyticsSectionStatus('analyticsEventStatusIcon', 'mid');
         } else if (!runtimeKeys.length) {
@@ -1897,10 +1719,7 @@
         }
       }
 
-      // Every analytics / advertising / tag-manager service seen loading in
-      // the live browser check — not only the vendors with a dedicated
-      // validator (a TagCommander or Tealium container usually loads the
-      // real analytics tools, which the static scan can't see).
+      // Every tracking service seen in the browser (including ones loaded by a tag manager).
       var observedTags = (analytics.runtimeResult && (analytics.runtimeResult.observedTags || analytics.runtimeResult.observed_tags)) || [];
       if (vendorTable && observedTags.length) {
         var CAT = { TAG_MANAGER: 'Tag manager', ANALYTICS: 'Analytics', ADVERTISING: 'Advertising' };
@@ -1942,18 +1761,10 @@
       renderAnalyticsFullSite(analytics);
     }
 
-    /* --------------------------- Full-Site Analytics (§2.4 / §2.7) --------------------------- */
-    // Site-level coverage, per-page results, cross-page consistency, and a
-    // pages-with-issues list — all built from the API's actual page_results
-    // / site_coverage / cross_page_findings (Phase 2.2/2.3/2.4), never
-    // estimated client-side. Only rendered when the audit actually crawled
-    // more than the homepage (page_results.length > 1); a homepage-only
-    // audit leaves this section hidden rather than showing a redundant
-    // single-page table underneath the Phase 1 sections above.
+    /* Full-site analytics */
+    // Coverage, per-page results and cross-page findings from the API (full-site audits only).
 
-    // The API layer camel-cases nested keys (pages_scanned -> pagesScanned),
-    // but these reads used the snake_case names, so Site-Wide Coverage showed
-    // "—" for every count. Read either spelling.
+    // Read keys in either camelCase or snake_case.
     function sk(obj, snake) {
       if (!obj) return undefined;
       if (obj[snake] !== undefined) return obj[snake];
@@ -1978,15 +1789,13 @@
       }
       section.style.display = '';
 
-      // Coverage (§2.4) — every count here is the API's already-computed
-      // site_coverage; nothing is derived or estimated in the browser.
+      // Coverage (from the API)
       if (coverageGrid) {
         var coverageItems = [
           { label: 'Pages scanned', value: sk(coverage, 'pages_scanned') },
           { label: 'Pages with Analytics', value: sk(coverage, 'pages_with_analytics') },
           { label: 'Pages without Analytics', value: sk(coverage, 'pages_without_analytics') },
-          // Tags on this site are added by JavaScript; these pages were only
-          // checked as raw HTML, so they are neither "with" nor "without".
+          // Pages only checked as raw HTML on a JavaScript-tagged site: neither with nor without.
           sk(coverage, 'pages_not_verified')
             ? { label: 'Pages not verified (tags added by JavaScript)', value: sk(coverage, 'pages_not_verified') }
             : null,
@@ -2001,17 +1810,13 @@
         }).join('');
       }
 
-      // Coverage status — good when every scanned page has Analytics with
-      // no inconsistencies or runtime failures, mid when any of those
-      // counts is above zero.
+      // Status: good if every page has analytics and no problems, else mid.
       var coverageHasIssue = !!(sk(coverage, 'pages_without_analytics') ||
         sk(coverage, 'pages_with_analytics_inconsistencies') ||
         sk(coverage, 'pages_with_runtime_failures'));
       setAnalyticsSectionStatus('analyticsCoverageStatusIcon', coverageHasIssue ? 'mid' : 'good');
 
-      // Page-Level Analytics Results (§2.7) — actual URL, detected
-      // trackers, score, and finding count for every page the crawler
-      // actually scanned (analytics.analytics_score.PageAnalyticsResult).
+      // Per-page results
       if (pageResultsTable) {
         pageResultsTable.innerHTML =
           '<div style="overflow-x:auto;">' +
@@ -2035,10 +1840,7 @@
             '</tbody></table></div>';
       }
 
-      // Cross-Page Consistency (§2.3) — real discrepancies only; the
-      // backend only ever produces these from >= 2 actually-scanned pages
-      // with genuine evidence of a mismatch (a tracker missing from some
-      // pages, or different IDs configured for the same vendor).
+      // Cross-page differences
       if (crossPageTable) {
         if (!crossPageFindings.length) {
           crossPageTable.innerHTML = '<p class="text-sm" style="color: var(--text-tertiary);">No cross-page Analytics inconsistencies were found.</p>';
@@ -2064,19 +1866,13 @@
         }
       }
 
-      // Pages With Analytics Issues — every scanned page carrying at
-      // least one real (module=analytics) finding of its own, linked to
-      // its actual URL so the list is directly actionable.
+      // Pages with analytics issues
       if (pagesWithIssues) {
         var flagged = pageResults.filter(function (p) { return (p.findings || []).length > 0; });
         if (!flagged.length) {
           pagesWithIssues.innerHTML = '<p class="text-sm" style="color: var(--text-tertiary);">No scanned pages have outstanding Analytics findings.</p>';
         } else {
-          // Each page now also lists what its finding(s) actually are —
-          // title + severity per finding — instead of only a count, so
-          // this list is actionable without cross-referencing another
-          // table. Severity dot mirrors the check-item icon colors used
-          // elsewhere in this file (critical=fail, warning/info=warn).
+          // List each page's findings (title + severity), not just a count.
           pagesWithIssues.innerHTML = '<ul class="text-sm" style="margin:0; padding-left: 1.2em;">' +
             flagged.map(function (p) {
               var pFindings = p.findings || [];
@@ -2101,7 +1897,7 @@
     }
 
 
-    /* --------------------------- Email history (§10) --------------------------- */
+    /* Email history */
 
     function loadEmailHistory() {
       var list = document.getElementById('emailHistoryList');

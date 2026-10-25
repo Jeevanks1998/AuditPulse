@@ -27,7 +27,7 @@
 <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 <div class="app-shell">
 
-  <!-- ============ SIDEBAR ============ -->
+  <!-- Sidebar -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar__logo">
       <div class="sidebar__logo-mark" style="background:#fff;overflow:hidden;"><img src="assets/img/logo.png" alt="AuditPulse logo" style="width:100%;height:100%;object-fit:contain;"></div>
@@ -88,17 +88,13 @@
     </div>
   </aside>
 
-  <!-- ============ MAIN ============ -->
+  <!-- Main -->
   <div>
     <header class="topbar">
       <div style="display:flex; align-items:center; gap:12px;">
         <button class="icon-btn menu-toggle" id="menuToggle" aria-label="Toggle menu" style="display:none;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
         </button>
-        <div class="topbar__search">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-          <input type="text" placeholder="Search website or report…">
-        </div>
       </div>
       <div class="topbar__actions">
         <button class="icon-btn" aria-label="Notifications">
@@ -222,7 +218,7 @@
           </div>
         </div>
 
-        <!-- Right: summary + live preview -->
+        <!-- Right: summary -->
         <div>
           <div class="card card__pad summary-card">
             <div class="card__head"><h3 data-icon="clipboard" data-icon-tone="success">Audit Summary</h3></div>
@@ -240,9 +236,7 @@
 
             <hr class="divider">
 
-            <!-- ============ AUDIT IN PROGRESS ============
-                 Full-screen panel shown while the audit runs. audit.js drives
-                 the same ids as before (ring, heading, status, step rows, ETA). -->
+            <!-- Audit in progress (full-screen panel driven by audit.js) -->
             <div class="run-overlay" id="progressSection" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="progressHeading">
               <div class="run-panel">
                 <div class="run-stage">

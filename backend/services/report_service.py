@@ -1,24 +1,7 @@
 """
-services/report_service.py
-
-Business logic behind api/reports.py: read-only report views built on
-top of a completed Audit (models/audit.py). Shapes data the way
-report.html expects it — a score grid for the radar chart (see
-assets/js/report.js -> Charts.renderRadar) and findings grouped by
-module/severity — plus the share / export actions behind the banner
-buttons (shareReportBtn, downloadPdfBtn), backed by the persisted Report
-model (models/report.py) so share links can be revoked/expired and view
-counts tracked.
-
-The score grid + AI layer (executive summary, prioritized findings,
-business impact, action plan) are built by reports.generator rather than
-here — this module only knows about the Audit/Report ORM rows and the
-FastAPI-facing request/response shapes; reports/ has no idea SQLAlchemy
-or HTTPException exist. json/html/pdf export bodies go through
-reports.json_report / reports.html_report / pdf.pdf_generator and are
-cached to disk via reports.report_storage so a repeat download doesn't
-re-run the AI pipeline in reports.generator (or, for the PDF, redraw
-every chart on top of that).
+Report logic behind api/reports.py: report views, share links, exports
+(JSON, HTML, PDF, evidence ZIP) and "Send to POC" email with its history.
+The report content itself is built by reports/; exports are cached on disk.
 """
 
 import secrets
@@ -73,8 +56,7 @@ async def get_report_row(audit_id: int, db: AsyncSession) -> Optional[Report]:
 
 
 async def _get_consent_dict(audit_id: int, db: AsyncSession) -> Optional[dict]:
-    """Same row api/audit.py's GET /audits/{id}/consent reads, shaped identically (ConsentOut) so
-    every consumer of `consent` (report page, PDF, evidence ZIP, POC email) agrees on one shape (§8)."""
+    """Consent result in the same shape as GET /audits/{id}/consent, so every output agrees."""
     result = await db.execute(select(Consent).where(Consent.audit_id == audit_id))
     row = result.scalar_one_or_none()
     return ConsentOut.model_validate(row).model_dump() if row else None
@@ -96,11 +78,7 @@ async def _get_journey_dict(audit_id: int, db: AsyncSession) -> Optional[dict]:
 
 
 async def get_report(audit_id: int, db: AsyncSession, user: User) -> ReportOut:
-    """
-    Fetches the completed audit + its shaped report payload, bumping the
-    Report row's view_count (if one exists — a report only gets a row
-    once it's been shared, see `share_report`).
-    """
+    """Returns the report and counts a view (only once it has been shared)."""
     audit = await get_owned_completed_audit(audit_id, db, user)
     breakdown = audit.breakdown or {}
     score_grid = [
@@ -125,7 +103,7 @@ async def get_report(audit_id: int, db: AsyncSession, user: User) -> ReportOut:
 
 
 async def share_report(audit_id: int, db: AsyncSession, user: User) -> ShareOut:
-    """Mints (or reuses) a share token for a completed audit's report."""
+    """Creates (or reuses) a share token."""
     audit = await get_owned_completed_audit(audit_id, db, user)
 
     report = await get_report_row(audit_id, db)
@@ -148,9 +126,7 @@ async def share_report(audit_id: int, db: AsyncSession, user: User) -> ShareOut:
     return ShareOut(share_url=f"/public/report/{report.share_token}")
 
 
-# --------------------------------------------------------------------------
-# Full (AI-enriched) payload — shared by the json/html export endpoints
-# --------------------------------------------------------------------------
+# Full payload (with AI sections), used by the exports
 async def _build_full_payload(audit_id: int, db: AsyncSession, user: User):
     audit = await get_owned_completed_audit(audit_id, db, user)
     report = await get_report_row(audit_id, db)
@@ -172,16 +148,15 @@ async def _build_full_payload(audit_id: int, db: AsyncSession, user: User):
         analytics=analytics,
         journey=journey,
     )
-    # PDF / evidence ZIP / email attachments read screenshots from disk;
-    # bring back any the container lost since the audit ran.
+    # Bring back screenshots the server disk lost since the audit ran.
     from utils.screenshot_store import restore_for_payload
     await restore_for_payload(payload)
     return payload
 
 
 async def export_report_json(audit_id: int, db: AsyncSession, user: User, force_refresh: bool = False) -> dict:
-    """Returns the full JSON export (reports.json_report), using the on-disk cache unless `force_refresh`."""
-    await get_owned_completed_audit(audit_id, db, user)  # 404/409 check even on a cache hit
+    """JSON export (cached unless `force_refresh`)."""
+    await get_owned_completed_audit(audit_id, db, user)  # ownership check even when cached
 
     if not force_refresh:
         cached = load_json(audit_id)
@@ -195,8 +170,8 @@ async def export_report_json(audit_id: int, db: AsyncSession, user: User, force_
 
 
 async def export_report_html(audit_id: int, db: AsyncSession, user: User, force_refresh: bool = False) -> str:
-    """Returns the full standalone HTML export (reports.html_report), using the on-disk cache unless `force_refresh`."""
-    await get_owned_completed_audit(audit_id, db, user)  # 404/409 check even on a cache hit
+    """HTML export (cached unless `force_refresh`)."""
+    await get_owned_completed_audit(audit_id, db, user)  # ownership check even when cached
 
     if not force_refresh:
         cached = load_html(audit_id)
@@ -210,13 +185,7 @@ async def export_report_html(audit_id: int, db: AsyncSession, user: User, force_
 
 
 async def export_report_pdf(audit_id: int, db: AsyncSession, user: User, force_refresh: bool = False) -> bytes:
-    """Returns the full PDF export (pdf.pdf_generator), using the on-disk cache unless `force_refresh`.
-
-    Same shape as export_report_json/export_report_html above; the only
-    extra step is resolving a homepage screenshot to embed
-    (pdf/screenshots.py), which is itself best-effort — see
-    `_resolve_screenshot_path`.
-    """
+    """PDF export (cached unless `force_refresh`)."""
     audit = await get_owned_completed_audit(audit_id, db, user)
 
     if not force_refresh:
@@ -232,32 +201,14 @@ async def export_report_pdf(audit_id: int, db: AsyncSession, user: User, force_r
 
 
 async def _resolve_screenshot_path(audit: Audit) -> Optional[str]:
-    """Best-effort homepage screenshot for the PDF's "Page Preview" section.
-
-    Gated on settings.CRAWLER_ENABLE_SCREENSHOTS — the same flag the
-    crawler itself checks — since capture requires the optional Playwright
-    dependency; `capture_screenshot` already returns None on any failure
-    (missing browser binary, navigation timeout, etc.) rather than
-    raising, so a bad capture never blocks the PDF.
-    """
-    # PDF layout v6 no longer has a separate homepage "Page Preview" (it
-    # shows the consent/journey evidence screenshots instead), so don't
-    # launch a browser just to capture one — that cost ~10 s and a few
-    # hundred MB of memory per PDF.
+    """Homepage screenshot for the PDF (no longer used)."""
+    # The PDF no longer has a homepage preview, so don't start a browser for one.
     return None
 
 
-# --------------------------------------------------------------------------
-# Evidence ZIP export (§5.2)
-# --------------------------------------------------------------------------
+# Evidence ZIP
 async def export_evidence_zip(audit_id: int, db: AsyncSession, user: User) -> tuple[bytes, str]:
-    """
-    Returns `(zip_bytes, filename)` for the complete evidence package —
-    the PDF plus every screenshot, cookie, and network-evidence JSON file
-    captured for this audit (§5.2). Always builds the PDF fresh from the
-    cache (or renders it if nothing's cached yet) so the ZIP's PDF and its
-    JSON evidence describe the exact same audit run.
-    """
+    """Returns (zip_bytes, filename): the PDF plus all screenshots and evidence JSON for this audit."""
     audit = await get_owned_completed_audit(audit_id, db, user)
     pdf_bytes = load_pdf(audit_id)
     payload = await _build_full_payload(audit_id, db, user)
@@ -270,12 +221,9 @@ async def export_evidence_zip(audit_id: int, db: AsyncSession, user: User) -> tu
     return zip_bytes, evidence_zip_filename(audit_id)
 
 
-# --------------------------------------------------------------------------
-# POC Email workflow (§9) + Email History (§10)
-# --------------------------------------------------------------------------
+# "Send to POC" email and Email History
 def get_attachment_choices() -> dict:
-    """The checkbox options the "Send to POC" modal renders (§9.2) — sourced from
-    emailer.attachments so the frontend never hardcodes the list (§14)."""
+    """Attachment options for the dialog (from emailer.attachments)."""
     return dict(ATTACHMENT_CHOICES)
 
 
@@ -283,12 +231,7 @@ async def send_report_to_poc(
     audit_id: int, request: EmailSendRequest, db: AsyncSession, user: User,
     body_intro: Optional[str] = None,
 ) -> EmailSendResult:
-    """
-    Sends the report to the requested recipients (§9.1) and records the
-    attempt — success or failure — as an Email History row (§10)
-    regardless of outcome, so a failed send is still visible/diagnosable
-    from report.html rather than silently lost.
-    """
+    """Sends the report and records the attempt in Email History, whether it worked or not."""
     audit = await get_owned_completed_audit(audit_id, db, user)
     payload = await _build_full_payload(audit_id, db, user)
 
@@ -302,8 +245,7 @@ async def send_report_to_poc(
 
     subject = request.subject or ""
     if body_intro and not request.body:
-        # Scheduled delivery: the schedule's own note on top of the standard
-        # report summary, rather than replacing it.
+        # Scheduled email: the schedule's note goes above the standard summary.
         request = request.model_copy(update={
             "body": body_intro.strip() + "\n\n" + build_body(payload, poc_name="there")
         })
@@ -320,10 +262,7 @@ async def send_report_to_poc(
         poc_name="there",
     )
 
-    # What actually went out — the composer usually supplies both, but a
-    # caller that omits them gets emailer.templates' defaults, so record
-    # those rather than an empty string. Otherwise a resend of this row
-    # would open on a blank body.
+    # Record what was actually sent (defaults when the caller left them empty), so Resend isn't blank.
     sent_subject = subject or build_subject(payload)
     sent_body = request.body or build_body(payload, poc_name="there")
 
@@ -332,17 +271,11 @@ async def send_report_to_poc(
         user_id=user.id,
         recipient_to=[str(addr) for addr in request.to],
         recipient_cc=[str(addr) for addr in request.cc],
-        # Bcc stays out of the outgoing message's headers (emailer.service
-        # puts it in the SMTP envelope only, or it stops being blind) but is
-        # recorded here so "Resend" repeats the same email rather than a
-        # quietly narrower one. Only ever returned to this row's own owner.
+        # BCC is stored for Resend but only shown to the owner.
         recipient_bcc=[str(addr) for addr in request.bcc],
         subject=sent_subject,
         body=sent_body,
-        # On success this is what was really attached (emailer.attachments
-        # drops keys with no data for this audit). On a failure nothing was
-        # attached at all, so fall back to what was *asked* for — otherwise
-        # retrying a failed send would come back with no attachments.
+        # On failure nothing was attached, so record what was asked for (so a retry keeps them).
         attachments=outcome.attached_keys or list(request.attachments),
         status=outcome.status,
         error_message=outcome.error_message,
@@ -370,14 +303,7 @@ async def send_report_to_poc(
 
 
 def _to_history_out(row: ReportEmail, audit_url: Optional[str]) -> EmailHistoryOut:
-    """Shapes one ReportEmail row for the API, folding in the audit's URL.
-
-    Every JSON column is coerced through `or []` / `or ""`: rows written
-    before the recipient_bcc/body migration have those columns at their
-    server defaults, and a row written before *any* of this had NULLs.
-    The composer prefills straight from this payload, so a None reaching
-    it would break "Resend" on exactly the oldest rows.
-    """
+    """One ReportEmail row for the API. Missing values on older rows become [] or "", so Resend still works."""
     return EmailHistoryOut(
         id=row.id,
         audit_id=row.audit_id,
@@ -396,7 +322,7 @@ def _to_history_out(row: ReportEmail, audit_url: Optional[str]) -> EmailHistoryO
 
 
 async def get_email_history(audit_id: int, db: AsyncSession, user: User) -> list[EmailHistoryOut]:
-    """Every "Send to POC" attempt for this audit (§10), most recent first."""
+    """Every "Send to POC" attempt for this audit, newest first."""
     audit = await get_owned_completed_audit(audit_id, db, user)
     result = await db.execute(
         select(ReportEmail)
@@ -407,15 +333,7 @@ async def get_email_history(audit_id: int, db: AsyncSession, user: User) -> list
 
 
 async def _email_history_stats(db: AsyncSession, user: User) -> EmailHistoryStats:
-    """
-    The four counters above the table. Deliberately unfiltered — these
-    describe the account, not the current search, so they hold still while
-    the user filters the table underneath them.
-
-    One grouped query for the status split plus one for the distinct-audit
-    count, rather than four COUNT(*)s or (worse) counting in Python over
-    every row the account has ever sent.
-    """
+    """The four counters above the table, for the whole account (not the current filter)."""
     grouped = await db.execute(
         select(ReportEmail.status, func.count(ReportEmail.id))
         .where(ReportEmail.user_id == user.id)
@@ -432,8 +350,7 @@ async def _email_history_stats(db: AsyncSession, user: User) -> EmailHistoryStat
     successful = by_status.get("sent", 0)
     failed = by_status.get("failed", 0)
     return EmailHistoryStats(
-        # Sum the grouped counts rather than hardcoding sent+failed, so a
-        # status this code doesn't know about yet still lands in the total.
+        # Sum all statuses so unknown ones still count in the total.
         total_sent=sum(by_status.values()),
         successful=successful,
         failed=failed,
@@ -450,16 +367,8 @@ async def list_email_history(
     page: int = 1,
     page_size: int = 25,
 ) -> EmailHistoryPage:
-    """
-    Account-wide Email History for email-reports.html (§10).
-
-    The per-audit endpoint can't back that page: it would cost one request
-    per audit and could still only show audits the caller already knew to
-    ask about. This joins ReportEmail to Audit once so each row carries the
-    website it belongs to, and filters/paginates in SQL.
-
-    Scoped by ReportEmail.user_id, so one account never sees another's
-    sends even where both audited the same URL.
+    """Email History for the whole account (Email Reports page), filtered and paged
+    in SQL. Only this user's sends.
     """
     page = max(1, page)
     page_size = max(1, min(page_size, 100))
@@ -474,10 +383,7 @@ async def list_email_history(
         base = base.where(ReportEmail.status == status_filter)
 
     if q:
-        # Recipients live in a JSON column, which no portable SQL operator
-        # can search by element, so the text filter covers the two plain
-        # string columns (website + subject). Recipient search is done on
-        # the client against the rows already on screen.
+        # Search covers website and subject (recipients are searched in the browser).
         like = f"%{q.strip()}%"
         base = base.where(or_(Audit.url.ilike(like), ReportEmail.subject.ilike(like)))
 
@@ -501,13 +407,7 @@ async def list_email_history(
 
 
 async def get_email_record(email_id: int, db: AsyncSession, user: User) -> EmailHistoryOut:
-    """
-    One recorded send, in full — what "View" opens and what "Resend"
-    prefills the composer from.
-
-    A row belonging to another account is a 404 rather than a 403: the
-    caller has no business learning that this id exists.
-    """
+    """One sent email in full (for View and Resend). Another account's row is a 404."""
     result = await db.execute(
         select(ReportEmail, Audit.url)
         .join(Audit, Audit.id == ReportEmail.audit_id, isouter=True)

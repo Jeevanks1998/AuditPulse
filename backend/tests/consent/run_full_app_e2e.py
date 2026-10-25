@@ -1,27 +1,14 @@
 """
-Full-application end-to-end check for the Consent module (Phases 1–4).
-
-Runs the *real* app — FastAPI + the real database + the real audit
-pipeline + Playwright — against the local fixture sites in ./fixtures,
-then drives the real report.html / dashboard.html in a browser:
-
-    1. start the fixture web server (all fixture hosts -> 127.0.0.1)
-    2. start the API (uvicorn, in-process) on the configured DATABASE_URL
-    3. create a test user, log in through POST /api/v1/auth/login
-    4. POST /api/v1/audits/ with modules=["consent"] for each fixture site
-       (+ one with ["consent", "analytics"]), wait for completion
-    5. GET /audits/{id}/consent, /reports/{id}/export.json,
-       /reports/{id}/export (PDF), /reports/{id}/evidence.zip — and assert
-       on what came back
-    6. re-run one site and prove the second scan is fresh
-    7. open report.html#consent and dashboard.html in Chromium with the
-       session token, wait for the consent UI, and save screenshots
+End-to-end check of the Consent module with the real app (API, database,
+pipeline, browser) against the local fixture sites: run audits, check the
+API results and exports, re-run one site to prove scans are fresh, and
+screenshot report.html / dashboard.html.
 
 Usage (from backend/):
     DATABASE_URL=postgresql+asyncpg://user:pass@127.0.0.1:5432/db \\
         python -m tests.consent.run_full_app_e2e [--out DIR]
 
-Exit code 0 = every check passed. Output: a JSON summary + PNGs in --out.
+Exit code 0 = all checks passed.
 """
 
 from __future__ import annotations
@@ -54,8 +41,7 @@ os.environ.setdefault("SCREENSHOT_DIR", str(OUT / "screenshots"))
 os.environ.setdefault("REPORTS_DIR", str(OUT / "reports"))
 os.environ.setdefault("REDIS_URL", "redis://127.0.0.1:1/0")  # unreachable -> in-memory rate limiter
 os.environ["CRAWLER_ENABLE_RUNTIME_CHECKS"] = "true"
-# One test client polls progress and loads many pages from one IP; the
-# production 100 req/min/IP limit would throttle the harness itself.
+# Raise the per-IP limit: the test client makes many requests from one IP.
 os.environ.setdefault("RATE_LIMIT_REQUESTS", "5000")
 os.environ.setdefault("ANTHROPIC_API_KEY", "")
 
@@ -76,7 +62,7 @@ FIXTURE_HOSTS = set(fx.SITES) | {
     "www.googletagmanager.com", "www.google-analytics.com", "www.facebook.com", "cdn.privacy-mgmt.com",
 }
 
-# --- make the backend's own HTTP fetch resolve fixture hosts locally --------
+# Make the backend's own HTTP fetches resolve fixture hosts locally
 _real_getaddrinfo = socket.getaddrinfo
 
 
@@ -92,7 +78,7 @@ for var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY
     os.environ.pop(var, None)
 os.environ["NO_PROXY"] = "*"
 
-# --- make every Chromium the app launches resolve fixture hosts locally -----
+# Make every Chromium the app starts resolve fixture hosts locally
 from playwright.async_api._generated import BrowserType  # noqa: E402
 
 _orig_launch = BrowserType.launch
@@ -312,7 +298,7 @@ def main() -> int:
             (OUT / f"evidence_{name}.zip").write_bytes(z.content)
 
     a = RESULTS["audits"]
-    # ---- behaviour assertions -------------------------------------------------
+    # Behaviour checks
     eu = a["eu_onetrust"]
     check("EU: region EU + GDPR only", eu["region"][0] == "EU" and eu["applicable_frameworks"] == ["gdpr"])
     check("EU: CCPA not assessed (empty)", eu["ccpa_checks"] == {})
@@ -346,7 +332,7 @@ def main() -> int:
     check("No banner: nothing classified as consent control", n["consent_controls"] == [])
     check("No banner: banner tile = Not detected", any(t[0] == "Consent banner" and t[1] == "Not detected" for t in n["tiles"]))
 
-    # ---- fresh rescan ---------------------------------------------------------
+    # Fresh re-scan
     print("\n== re-scan eu_onetrust (fresh scan check)")
     rescan_id = run_audit(client, fx.site_url("www.example-shop.de"), ["consent"])
     c2 = api(client, "GET", f"/audits/{rescan_id}/consent").json()
@@ -361,7 +347,7 @@ def main() -> int:
           not any("_ga" in s for s in (rr.get("before_consent") or {}).get("cookie_buckets", {}).get("consent_required", [])))
     RESULTS["rescan_audit_id"] = rescan_id
 
-    # ---- frontend ---------------------------------------------------------------
+    # Frontend
     print("\n== frontend (report.html / dashboard.html)")
     frontend_screenshots({"token": token, "user": login.json()["user"]}, audits)
 

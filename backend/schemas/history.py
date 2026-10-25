@@ -1,14 +1,5 @@
 """
-schemas/history.py
-
-Response models for api/history.py's two related but distinct views:
-
-  * `HistoryPageOut` — the paginated audit-run history behind
-    history.html (backed by models.audit.Audit, reusing `AuditOut`).
-
-  * `ActivityEventOut` / `ActivityPageOut` — the broader account-activity
-    feed (logins, audits started/completed, settings changes, schedule
-    runs, ...) backed by models.history.History.
+Response models for audit history (HistoryPageOut) and the activity feed (ActivityPageOut).
 """
 
 from datetime import datetime

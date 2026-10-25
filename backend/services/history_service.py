@@ -1,17 +1,5 @@
 """
-services/history_service.py
-
-Business logic behind api/history.py's two related but distinct views:
-
-  * Audit-run history behind history.html: search by hostname/label
-    (mirrors historySearchInput in assets/js/history.js), paginate,
-    fetch or delete a single record. Backed by models.audit.Audit.
-
-  * A broader account-activity feed (logins, audits started/completed,
-    settings changes, schedule runs, ...) backed by models.history.History.
-    Additive: the frontend doesn't call this yet, but it gives a single
-    place to show "everything that happened on this account" beyond just
-    audit runs.
+Audit history (search, paginate, view, delete, restore) and the account activity feed.
 """
 
 from datetime import datetime, timezone
@@ -27,9 +15,7 @@ from models.user import User
 from schemas.history import ActivityPageOut, HistoryPageOut
 
 
-# --------------------------------------------------------------------------
-# Audit history (existing behavior, now backed by models.audit.Audit)
-# --------------------------------------------------------------------------
+# Audit history
 async def list_history(
     db: AsyncSession,
     user: User,
@@ -39,7 +25,7 @@ async def list_history(
     page_size: int = 20,
     deleted: bool = False,
 ) -> HistoryPageOut:
-    # deleted=False: the normal history; deleted=True: the "Deleted audits" bin.
+    # deleted=False: normal history; True: the "Deleted audits" list.
     filters = [Audit.user_id == user.id,
                Audit.deleted_at.is_not(None) if deleted else Audit.deleted_at.is_(None)]
     if q:
@@ -95,7 +81,7 @@ async def get_history_item(audit_id: int, db: AsyncSession, user: User) -> Audit
 
 
 async def delete_history_item(audit_id: int, db: AsyncSession, user: User) -> None:
-    """Move an audit to "Deleted audits" (soft delete) — it can be restored."""
+    """Moves an audit to "Deleted audits" (can be restored)."""
     audit = await get_history_item(audit_id, db, user)
     if audit.status in ("queued", "running"):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
@@ -113,7 +99,7 @@ async def delete_history_item(audit_id: int, db: AsyncSession, user: User) -> No
 
 
 async def restore_history_item(audit_id: int, db: AsyncSession, user: User) -> Audit:
-    """Bring a deleted audit back into History / Recent Audits."""
+    """Restores a deleted audit."""
     audit = await get_history_item(audit_id, db, user)
     if audit.deleted_at is not None:
         audit.deleted_at = None

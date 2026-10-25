@@ -1,15 +1,6 @@
-/* ==========================================================================
-   Phase 6 — Recent Audits
-   
-   Every row rendered into #recentAuditsList (dashboard.js renderRecentAudits)
-   comes straight from GET /audits/recent (window.Api.audits.getRecent) —
-   real url, real overall_score, real status, real created_at/completed_at.
-   No placeholder domains, scores, statuses, or dates are ever rendered here;
-   when there are zero audits, an explicit empty state is shown instead of a
-   dummy row.
-   ========================================================================== */
+/* Recent audits list on the dashboard (real data only; an empty state when there are none). */
 
-/* ---- Row layout: website (left) · score / status / date (right) ---- */
+/* Row: website on the left, score / status / date on the right */
 .row-item__right {
   display: flex;
   flex-direction: column;
@@ -30,8 +21,7 @@
   font-family: var(--font-body);
 }
 
-/* Score not available yet (audit isn't completed) — a distinct neutral
-   state, never a fabricated number or a misleading red/green chip. */
+/* No score yet (audit not finished) */
 .score-chip--neutral {
   background: var(--surface-sunken);
   color: var(--text-tertiary);
@@ -39,7 +29,7 @@
 }
 .score-chip--neutral::before { background: var(--text-tertiary); }
 
-/* ---- Empty state ---- */
+/* Empty state */
 .recent-audits-empty {
   display: flex;
   flex-direction: column;
@@ -76,14 +66,14 @@
 
 .recent-audits-empty .btn { margin-top: var(--sp-1); }
 
-/* ---- Error state (reuses the empty-state layout) ---- */
+/* Error state */
 .recent-audits-empty--error .recent-audits-empty__icon--error {
   color: var(--color-error);
   border-color: var(--color-error);
   background: var(--color-error-soft);
 }
 
-/* ---- Loading state ---- */
+/* Loading state */
 .recent-audits-loading {
   display: flex;
   align-items: center;
@@ -108,10 +98,7 @@
   to { transform: rotate(360deg); }
 }
 
-/* ---- Health Overview error state (§6 partial-data handling) ----
-   Stats and Recent Audits load independently, so this only replaces the
-   ring/category grid when /audits/stats itself fails — a failed Recent
-   Audits fetch never triggers this, and vice versa. */
+/* Health overview error (only when /audits/stats fails) */
 .health-overview__error {
   display: flex;
   flex-direction: column;

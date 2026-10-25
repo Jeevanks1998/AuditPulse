@@ -1,25 +1,17 @@
 """
-ai/
+AI features. Each file does one job:
 
-Everything AI-provider-backed lives here, one concern per file:
+  provider.py          - calls the AI provider (Groq or Anthropic)
+  recommendations.py   - AI findings for the "ai" module
+  executive_summary.py - summary paragraph at the top of the report
+  priority.py          - fix-first ranking of findings (rule-based, no AI)
+  business_impact.py   - findings explained in business terms
+  action_plan.py       - quick wins / short term / long term plan
+  chatbot.py           - questions and answers about one audit
 
-  provider.py           - low-level Anthropic call wrapper (call_ai / call_ai_json)
-  recommendations.py     - the "ai" audit module's findings (services.ai_service, audit_service pipeline)
-  executive_summary.py  - report-header summary paragraph
-  priority.py            - deterministic fix-first ranking of findings
-  business_impact.py    - technical findings translated into business-impact language
-  action_plan.py         - horizon-grouped (quick win / short term / long term) remediation plan
-  chatbot.py             - free-text Q&A grounded in one audit's own data
-
-Every generator function here is independently safe to call — none of
-them raise out to a caller on a provider outage or missing API key, except
-ai.provider.call_ai / call_ai_json themselves, which are the one place
-that's allowed to raise (AIProviderError) so each higher-level module can
-decide its own fallback. See each module's docstring for its specific
-fallback behavior.
-
-services.ai_service is the thin service-layer wrapper that api/ routers
-call into; nothing under api/ should import from ai.* directly.
+Only provider.py raises errors; everything else falls back to a fixed
+template, so AI problems never fail an audit. api/ code goes through
+services.ai_service, not this package directly.
 """
 
 from ai.action_plan import ActionPlan, generate_action_plan

@@ -1,9 +1,5 @@
 """
-schemas/report.py
-
-Response models for api/reports.py: the score grid feeding report.html's
-radar chart (assets/js/report.js -> Charts.renderRadar), the findings
-list, and the share-link payload returned by the "Share report" action.
+Response models for reports: score grid, findings and share links.
 """
 
 from typing import List, Optional

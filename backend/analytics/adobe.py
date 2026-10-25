@@ -1,16 +1,7 @@
 """
-analytics/adobe.py
-
-Detects Adobe Analytics / Experience Cloud tagging in either of its two
-common forms: the modern Adobe Experience Platform Launch (now "Tags")
-loader served from assets.adobedtm.com, or the legacy hand-rolled
-AppMeasurement.js + s_code.js pair. Both ultimately talk to Adobe's
-collection endpoints (typically *.omtrdc.net or a first-party CNAME),
-and both expose an `s` object with an `s_account`/`s.account` report
-suite ID and `s.t()` (page view) / `s.tl()` (link/event tracking) calls.
-
-Reads crawler.parser.ParsedPage.soup directly, same rationale as the
-other analytics/* modules.
+Detects Adobe Analytics: the Launch/Tags loader (assets.adobedtm.com) or the
+older AppMeasurement.js / s_code.js. Both expose an `s` object with the report
+suite ID and s.t() / s.tl() calls.
 """
 
 from __future__ import annotations
@@ -36,14 +27,14 @@ LINK_TRACK_CALL_RE = re.compile(r"\bs\.tl\s*\(")
 @dataclass
 class AdobeDetection:
     detected: bool = False
-    uses_launch: bool = False  # assets.adobedtm.com (Experience Platform Launch/Tags)
-    uses_legacy_appmeasurement: bool = False  # hand-rolled AppMeasurement.js/s_code.js
+    uses_launch: bool = False  # Adobe Launch / Tags
+    uses_legacy_appmeasurement: bool = False  # older AppMeasurement.js / s_code.js
     report_suites: List[str] = field(default_factory=list)
     pageview_call_found: bool = False
 
 
 def detect_adobe(page: ParsedPage) -> AdobeDetection:
-    """Scans this page's <script> tags for Adobe Analytics / Launch signals."""
+    """Looks for Adobe Analytics signals in the page's scripts."""
     result = AdobeDetection()
     report_suites: List[str] = []
 
@@ -64,7 +55,7 @@ def detect_adobe(page: ParsedPage) -> AdobeDetection:
         if PAGEVIEW_CALL_RE.search(body):
             result.pageview_call_found = True
         if LINK_TRACK_CALL_RE.search(body) and not result.pageview_call_found:
-            result.pageview_call_found = False  # link tracking alone doesn't imply a page view fired
+            result.pageview_call_found = False  # link tracking alone doesn't mean a page view was sent
 
     result.report_suites = list(dict.fromkeys(report_suites))
     result.detected = result.uses_launch or result.uses_legacy_appmeasurement or bool(result.report_suites)
@@ -72,7 +63,7 @@ def detect_adobe(page: ParsedPage) -> AdobeDetection:
 
 
 def check_adobe(page: ParsedPage) -> List[dict]:
-    """Findings for Adobe Analytics configuration issues. Absence of Adobe tagging is not itself a finding."""
+    """Findings for Adobe set-up problems. No Adobe at all is not a finding."""
     detection = detect_adobe(page)
     findings: List[dict] = []
 

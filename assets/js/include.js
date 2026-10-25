@@ -1,20 +1,11 @@
-/* ==========================================================================
-   include.js — OPTIONAL fetch-based loader for assets/components/*.html.
-   Not loaded by any shipped page by default (see assets/components/README.md
-   for why: file:// + fetch() don't mix). Add this script tag yourself if
-   you're serving the site over http(s) and want live includes instead of
-   copy-pasted markup.
-
-   Usage:
-     <div data-include="sidebar"></div>
-     <div data-include="header"></div>
-     <script src="assets/js/include.js"></script>
-     <script>
-       Components.includeAll().then(function () {
-         document.dispatchEvent(new Event('components:ready'));
-       });
-     </script>
-   ========================================================================== */
+/*
+ * Optional loader for assets/components/*.html (not used by the shipped pages;
+ * needs http(s), not file://).
+ *
+ *     <div data-include="sidebar"></div>
+ *     <script src="assets/js/include.js"></script>
+ *     <script>Components.includeAll();</script>
+ */
 
 window.Components = window.Components || {};
 
@@ -33,13 +24,13 @@ window.Components = window.Components || {};
     return cache[name];
   }
 
-  // Fetches a single component and injects it into el (innerHTML).
+  // Loads one component into el.
   function include(el) {
     var name = el.getAttribute('data-include');
     if (!name) return Promise.resolve();
     return fetchComponent(name).then(function (html) {
       el.innerHTML = html;
-      // Re-execute any <script> tags in the fragment — innerHTML doesn't run them.
+      // Run the fragment's <script> tags (innerHTML doesn't).
       el.querySelectorAll('script').forEach(function (oldScript) {
         var newScript = document.createElement('script');
         Array.prototype.forEach.call(oldScript.attributes, function (attr) {
@@ -54,7 +45,7 @@ window.Components = window.Components || {};
     });
   }
 
-  // Finds every [data-include] on the page and resolves once all are loaded.
+  // Loads every [data-include] on the page.
   function includeAll(root) {
     var nodes = Array.prototype.slice.call((root || document).querySelectorAll('[data-include]'));
     return Promise.all(nodes.map(include));

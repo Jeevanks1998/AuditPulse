@@ -1,18 +1,10 @@
-/* ==========================================================================
-   score-help.js — "How is this scored?" explainer.
-   window.ScoreHelp.open(scoreGrid?, overall?) opens a dialog that explains
-   what the 0-100 scores mean, how each module's score is built, and (when
-   an audit's score grid is passed) the actual overall calculation for that
-   audit. window.ScoreHelp.link(label?) returns the button HTML.
-
-   The numbers here mirror the backend so the explanation never drifts:
-     * config/constants.py MODULE_WEIGHTS          (overall weighting)
-     * consent/consent_score.py CATEGORY_WEIGHTS    (consent areas)
-     * analytics/analytics_score.py CATEGORY_WEIGHTS (analytics areas)
-     * *_score.py SEVERITY_PENALTY                  (points per issue)
-     * journey/journey_qa.py compute_health         (journey formula)
-     * reports/generator.py score bands             (80 / 50)
-   ========================================================================== */
+/*
+ * "How is this scored?" dialog. ScoreHelp.open(scoreGrid?, overall?) explains
+ * the 0-100 scores and, with a score grid, this audit's own calculation.
+ * Numbers are copied from the backend; keep in sync with config/constants.py
+ * MODULE_WEIGHTS, the *_score.py CATEGORY_WEIGHTS and SEVERITY_PENALTY, and
+ * journey/journey_qa.py.
+ */
 
 window.ScoreHelp = (function () {
 
@@ -190,9 +182,7 @@ window.ScoreHelp = (function () {
     if (btn) btn.focus();
   }
 
-  // Any [data-score-help] button on the page opens the explainer with the
-  // score grid the page registered via setContext (report page), or the
-  // general explanation when there is none (dashboard).
+  // Any [data-score-help] button opens the dialog, using the score grid from setContext() if there is one.
   var ctx = { grid: null, overall: null };
   function setContext(scoreGrid, overall) { ctx.grid = scoreGrid || null; ctx.overall = overall == null ? null : overall; }
   document.addEventListener('click', function (e) {

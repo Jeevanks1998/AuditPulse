@@ -1,13 +1,5 @@
 """
-forms/autocomplete.py
-
-Checks the `autocomplete` attribute against the WHATWG-defined tokens
-browsers and password managers actually recognize (email, tel, given-
-name, cc-number, etc.), for two failure modes: a common field with no
-autocomplete attribute at all, and a password field explicitly opted
-out via autocomplete="off" — a pattern browsers now largely ignore for
-login forms anyway, but which still suppresses password-manager
-save/fill prompts in some contexts and offers no real security benefit.
+Checks autocomplete: missing on common fields (email, phone, card...), or set to "off" on passwords.
 """
 
 from __future__ import annotations
@@ -20,7 +12,7 @@ from crawler.parser import ParsedPage
 MODULE = "forms"
 CATEGORY = "autocomplete"
 
-# field identity substring -> expected autocomplete token(s)
+# field name pattern -> expected autocomplete value(s)
 _FIELD_AUTOCOMPLETE_HINTS = [
     (re.compile(r"e-?mail", re.IGNORECASE), {"email"}),
     (re.compile(r"first.?name|given.?name|fname", re.IGNORECASE), {"given-name"}),

@@ -1,15 +1,8 @@
-# ==============================================================================
-# Render Blueprint (free plan): AuditPulse API + Access portal API.
-# Render dashboard -> New -> Blueprint -> pick this repo -> fill the secret
-# values it asks for (marked sync: false) -> Apply.
+# Render Blueprint (free plan, backup hosting): AuditPulse API + Access portal API.
+# Render -> New -> Blueprint -> this repo -> fill in the secret values -> Apply.
 #
-# Free plan notes:
-#  * 512 MB RAM; services sleep after 15 min without traffic (first request
-#    then takes ~1 min). Open the site a couple of minutes before a demo.
-#  * Audits run inside the API process (FastAPI BackgroundTasks), so no
-#    Celery worker / Redis is needed here. Scheduled audits and weekly
-#    reminders (Celery beat) are off on this plan.
-# ==============================================================================
+# Free plan: 512 MB RAM, sleeps after 15 minutes idle (first request then
+# takes ~1 minute). Audits run in the API process; scheduled jobs are off.
 services:
   - type: web
     name: auditpulse-api
@@ -55,7 +48,7 @@ services:
         sync: false
       - key: LOG_TO_FILE
         value: "false"
-      # Keep the free instance inside 512 MB / reasonable time.
+      # Fit the free 512 MB instance.
       - key: CRAWLER_CONCURRENCY
         value: "2"
       - key: JOURNEY_MAX_TESTED_INTERACTIONS

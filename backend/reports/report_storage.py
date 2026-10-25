@@ -1,20 +1,7 @@
 """
-reports/report_storage.py
-
-On-disk cache for the three export formats services.report_service builds
-(reports.json_report.to_json_report / reports.html_report.render_html_report
-/ pdf.pdf_generator.generate_pdf_report), keyed by audit id under
-settings.REPORTS_DIR — see utils/file_manager.py's FileManager for the
-actual (path-traversal-safe) I/O. A repeat download hits this cache
-instead of re-running the AI pipeline in reports.generator (or, for the
-PDF, redrawing every chart); `force_refresh` in report_service bypasses it.
-
-PDF filenames are versioned with pdf.theme.PDF_LAYOUT_VERSION
-(`"<audit_id>.v<version>.pdf"`) so a PDF layout change invalidates every
-previously-cached PDF automatically — load_pdf simply won't find a file at
-the new version's path, no explicit cache-bust step needed. JSON/HTML
-aren't layout-versioned the same way since their shape is the
-ReportPayload data model itself (§8), not a rendered layout.
+Caches report exports (JSON, HTML, PDF) on disk by audit id, so repeat
+downloads don't rebuild them. PDF names include PDF_LAYOUT_VERSION, so a
+layout change automatically skips old cached PDFs.
 """
 
 from __future__ import annotations
@@ -27,9 +14,7 @@ from utils.file_manager import FileManager
 
 
 def _manager() -> FileManager:
-    # Constructed per-call (cheap), not at import time, so a REPORTS_DIR
-    # change in settings (e.g. in tests) takes effect without a re-import —
-    # same pattern as utils/screenshots.py's _manager().
+    # Created per call so a changed REPORTS_DIR (e.g. in tests) is picked up.
     return FileManager(settings.REPORTS_DIR)
 
 
@@ -62,8 +47,7 @@ def load_pdf(audit_id: int) -> Optional[bytes]:
 
 
 def invalidate(audit_id: int) -> None:
-    """Drops every cached export for this audit so the next download is built
-    from the latest scan (called whenever an audit's results are (re)written)."""
+    """Deletes this audit's cached exports (called when its results change)."""
     manager = _manager()
     for name in (f"{audit_id}.json", f"{audit_id}.html", _pdf_filename(audit_id)):
         try:

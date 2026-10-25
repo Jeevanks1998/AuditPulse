@@ -1,20 +1,13 @@
-/* ==========================================================================
-   config.js — shared, static configuration used across every page.
-   Loaded first; every other script reads from window.APP_CONFIG.
-   ========================================================================== */
+/* Shared settings for every page (window.APP_CONFIG). Loaded first. */
 
 window.APP_CONFIG = {
 
   APP_NAME: 'AuditPulse',
 
-  // Base URL of the FastAPI backend (see /backend). Override by setting
-  // window.__AUDITPULSE_API_BASE__ before this script loads, e.g. for a
-  // deployed backend on a different origin.
+  // Backend API address. Set window.__AUDITPULSE_API_BASE__ before this script to override.
   API_BASE_URL: window.__AUDITPULSE_API_BASE__ || 'http://localhost:8000/api/v1',
 
-  // Backend origin with the /api/v1 suffix stripped — used for anything the
-  // backend serves outside the API itself, e.g. the /screenshots static
-  // mount (see backend/main.py) that consent-banner screenshots live under.
+  // Backend address without /api/v1 (e.g. for /screenshots).
   get API_ORIGIN() {
     return this.API_BASE_URL.replace(/\/api\/v1\/?$/, '');
   },
@@ -25,11 +18,10 @@ window.APP_CONFIG = {
     DB: 'auditpulse:db'
   },
 
-  // Module keys correspond to the data-module attributes in audit.html
+  // Module keys (match data-module in audit.html)
   MODULES: ['ai', 'pdf', 'consent', 'analytics', 'journey'],
 
-  // Steps shown in the audit.html checklist / progress UI, in run order.
-  // ids correspond to the check-item element ids in audit.html.
+  // Audit steps in order (ids match the progress list in audit.html).
   AUDIT_STEPS: [
     { id: 'checkCrawl', label: 'Crawling website' },
     { id: 'checkConsent', label: 'Cookie consent' },
@@ -38,6 +30,6 @@ window.APP_CONFIG = {
     { id: 'checkReport', label: 'Generating report' }
   ],
 
-  // Score-band thresholds shared by ring/chip coloring
+  // Score bands (same as backend config/constants.py)
   SCORE_BANDS: { good: 80, mid: 50 }
 };

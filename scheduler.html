@@ -19,7 +19,7 @@
 <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 <div class="app-shell">
 
-  <!-- ============ SIDEBAR ============ -->
+  <!-- Sidebar -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar__logo">
       <div class="sidebar__logo-mark" style="background:#fff;overflow:hidden;"><img src="assets/img/logo.png" alt="AuditPulse logo" style="width:100%;height:100%;object-fit:contain;"></div>
@@ -80,7 +80,7 @@
     </div>
   </aside>
 
-  <!-- ============ MAIN ============ -->
+  <!-- Main -->
   <div>
     <header class="topbar">
       <div style="display:flex; align-items:center; gap:12px;">
@@ -169,10 +169,7 @@
           <h3 data-icon="calendar" data-icon-tone="primary">Scheduled Audits</h3>
           <span class="card__head-sub" data-schedule-table-count>— schedules</span>
         </div>
-        <!-- .schedule-table-wrap: the row action menu is absolutely positioned,
-             so the scroll container needs room below the last row or the
-             dropdown gets clipped. Padding + matching negative margin adds
-             that room without leaving a visible gap. -->
+        <!-- Extra bottom room so the row menu isn't clipped. -->
         <div class="table-wrap schedule-table-wrap">
           <table class="dtable" id="scheduleTable">
             <thead>
@@ -188,7 +185,7 @@
               </tr>
             </thead>
             <tbody id="scheduleTableBody">
-              <!-- rows injected by assets/js/scheduler.js -->
+              <!-- rows added by scheduler.js -->
             </tbody>
           </table>
         </div>

@@ -1,14 +1,6 @@
 """
-crawler/links.py
-
-Resolves the <a>/<img> references a ParsedPage collected into absolute
-URLs and classifies each one: same-site page worth queuing for the
-crawl frontier, external link (reporting only), or a non-crawlable
-scheme/asset (mailto:, javascript:, a PDF/image download, etc).
-
-crawler.py calls `same_site_targets` to build its next-page queue;
-extractor.py calls `extract_links` directly to score internal/external/
-nofollow counts and broken-link candidates without re-resolving hrefs.
+Turns a page's links into absolute URLs and sorts them: same-site pages to
+crawl, external links, or things not to crawl (mailto:, files, ...).
 """
 
 from __future__ import annotations
@@ -32,16 +24,16 @@ ASSET_EXTENSIONS = {
 
 @dataclass
 class Link:
-    url: str          # absolute, fragment-stripped
+    url: str          # absolute, without #fragment
     text: str
     is_internal: bool
     is_asset: bool
-    is_crawlable: bool  # internal, not an asset, and not a non-http(s) scheme
+    is_crawlable: bool  # same site, not a file, http(s)
     nofollow: bool
 
 
 def extract_links(page: ParsedPage, base_hostname: str) -> List[Link]:
-    """Resolve every <a href> on the page into a classified, deduped Link list."""
+    """Every <a href> on the page, resolved and de-duplicated."""
     seen: set = set()
     links: List[Link] = []
 
@@ -82,7 +74,7 @@ def extract_links(page: ParsedPage, base_hostname: str) -> List[Link]:
 
 
 def same_site_targets(links: List[Link]) -> List[str]:
-    """Deduped list of URLs from `links` worth adding to the crawl frontier."""
+    """URLs worth adding to the crawl queue."""
     seen: set = set()
     targets: List[str] = []
     for link in links:
@@ -100,7 +92,7 @@ def _resolve(base_url: str, href: str) -> str | None:
 
 
 def _hostname_matches(candidate: str | None, base_hostname: str) -> bool:
-    """Treats www./bare-domain as the same site (mirrors models.website.hostname_of)."""
+    """www. and the bare domain count as the same site."""
     if not candidate:
         return False
     candidate = candidate.lower().removeprefix("www.")

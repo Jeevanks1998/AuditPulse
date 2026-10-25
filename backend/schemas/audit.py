@@ -1,13 +1,5 @@
 """
-schemas/audit.py
-
-Request/response models for api/audit.py: starting a run, polling its
-progress, and reading back a result. `AuditOut` is also reused as the
-list-item shape for dashboard "recent audits" (api/dashboard.py),
-history pagination (api/history.py), the schedule "run now" response
-(api/scheduler.py), and the audit list embedded in a settings export
-(api/settings.py) — one canonical serialization of an Audit row for
-every router that needs it.
+Request/response models for audits. AuditOut is the shared shape for an audit in every list.
 """
 
 import os
@@ -21,8 +13,7 @@ from config.constants import DEFAULT_MAX_PAGES, MAX_PAGES_LIMIT, MIN_PAGES_LIMIT
 
 
 def normalize_audit_url(v: str) -> str:
-    """Shared by one-off audits and schedules: add https://, require a host,
-    and only allow public websites (SSRF protection — utils/net_guard.py)."""
+    """Used by audits and schedules: adds https://, needs a host, public sites only (SSRF protection)."""
     v = (v or "").strip()
     if not v or len(v) > 500:
         raise ValueError("Please provide a valid website URL.")
@@ -42,15 +33,9 @@ class AuditCreate(BaseModel):
     url: str
     depth: str = Field(default="homepage", pattern="^(homepage|full)$")
     max_pages: int = Field(default=DEFAULT_MAX_PAGES, ge=MIN_PAGES_LIMIT, le=MAX_PAGES_LIMIT)
-    # validate_default=True closes a gap where Pydantic v2 normally skips
-    # validating a field's *default* value: without it, sending no
-    # "modules" key at all silently fell back to `[]` and bypassed the
-    # min_length=1 check that an explicit `"modules": []` correctly
-    # triggers — producing a "successful" audit that silently skipped
-    # consent/analytics/AI scoring. Now both paths raise the same error.
+    # validate_default=True so a missing "modules" key fails the same as an empty list.
     modules: List[str] = Field(default_factory=list, min_length=1, validate_default=True)
-    # "auto" (or empty) = detect from the site. Otherwise the privacy region
-    # whose rules this audit assesses — see consent/region.py.
+    # "auto" or empty = detect from the site; otherwise the region whose rules apply.
     target_region: Optional[str] = None
 
     @field_validator("target_region")
@@ -98,34 +83,23 @@ class AuditProgressOut(BaseModel):
 
 
 class ConsentOut(BaseModel):
-    """Result of the consent-module scan (services.audit_service._write_consent_result)."""
+    """Consent results."""
 
     has_cookie_banner: bool
     banner_blocks_scripts_pre_consent: bool
     gdpr_compliant: bool
-    # Per-check breakdown behind gdpr_compliant — see
-    # consent.consent_score.GDPR_CHECK_ORDER for the ten keys and their
-    # order. Each value is True/False/None ("not evaluated"). Empty on
-    # audits written before this field existed.
+    # GDPR check -> True / False / None (not tested). Empty for older audits.
     gdpr_checks: Dict[str, Optional[bool]] = Field(default_factory=dict)
-    # Structured evidence for whichever gdpr_checks entries have it — sparse,
-    # keyed the same as gdpr_checks. See consent.consent_score.GdprCheck
-    # .evidence / models.consent.Consent.gdpr_check_evidence. Shape per
-    # entry: {"summary": str, "items": [str, ...], "items_label": str}.
+    # Evidence per GDPR check: {"summary", "items", "items_label"}.
     gdpr_check_evidence: Dict[str, dict] = Field(default_factory=dict)
     ccpa_compliant: bool
-    # Per-check breakdown behind ccpa_compliant — see
-    # consent.consent_score.CCPA_CHECK_ORDER for the six keys and their
-    # order. Each value is True/False/None ("not evaluated"). Empty on
-    # audits written before this field existed.
+    # CCPA check -> True / False / None (not tested). Empty for older audits.
     ccpa_checks: Dict[str, Optional[bool]] = Field(default_factory=dict)
-    # Region + applicable frameworks (consent.region). Empty on
-    # audits written before Phase 1 — the frontend then shows its legacy view.
+    # Region and laws assessed. Empty for older audits (the frontend shows the older view).
     applicability: Dict[str, Any] = Field(default_factory=dict)
-    # Framework-neutral technical consent scan (banner, control inventory,
-    # technical checks, classified network/cookie evidence).
+    # Law-neutral scan: banner, buttons, checks and evidence.
     technical_scan: Dict[str, Any] = Field(default_factory=dict)
-    # Region engine output + consent-control inventory (Phase 2 columns).
+    # Detected region and banner buttons.
     detected_region: str = "UNKNOWN"
     region_confidence: str = "low"
     region_evidence: List[str] = Field(default_factory=list)
@@ -142,12 +116,7 @@ class ConsentOut(BaseModel):
     reject_screenshot_path: Optional[str] = Field(default=None, exclude=True)
     accept_screenshot_path: Optional[str] = Field(default=None, exclude=True)
 
-    # consent.runtime's click-through verdicts — runtime_tested gates
-    # whether the frontend should show reject_blocks_tracking /
-    # accept_allows_tracking / personalize_exposes_controls as real
-    # pass/fail results rather than "not tested" (see report.js's
-    # renderConsent, which checks consent.runtimeTested before rendering
-    # those three check items).
+    # runtime_tested: show Accept/Reject results as real pass/fail instead of "not tested".
     runtime_available: bool = False
     runtime_tested: bool = False
     runtime_result: Optional[dict] = None
@@ -157,31 +126,25 @@ class ConsentOut(BaseModel):
     @computed_field  # type: ignore[misc]
     @property
     def banner_screenshot_url(self) -> Optional[str]:
-        """
-        `/screenshots/<file>.png` — served by the StaticFiles mount in
-        main.py. None when Playwright wasn't installed, capture was
-        disabled, or the capture failed (no banner found / site
-        unreachable) — the frontend should render a "no screenshot
-        available" state rather than a broken <img> in that case.
-        """
+        """`/screenshots/<file>.png`, or None when there's no screenshot."""
         return _screenshot_url(self.banner_screenshot_path)
 
     @computed_field  # type: ignore[misc]
     @property
     def preferences_screenshot_url(self) -> Optional[str]:
-        """Screenshot of the Personalize/Manage Preferences panel, if the runtime pass found and opened one."""
+        """Settings panel screenshot, if it was opened."""
         return _screenshot_url(self.preferences_screenshot_path)
 
     @computed_field  # type: ignore[misc]
     @property
     def reject_screenshot_url(self) -> Optional[str]:
-        """Screenshot taken right after the runtime pass clicked Reject, if it found a reject button."""
+        """Screenshot after Reject, if Reject was found."""
         return _screenshot_url(self.reject_screenshot_path)
 
     @computed_field  # type: ignore[misc]
     @property
     def accept_screenshot_url(self) -> Optional[str]:
-        """Screenshot taken right after the runtime pass clicked Accept (separate clean browser context)."""
+        """Screenshot after Accept."""
         return _screenshot_url(self.accept_screenshot_path)
 
     @field_validator("applicability", "technical_scan", "gdpr_checks", "gdpr_check_evidence", "ccpa_checks",
@@ -214,14 +177,8 @@ class ConsentOut(BaseModel):
     @computed_field  # type: ignore[misc]
     @property
     def report_view(self) -> Optional[Dict[str, Any]]:
-        """
-        Phase 4: the one consent presentation model (reports.consent_view)
-        that the dashboard, report page, PDF, JSON export and evidence ZIP
-        all render from — tiles, frameworks (assessed / not assessed),
-        control inventory, classified network + cookie evidence, the four
-        screenshot slots and the scan pipeline.
-        """
-        from reports.consent_view import build_consent_view  # local: avoids an import cycle
+        """The shared consent view (see reports.consent_view)."""
+        from reports.consent_view import build_consent_view  # local import avoids a cycle
 
         data = {
             "has_cookie_banner": self.has_cookie_banner,
@@ -252,26 +209,17 @@ def _screenshot_url(path: Optional[str]) -> Optional[str]:
 
 
 class AnalyticsOut(BaseModel):
-    """Result of the analytics-module scan (services.audit_service._run_analytics_checks)."""
+    """Analytics results."""
 
     trackers_detected: List[str] = Field(default_factory=list)
     tag_manager_detected: bool
     gtm_container_id: Optional[str] = None
     ga_measurement_id: Optional[str] = None
 
-    # Actual detected configuration per vendor ({vendor_key: [ids]}) —
-    # covers Adobe, Piano, Clarity, Hotjar, Meta Pixel, LinkedIn, TikTok,
-    # plus the full GA4/GTM ID lists. Only keys for vendors that were
-    # actually detected are present; a vendor detected with no
-    # extractable ID is present with an empty list, never omitted in
-    # favor of a placeholder. See analytics.analytics_score.VENDOR_ID_ATTR
-    # / TRACKER_DISPLAY_NAMES for the key -> display-name mapping.
+    # IDs per detected tool ({"ga4": [...]}). Only detected tools appear.
     vendor_configs: Dict[str, List[str]] = Field(default_factory=dict)
 
-    # Phase 2 — full-site analytics. Empty defaults on a homepage-only
-    # audit; populated when the audit's depth was "full". See
-    # analytics.analytics_score.PageAnalyticsResult / compute_site_coverage
-    # / check_cross_page_consistency for what builds each of these.
+    # Full-site results; empty for homepage audits.
     page_results: List[dict] = Field(default_factory=list)
     site_coverage: Dict[str, int] = Field(default_factory=dict)
     cross_page_findings: List[dict] = Field(default_factory=list)
@@ -281,10 +229,7 @@ class AnalyticsOut(BaseModel):
     custom_events_found: int
     analytics_score: int
 
-    # analytics.runtime's live Page View/Scroll/Click verdicts, per vendor
-    # — see AnalyticsRuntimeResult.vendors. runtime_tested gates whether
-    # the frontend's per-vendor table should render real pass/fail state
-    # or a "not tested" placeholder.
+    # runtime_tested: show the per-tool table as real results instead of "not tested".
     runtime_available: bool = False
     runtime_tested: bool = False
     runtime_result: Optional[dict] = None
@@ -301,7 +246,7 @@ class AuditStatsOut(BaseModel):
 
 
 class JourneyOut(BaseModel):
-    """Result of the Customer Journey scan (journey/ — services.audit_service._run_journey_checks)."""
+    """Journey Map results."""
 
     available: bool = False
     error: Optional[str] = None
@@ -335,8 +280,8 @@ class JourneyOut(BaseModel):
     @computed_field  # type: ignore[misc]
     @property
     def report_view(self) -> Optional[Dict[str, Any]]:
-        """The one journey presentation model (reports.journey_view) every surface renders."""
-        from reports.journey_view import build_journey_view  # local: avoids an import cycle
+        """The shared Journey Map view (see reports.journey_view)."""
+        from reports.journey_view import build_journey_view  # local import avoids a cycle
 
         return build_journey_view({
             "available": self.available, "error": self.error, "scan_id": self.scan_id,

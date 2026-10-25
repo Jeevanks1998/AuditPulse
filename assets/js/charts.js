@@ -1,8 +1,4 @@
-/* ==========================================================================
-   charts.js — thin wrapper around Chart.js so page scripts don't repeat
-   the same options blocks. Requires Chart.js (loaded via CDN) to be
-   present on the page before this file runs.
-   ========================================================================== */
+/* Small Chart.js wrapper (Chart.js must be loaded first). */
 
 window.Charts = (function () {
 
@@ -15,7 +11,7 @@ window.Charts = (function () {
     }
   }
 
-  // Radar comparison chart used on report.html (#radarChart)
+  // Radar chart
   function renderRadar(canvasId, labels, values, opts) {
     if (!window.Chart) return null;
     var canvas = document.getElementById(canvasId);
@@ -47,7 +43,7 @@ window.Charts = (function () {
     return instances[canvasId];
   }
 
-  // Simple line/trend chart, reusable if a page adds a <canvas> for it later
+  // Line chart
   function renderTrendLine(canvasId, labels, values, opts) {
     if (!window.Chart) return null;
     var canvas = document.getElementById(canvasId);
@@ -83,7 +79,7 @@ window.Charts = (function () {
     return instances[canvasId];
   }
 
-  // Doughnut chart for severity distribution, reusable if a page adds a <canvas> for it
+  // Severity doughnut
   function renderSeverityDoughnut(canvasId, counts, opts) {
     if (!window.Chart) return null;
     var canvas = document.getElementById(canvasId);

@@ -1,51 +1,18 @@
 """
-consent/runtime.py
+Live consent check in a real browser: find the cookie banner, list its
+buttons, click them, and record cookies and requests afterwards.
 
-The live *behavioral* half of consent/: loads the site in a real
-browser, finds the rendered consent banner, inventories its controls,
-clicks them, and re-observes cookies + network traffic afterwards.
+The banner is found first (CMP selector, cookie dialog, CMP iframe, or the
+smallest element about cookies that holds a consent button, including
+iframes and shadow DOM). Only buttons inside it are ever clicked, so an
+unrelated "Continue" or "OK" is never mistaken for Accept or Reject.
 
-Flow (banner-first, evidence-based):
-
-    detect banner
-          ↓
-    locate banner/container (CMP selector, ARIA dialog, CMP iframe, or
-    the smallest element that talks about cookies/consent and holds a
-    consent control — searched across iframes and open shadow roots)
-          ↓
-    find controls inside that container only
-          ↓
-    build the control inventory   ← single source of truth:
-        banner_detected
-        controls:
-          - label     (exact visible text)
-          - action    (accept_all / reject_non_essential / …)
-          - selector
-          - frame
-          - visible
-          - clickable
-          ↓
-    click only detected controls
-
-Unlike the old version, nothing is found by regex-matching every link
-and button on the page: an unrelated "Continue" button, a "Settings"
-nav link or an "OK" in a newsletter popup can no longer be clicked as
-Accept/Manage/Reject.
-
-Three clean browser contexts are used so no leg contaminates another:
-
-    reject leg   — before-consent capture, initial screenshot, click
-                   Reject (first layer; if absent, open Manage and look
-                   for Reject on the second layer), capture after
-    accept leg   — fresh context, click Accept, capture after
-    manage leg   — fresh context, click Manage/Personalize, inventory the
-                   preference panel (skipped if the reject leg already
-                   opened it)
-
-Same degrade-gracefully contract as the rest of consent/: any Playwright
-failure yields available=False / <state>.available=False on the affected
-leg rather than raising, and a leg that couldn't run is "not tested",
-never a pass.
+Each test runs in a fresh, empty browser:
+  reject - before-consent capture, screenshot, click Reject (or open
+           Settings to find it), capture after
+  accept - click Accept, capture after
+  manage - open Settings and record the panel (if not already done)
+A test that can't run is "not tested", never a pass.
 """
 
 from __future__ import annotations
@@ -86,14 +53,13 @@ from config.browser import launch_chromium
 MODULE = "consent"
 CATEGORY = "runtime"
 
-SETTLE_MS = 1_500          # idle window after page load to catch deferred trackers
-CLICK_SETTLE_MS = 2_500    # idle window after a button click to catch anything it triggers
-BANNER_RENDER_MS = 1_500   # minimum wait for a client-side-rendered banner
-BANNER_MAX_WAIT_MS = 8_000  # keep polling for a late CMP up to this long
+SETTLE_MS = 1_500          # wait after load for delayed requests
+CLICK_SETTLE_MS = 2_500    # wait after a click for what it triggers
+BANNER_RENDER_MS = 1_500   # minimum wait for a banner drawn by JavaScript
+BANNER_MAX_WAIT_MS = 8_000  # keep checking for a late banner up to this long
 BANNER_POLL_MS = 500
 
-# Known CMP iframe hosts: if a frame comes from one of these, its whole
-# document is the consent UI (Sourcepoint, TrustArc, Quantcast, Funding Choices…).
+# Frames from these hosts are the consent window itself (Sourcepoint, TrustArc, ...).
 _CMP_FRAME_HOSTS = (
     "privacy-mgmt.com", "sourcepoint.com", "consent.trustarc.com", "trustarc.com",
     "consensu.org", "quantcast.com", "fundingchoicesmessages.google.com", "cookiebot.com",
@@ -104,10 +70,9 @@ CONTAINER_HANDLE = "__container__"
 
 _VIA_SCORE = {"cmp_selector": 6, "cmp_iframe": 5, "aria_dialog": 4, "text_heuristic": 0}
 
-# Runs inside each frame. Finds candidate consent containers and the
-# clickable controls inside each one, tagging every control with a
-# data-auditpulse-ctl attribute so Python can click exactly that element.
-# Open shadow roots are traversed (Usercentrics and others render there).
+# Runs in each frame: finds possible banners and the buttons inside them,
+# marking each button so Python can click exactly that one. Looks inside
+# shadow DOM too (Usercentrics).
 _INVENTORY_JS = r"""
 (args) => {
   const { selectors, consentText, maxText, isCmpFrame } = args;
@@ -242,11 +207,10 @@ _INVENTORY_JS = r"""
 class CookieSnapshot:
     name: str
     domain: str
-    category: str  # cookies.categories.{ESSENTIAL,FUNCTIONAL,ANALYTICS,MARKETING,CONSENT_MANAGEMENT,UNKNOWN}
+    category: str  # essential / functional / analytics / marketing / consent_management / unknown
     purpose: str = "unknown"
     vendor: Optional[str] = None
-    # Full browser-cookie detail for the Cookie Scanner inventory
-    # (reports.cookie_view). Defaults keep older stored results loadable.
+    # Full cookie details for the Cookie Scanner. Defaults keep older saved results loadable.
     path: str = "/"
     expires: Optional[float] = None   # epoch seconds; None = session cookie
     secure: bool = False
@@ -257,36 +221,35 @@ class CookieSnapshot:
 
 @dataclass
 class ConsentStateCapture:
-    """Everything observed at one point in the runtime flow (before / after-reject / after-accept)."""
+    """What was seen at one point: before consent, after Reject or after Accept."""
 
     available: bool = False
     cookies: List[CookieSnapshot] = field(default_factory=list)
     requests: List[NetworkRequest] = field(default_factory=list)
     error: Optional[str] = None
-    page_url: Optional[str] = None   # the page open when this state was captured
-    # localStorage / sessionStorage keys at capture time (evidence that the
-    # context started empty and what the page/CMP wrote).
+    page_url: Optional[str] = None   # page open at capture time
+    # localStorage / sessionStorage keys at capture time.
     local_storage_keys: List[str] = field(default_factory=list)
     session_storage_keys: List[str] = field(default_factory=list)
 
     @property
     def tracker_requests(self) -> List[NetworkRequest]:
-        """Confirmed tracking activity only (analytics/advertising collection hits)."""
+        """Real tracking hits only."""
         return [r for r in self.requests if r.is_tracking]
 
     @property
     def vendor_requests(self) -> List[NetworkRequest]:
-        """Any request to a recognized analytics/advertising/tag-manager vendor (loaders included)."""
+        """Any request to a known tracking vendor (loaders included)."""
         return [r for r in self.requests if r.tracker_name]
 
     @property
     def consent_required_cookies(self) -> List[CookieSnapshot]:
-        """Analytics + marketing cookies — the only ones whose presence is evidence of a failure."""
+        """Analytics + marketing cookies: the only ones that count as a failure."""
         return [c for c in self.cookies if requires_consent(c.category)]
 
     @property
     def non_essential_cookies(self) -> List[CookieSnapshot]:
-        """Back-compat alias. Unknown / consent-management / functional cookies are NOT included."""
+        """Older name. Doesn't include unknown, consent-tool or functional cookies."""
         return self.consent_required_cookies
 
     @property
@@ -304,21 +267,20 @@ class ConsentStateCapture:
 
 @dataclass
 class BannerInventory:
-    """The rendered consent banner and its controls — consent buttons' single source of truth."""
+    """The rendered banner and its buttons."""
     banner_detected: bool = False
     detected_via: Optional[str] = None   # cmp_selector | aria_dialog | cmp_iframe | text_heuristic
-    container: Optional[str] = None       # selector / id / class of the container
+    container: Optional[str] = None       # selector / id / class of the banner
     frame: str = "main"
     text_excerpt: str = ""
     is_overlay: bool = False              # position fixed/sticky
-    toggle_count: int = 0                 # category checkboxes/switches inside
+    toggle_count: int = 0                 # category switches inside
     controls: List[ConsentControl] = field(default_factory=list)
-    # Selector that re-locates exactly the detected container element (used to
-    # clip screenshots to the real banner, CMP-agnostic). Not serialized.
+    # Selector for the banner element, used to crop screenshots. Not saved.
     element_selector: Optional[str] = None
 
     def first(self, order) -> Optional[ConsentControl]:
-        """First control matching the action preference order, visible/clickable ones first."""
+        """First button matching the preferred actions, visible ones first."""
         for action in order:
             matches = [c for c in self.controls if c.action == action]
             matches.sort(key=lambda c: (not c.clickable, not c.visible))
@@ -340,22 +302,18 @@ class ConsentRuntimeResult:
     available: bool = False
     error: Optional[str] = None
 
-    # The rendered-banner inventory (first layer) and, when the preference
-    # panel was opened, its controls (layer 2). These are the single source
-    # of truth for every flag below.
+    # Buttons on the banner (layer 1) and, if opened, the settings panel (layer 2).
     banner: Optional[dict] = None
     controls: List[ConsentControl] = field(default_factory=list)
     preference_panel: Optional[dict] = None
     preference_controls: List[ConsentControl] = field(default_factory=list)
 
     accept_button_found: bool = False
-    reject_button_found: bool = False      # on any layer — see reject_layer
+    reject_button_found: bool = False      # on any layer (see reject_layer)
     manage_button_found: bool = False
-    reject_layer: Optional[int] = None     # 1 = first banner layer, 2 = only in the preference panel
+    reject_layer: Optional[int] = None     # 1 = banner, 2 = settings panel only
 
-    # Authoritative "the live browser saw a consent banner" signal. False
-    # means "not seen" — including when the pass didn't run — and must
-    # never be used to *disprove* a banner the static scan found.
+    # The browser saw a banner. False only means "not seen"; it never disproves the static check.
     banner_detected: bool = False
 
     accept_clicked: bool = False
@@ -367,17 +325,13 @@ class ConsentRuntimeResult:
 
     before_consent: ConsentStateCapture = field(default_factory=ConsentStateCapture)
     after_reject: ConsentStateCapture = field(default_factory=ConsentStateCapture)
-    # The next page view after Reject (page reloaded with the reject choice
-    # stored). Most tags fire on page load, so a reject that only stops the
-    # current page's banner but lets the next page track is caught here.
+    # The next page after Reject: catches tracking that comes back on the next page view.
     after_reject_reload: ConsentStateCapture = field(default_factory=ConsentStateCapture)
-    # Leg 2's own initial state (fresh context, before Accept) — the
-    # baseline the after-accept capture is compared against.
+    # Accept test's starting state, compared with after Accept.
     before_accept: ConsentStateCapture = field(default_factory=ConsentStateCapture)
     after_accept: ConsentStateCapture = field(default_factory=ConsentStateCapture)
 
-    # Fresh-scan bookkeeping: unique per run, used in screenshot filenames
-    # so no earlier scan's evidence is ever reused or overwritten.
+    # Unique per run, used in screenshot file names so old evidence is never reused.
     scan_id: Optional[str] = None
     fresh_contexts: int = 0
     leg_log: List[str] = field(default_factory=list)
@@ -387,27 +341,24 @@ class ConsentRuntimeResult:
     reject_screenshot: Optional[str] = None
     accept_screenshot: Optional[str] = None
 
-    # Verdicts — None means "not tested" and must never be treated as a pass.
+    # Results: None means "not tested", never a pass.
     reject_blocks_tracking: Optional[bool] = None
-    # Consent withdrawal, verified live: after Accept (banner gone), a control
-    # on the page that re-opens the cookie settings — and whether it did.
+    # After Accept: a control that re-opens the cookie settings, and whether it worked.
     withdrawal_control_label: Optional[str] = None
     withdrawal_reopens: Optional[bool] = None
     accept_allows_tracking: Optional[bool] = None
     personalize_exposes_controls: Optional[bool] = None
 
-    # JSON-friendly per-category request summaries for the report.
+    # Request summaries per category for the report.
     network_summary: Dict[str, dict] = field(default_factory=dict)
 
-    # Cookie Scanner: after Accept, the same browser (consent given) visits
-    # other pages of the site; each entry is {url, cookies_set: [...]} with
-    # the cookies that first appeared on that page (reports.cookie_view).
+    # Cookie Scanner: after Accept, other pages visited with consent given: {url, cookies_set}.
     site_pages: List[dict] = field(default_factory=list)
 
     tested_at: Optional[str] = None
 
     def buttons_detection(self) -> ButtonsDetection:
-        """The rendered inventory expressed as a ButtonsDetection (source='runtime')."""
+        """The rendered buttons as a ButtonsDetection."""
         banner = self.banner or {}
         return ButtonsDetection.from_controls(
             self.controls + self.preference_controls,
@@ -418,9 +369,7 @@ class ConsentRuntimeResult:
         )
 
 
-# ---------------------------------------------------------------------------
-# Inventory
-# ---------------------------------------------------------------------------
+# Banner inventory
 
 def _is_cmp_frame(url: str) -> bool:
     host = (urlparse(url).hostname or "").lower()
@@ -430,11 +379,7 @@ def _is_cmp_frame(url: str) -> bool:
 async def inventory_banner(
     page, layer: int = 1, avoid_container: Optional[str] = None,
 ) -> Tuple[BannerInventory, Dict[str, object]]:
-    """
-    Scans every frame of `page` for a consent container and returns
-    (inventory, handles) where handles maps a control's selector to the
-    frame it lives in, so `_click_control` can click exactly that element.
-    """
+    """Scans every frame for the banner. Returns (inventory, handles) so the exact button can be clicked."""
     best: Optional[Tuple[int, dict, object, str]] = None
     main = page.main_frame
     for frame in list(page.frames):
@@ -454,9 +399,7 @@ async def inventory_banner(
             n_reject = sum(1 for a in actions if a in REJECT_ACTIONS)
             n_manage = sum(1 for a in actions if a in MANAGE_ACTIONS or a == SAVE_PREFERENCES)
             via = cand.get("via")
-            # A text-heuristic container must actually hold an accept/reject
-            # control; selector/dialog/CMP-iframe containers are banners on
-            # their own merit even if their wording isn't recognized.
+            # A text-matched element must hold Accept or Reject; selector/dialog/iframe matches count on their own.
             if via == "text_heuristic" and not (n_accept or n_reject):
                 continue
             if via != "text_heuristic" and not (n_accept or n_reject or n_manage) and not cand.get("controls"):
@@ -465,8 +408,7 @@ async def inventory_banner(
                 + (2 if cand.get("fixed") else 0) - min(cand.get("textLen", 0), 4000) // 1000
             frame_label = "main" if frame is main else frame_url
             if layer == 2:
-                # Preference panel: favour the container that exposes category
-                # toggles, and the one that is *not* the first-layer banner.
+                # Settings panel: prefer the element with category switches that isn't the banner itself.
                 score += min(int(cand.get("toggles") or 0), 10) * 2
                 if avoid_container and avoid_container in (cand.get("hint"), cand.get("describe")):
                     score -= 15
@@ -515,7 +457,7 @@ async def inventory_banner(
 
 
 async def _wait_for_banner(page) -> Tuple[BannerInventory, Dict[str, object]]:
-    """Polls for a (possibly late, client-rendered) banner up to BANNER_MAX_WAIT_MS."""
+    """Waits for a (possibly late) banner, up to BANNER_MAX_WAIT_MS."""
     await page.wait_for_timeout(BANNER_RENDER_MS)
     waited = BANNER_RENDER_MS
     inv, handles = await inventory_banner(page)
@@ -528,7 +470,7 @@ async def _wait_for_banner(page) -> Tuple[BannerInventory, Dict[str, object]]:
 
 
 async def _click_control(page, handles: Dict[str, object], control: ConsentControl, layer: int = 1) -> bool:
-    """Clicks exactly the inventoried control. Re-inventories once if the DOM re-rendered."""
+    """Clicks exactly the listed button; re-scans once if the page re-rendered."""
     for attempt in range(2):
         frame = handles.get(control.selector) if control.selector else None
         if frame is not None:
@@ -551,29 +493,16 @@ async def _click_control(page, handles: Dict[str, object], control: ConsentContr
     return False
 
 
-# ---------------------------------------------------------------------------
-# Flow
-# ---------------------------------------------------------------------------
+# Main flow
 
 async def run_consent_runtime(url: str, scan_id: Optional[str] = None,
                               browse_urls: Optional[List[str]] = None) -> ConsentRuntimeResult:
-    """
-    A fresh, dynamic consent scan. Nothing is reused from any earlier scan:
-    every leg opens a brand-new browser context (no cookies, no local/session
-    storage, no cache, no service workers), records its own network traffic,
-    re-detects the banner and re-builds the control inventory, and writes
-    screenshots under this run's unique `scan_id`.
-
-        Leg 1  fresh context → load → wait for banner → detect banner →
-               screenshot → cookies → network → detect controls →
-               Manage/Personalize if present → verify panel → screenshot →
-               Reject if present → cookies/network → screenshot
-        Leg 2  fresh context → load → initial state → detect Accept →
-               click the detected Accept → cookies/network → screenshot
-
-    Nothing is assumed to exist: if the banner only offers "Continue without
-    accepting", that control is recorded (action reject_non_essential) and
-    used as the reject action; a missing Accept is reported, not invented.
+    """Fresh consent check: every test uses a new, empty browser and its own
+    screenshots (named with scan_id).
+      Test 1: load, banner, screenshot, cookies, requests, buttons; open Settings
+              if present; click Reject; capture; screenshot.
+      Test 2: load, click Accept, capture, screenshot.
+    Nothing is assumed: a missing Accept is reported, not invented.
     """
     try:
         from playwright.async_api import async_playwright
@@ -622,7 +551,7 @@ def new_scan_id() -> str:
 
 
 async def _fresh_context(browser, result: ConsentRuntimeResult):
-    """A brand-new, isolated context: empty cookie jar, storage and cache."""
+    """New isolated browser context: no cookies, storage or cache."""
     context = await browser.new_context(
         viewport=DEFAULT_VIEWPORT,
         storage_state=None,
@@ -641,7 +570,7 @@ def _record_inventory(result: ConsentRuntimeResult, inv: BannerInventory) -> Non
 
 async def _open_preferences(page, handles, inv: BannerInventory, result: ConsentRuntimeResult, url: str,
                             leg: int = 1):
-    """Click the detected Manage/Personalize control and verify a preference panel actually appeared."""
+    """Clicks Settings and checks a preference panel really appeared."""
     manage = inv.first(tuple(MANAGE_ACTIONS))
     if manage is None:
         return None, {}
@@ -655,7 +584,7 @@ async def _open_preferences(page, handles, inv: BannerInventory, result: Consent
     if (panel.banner_detected and panel.container == inv.container and panel.frame == inv.frame
             and panel.toggle_count == 0
             and [(c.label, c.action) for c in panel.controls] == [(c.label, c.action) for c in inv.controls]):
-        # Same banner, unchanged, no category toggles: the click opened nothing.
+        # Same banner, no category switches: the click opened nothing.
         panel = BannerInventory(banner_detected=False)
         panel_handles = {}
     result.preference_panel = panel.as_dict()
@@ -706,16 +635,12 @@ async def _run_leg_one(browser, url: str, hostname: str, result: ConsentRuntimeR
         first_layer_reject = inv.first(REJECT_CLICK_ORDER)
         result.reject_layer = 1 if first_layer_reject else None
 
-        # Test the reject a visitor actually sees: the first-layer control when
-        # the banner has one. Only when it doesn't is the preference panel
-        # opened here to reach a reject inside it (the panel itself is tested
-        # in leg 2 otherwise).
+        # Test the Reject visitors see: the banner's own when there is one; otherwise open Settings to find it.
         panel, panel_handles = (None, {})
         if first_layer_reject is None:
             panel, panel_handles = await _open_preferences(page, handles, inv, result, url)
 
-        # Reject: prefer the reject control that is on screen now (preference
-        # panel if it opened, otherwise the first layer); never invent one.
+        # Use the Reject on screen now; never invent one.
         reject, reject_handles, layer = None, handles, 1
         if first_layer_reject is not None:
             reject, reject_handles, layer = first_layer_reject, handles, 1
@@ -727,8 +652,7 @@ async def _run_leg_one(browser, url: str, hostname: str, result: ConsentRuntimeR
             reject = current.first(REJECT_CLICK_ORDER) if current.banner_detected else None
             reject_handles, layer = current_handles, 1
         if reject is None and first_layer_reject is not None and result.manage_clicked:
-            # The panel replaced the first layer and offers no reject: reload in
-            # the *same* leg is not clean, so record it as not reachable here.
+            # The panel replaced the banner and has no Reject: record it as not reachable.
             result.leg_log.append("leg 1: first-layer reject not reachable after opening preferences")
         if result.reject_layer is None and reject is not None:
             result.reject_layer = 2
@@ -750,8 +674,7 @@ async def _run_leg_one(browser, url: str, hostname: str, result: ConsentRuntimeR
         result.reject_screenshot = await _capture(page, url, "consent_reject", result.scan_id)
         result.leg_log.append(f"leg 1: clicked '{reject.label}' ({reject.action})")
 
-        # The next page view, with the reject choice stored: tags that fire on
-        # page load would not show up in the few seconds after the click.
+        # Load the next page with Reject stored: tags that fire on page load show up here.
         mark = len(sink)
         try:
             await page.reload(wait_until="load", timeout=NAVIGATION_TIMEOUT_MS)
@@ -766,9 +689,7 @@ async def _run_leg_one(browser, url: str, hostname: str, result: ConsentRuntimeR
         await context.close()
 
 
-# Candidates for "change my cookie choice later": every link/button on the
-# page (the banner is gone after Accept), with its label and whether it would
-# navigate away. Classified in Python with the same rules as banner buttons.
+# Every link/button on the page after Accept, to find a "change my cookie choice" control.
 _WITHDRAWAL_CANDIDATES_JS = r"""
 () => {
   const TRIGGER = /ot-sdk-btn|ot-sdk-show-settings|optanon-show-settings|CookiebotWidget|cky-btn-revisit|osano-cm-widget|qc-cmp2-toggle-link|iubenda-cs-preferences-link|cmplz-manage|didomi.*preferences|tc_privacy_center|privacy-center|uc-privacy-button|cookie-?settings|cookie-?preferences/i;
@@ -790,8 +711,7 @@ _WITHDRAWAL_CANDIDATES_JS = r"""
 
 
 async def _check_withdrawal(page, result: ConsentRuntimeResult) -> None:
-    """After Accept: find a control that re-opens the cookie settings and
-    click it; withdrawal is verified when a consent banner/panel appears."""
+    """After Accept: click a control that re-opens cookie settings; verified if a banner/panel appears."""
     from consent.buttons import MANAGE_PREFERENCES, classify_label
     from consent.preferences import _LINK_TEXT_RE
 
@@ -799,7 +719,7 @@ async def _check_withdrawal(page, result: ConsentRuntimeResult) -> None:
 
     def score(c):
         if c.get("navigates"):
-            return 0                     # a link to the cookie *policy* page is not a way to withdraw
+            return 0                     # a link to the cookie policy page doesn't withdraw consent
         lbl = c.get("label") or ""
         if c.get("trigger"):
             return 3
@@ -845,8 +765,7 @@ async def _run_leg_two(browser, url: str, hostname: str, result: ConsentRuntimeR
         _record_inventory(result, inv)
         result.before_accept = await _state(context, page, sink)
 
-        # The preference panel, when leg 1 didn't need it: open it, record it,
-        # then reload (no choice was made) so Accept is tested from the banner.
+        # Open the settings panel if test 1 didn't, then reload so Accept is tested from the banner.
         if inv.banner_detected and not result.manage_clicked and inv.first(tuple(MANAGE_ACTIONS)):
             panel, _ = await _open_preferences(page, handles, inv, result, url, leg=2)
             if panel is not None and panel.banner_detected and result.reject_layer is None:
@@ -859,8 +778,7 @@ async def _run_leg_two(browser, url: str, hostname: str, result: ConsentRuntimeR
                 result.leg_log.append(f"leg 2: reload after preferences failed: {str(exc)[:120]}")
                 inv, handles = BannerInventory(banner_detected=False), {}
             if not (inv.banner_detected and inv.first(ACCEPT_CLICK_ORDER)):
-                # The panel visit stored something and the banner didn't return:
-                # test Accept in a fresh context instead.
+                # Banner didn't come back after the panel visit: test Accept in a fresh browser.
                 await context.close()
                 context = await _fresh_context(browser, result)
                 page = await context.new_page()
@@ -890,8 +808,7 @@ async def _run_leg_two(browser, url: str, hostname: str, result: ConsentRuntimeR
         result.after_accept = await _state(context, page, sink[mark:])
         result.accept_screenshot = await _capture(page, url, "consent_accept", result.scan_id)
         result.leg_log.append(f"leg 2: fresh context, clicked '{accept.label}' ({accept.action})")
-        # Tags that fire late (timers, scroll triggers, A/B tools) set cookies
-        # after the first capture: scroll, wait, and take the full jar again.
+        # Late tags set cookies after the first capture: scroll, wait, capture again.
         try:
             await _scroll_and_settle(page)
             later = await _snapshot_cookies(context)
@@ -915,14 +832,12 @@ async def _run_leg_two(browser, url: str, hostname: str, result: ConsentRuntimeR
 BROWSE_PAGE_SETTLE_MS = 1_500
 BROWSE_SCROLL_SETTLE_MS = 1_500
 BROWSE_NAV_TIMEOUT_MS = 20_000
-# Enough for ~15 pages (each ~8-12 s). audit_service adds this to the consent
-# module's hard timeout when the sweep runs, so the sweep never costs the
-# homepage evidence.
+# About 15 pages (8-12 s each). The consent module gets this much extra time while browsing.
 BROWSE_BUDGET_S = 210
 
 
 async def _scroll_and_settle(page, settle_ms: int = 3_000) -> None:
-    """Scroll through the page (lazy/scroll-triggered tags) and wait for late timers."""
+    """Scrolls through the page and waits, to catch late tags."""
     try:
         await page.evaluate(
             "async () => { const h = document.body ? document.body.scrollHeight : 0;"
@@ -934,7 +849,7 @@ async def _scroll_and_settle(page, settle_ms: int = 3_000) -> None:
 
 
 async def _browse_for_cookies(context, page, urls: List[str], result: ConsentRuntimeResult) -> None:
-    """Visit other pages with consent given; record the cookies each page adds."""
+    """Visits other pages with consent given and records the cookies each adds."""
     import time as _time
 
     seen = {(c.name, c.domain, c.path) for c in result.after_accept.cookies}
@@ -1009,15 +924,12 @@ async def _snapshot_cookies(context) -> List[CookieSnapshot]:
 
 
 async def _capture(page, url: str, hint: str, scan_id: Optional[str] = None, element=None) -> Optional[str]:
-    """Screenshot via consent.screenshots — clipped to the detected banner element when given."""
+    """Screenshot, cropped to the banner when given."""
     return await capture_page_or_element(page, url, hint, scan_id=scan_id, element=element)
 
 
 def _derive_verdicts(result: ConsentRuntimeResult) -> None:
-    """
-    Translates the raw captures into verdicts. Left as None ("not tested")
-    whenever the underlying leg never ran.
-    """
+    """Turns the captures into results. None ("not tested") when a test didn't run."""
     first_layer = result.controls
     all_controls = result.controls + result.preference_controls
 
@@ -1058,8 +970,7 @@ def _derive_verdicts(result: ConsentRuntimeResult) -> None:
 
 
 def reject_tracking_evidence(result: "ConsentRuntimeResult") -> dict:
-    """What was still tracked after Reject: right after the click and on the
-    next page view. Used for the finding and the GDPR/CCPA check evidence."""
+    """What was still tracked after Reject, right after the click and on the next page."""
     before_names = {(c.name, c.domain) for c in result.before_consent.consent_required_cookies}
     click = result.after_reject.tracker_requests if result.after_reject.available else []
     reload = result.after_reject_reload.tracker_requests if result.after_reject_reload.available else []
@@ -1079,11 +990,8 @@ def reject_tracking_evidence(result: "ConsentRuntimeResult") -> dict:
 def check_runtime_consent(
     result: ConsentRuntimeResult, page_url: str, include_pre_consent: bool = True,
 ) -> List[dict]:
-    """
-    Findings from an already-run ConsentRuntimeResult. Empty list when
-    runtime data wasn't available. `include_pre_consent=False` skips the
-    before-consent tracking finding when consent.network already reported
-    the same evidence (avoids counting it twice in the score).
+    """Findings from the browser check; [] if it didn't run. include_pre_consent=False
+    skips the before-consent finding when network.py already reported it.
     """
     if not result.available:
         return []
@@ -1102,7 +1010,7 @@ def check_runtime_consent(
         ))
 
     if not result.banner_detected:
-        return findings  # banner.py's own finding covers "no banner"; nothing to click-test
+        return findings  # no banner: covered by banner.py
 
     if result.reject_clicked and result.reject_blocks_tracking is False:
         ev = reject_tracking_evidence(result)
@@ -1154,8 +1062,7 @@ def check_runtime_consent(
             "Confirm the banner exposes a clearly labeled accept action.",
         ))
 
-    # "Manage clicked but no panel appeared" is reported by consent.preferences
-    # (static detection + runtime verification), not duplicated here.
+    # "Settings opened no panel" is reported by preferences.py.
 
     return findings
 

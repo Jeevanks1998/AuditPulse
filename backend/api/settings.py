@@ -1,13 +1,6 @@
 """
-api/settings.py
-
-Reads/writes the profile + preferences fields on the User model (see
-api/auth.py) that back settings.html — name/email/company/aiProvider,
-notification toggles, theme, language, default schedule, and API key
-management/export. Mirrors window.Api.settings.* in assets/js/api.js
-(get, save, regenerateApiKey, exportJson) and is wired into the
-settings.html form via the inline handlers in assets/js/app.js
-(initSettingsPage).
+The signed-in user's profile and preferences (settings.html): name, company,
+notifications, theme, language, default schedule, API key and data export.
 """
 
 from datetime import datetime, timezone
@@ -45,10 +38,8 @@ class SettingsOut(BaseModel):
 
 
 class SettingsUpdate(BaseModel):
-    # No `email`: it is the sign-in identity and the key the Access Portal
-    # uses to update or revoke access. Letting a user change it would let
-    # them escape an offboarding revoke (the portal would no longer find
-    # them). Email changes go through the Access Portal only.
+    # No `email`: it's the sign-in identity the Access Portal uses to find the user.
+    # Changing it would dodge an access revoke, so only the portal changes it.
     model_config = ConfigDict(extra="ignore")
 
     name: Optional[str] = Field(default=None, max_length=120)
@@ -75,14 +66,8 @@ class ExportOut(BaseModel):
 
 @router.get("/", response_model=SettingsOut)
 async def get_settings(current_user: User = Depends(get_current_user)):
-    # Deliberately NOT gated on the "settings" module, unlike every other
-    # route below. app.js's reconcileThemeWithAccount() calls this on
-    # every page load (not just settings.html) for any logged-in user, to
-    # carry their theme preference to a new browser/device — a read-only,
-    # own-account call that isn't the kind of thing Phase 4 is meant to
-    # lock down. What Reviewer/Viewer (and Auditor, minus scheduling)
-    # can't do is *change* settings, regenerate their API key, or export
-    # data — see the routes below.
+    # Reading your own settings needs no permission (every page loads it for the
+    # theme). Changing settings, the API key or exports needs the "settings" permission.
     return current_user
 
 

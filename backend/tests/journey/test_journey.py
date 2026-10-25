@@ -1,9 +1,5 @@
 """
-Customer Journey tests.
-
-Unit tests (no browser) for classification, then one live scan of the
-fixture shop (tests/journey/site) asserting on discovery, classification,
-safe testing, tracking validation, the journey map and QA findings.
+Journey Map tests: classification unit tests, then one live scan of the fixture shop.
 """
 
 import asyncio
@@ -26,7 +22,7 @@ def el(**kw):
     return DiscoveredElement(**base)
 
 
-# ------------------------------------------------------------------ unit ---
+# Unit
 @pytest.mark.parametrize("element,kind", [
     (el(destination="tel:+441234", text="Call"), PHONE),
     (el(destination="mailto:a@b.co", text="Mail"), EMAIL),
@@ -72,7 +68,7 @@ def test_stateful_urls_never_crawled():
     assert not is_stateful_url("https://x.com/services/product")
 
 
-# ------------------------------------------------------------- live scan ---
+# Live scan
 _RESULT = {}
 
 

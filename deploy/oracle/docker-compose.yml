@@ -1,18 +1,15 @@
-# ==============================================================================
-# AuditPulse + Access portal on one Oracle Cloud "Always Free" server.
+# AuditPulse + Access portal on one server (AWS EC2 today; first written for Oracle Cloud).
 #
 #   caddy       HTTPS (free Let's Encrypt certificates) on ports 80/443
-#   auditpulse  AuditPulse API + Celery worker/beat (same start command as Railway)
+#   auditpulse  AuditPulse API + Celery worker/beat
 #   access      Access portal API
-#   redis       Celery broker / results (internal only)
+#   redis       Celery broker (internal only)
 #
-# Folder layout on the server (setup.sh creates it):
+# Server folders (setup.sh creates them):
 #   /opt/auditpulse/AuditPulse          <- this repo
 #   /opt/auditpulse/AuditPulse-Access   <- Access portal repo
-#   /opt/auditpulse/env/auditpulse.env  <- secrets (never in git)
-#   /opt/auditpulse/env/access.env      <- secrets (never in git)
-#   /opt/auditpulse/AuditPulse/deploy/oracle/.env  <- API_HOST / ACCESS_HOST (setup.sh writes it)
-# ==============================================================================
+#   /opt/auditpulse/env/*.env           <- secrets (never in git)
+#   deploy/oracle/.env                  <- API_HOST / ACCESS_HOST (setup.sh writes it)
 name: auditpulse
 
 services:
@@ -30,8 +27,7 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       PORT: "8000"
-    # Same as railway.json: migrate, then worker+beat and the API in one container
-    # (they share the screenshots / reports folders).
+    # Migrate, then worker+beat and the API in one container (they share the screenshot/report folders).
     command: >
       sh -c "alembic upgrade head &&
              (celery -A workers.celery_worker worker --beat --loglevel=info --concurrency=2 &

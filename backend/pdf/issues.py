@@ -1,16 +1,6 @@
 """
-pdf/issues.py
-
-Turns the raw findings list into a short list of *issues to fix*.
-
-The raw list repeats itself a lot — e.g. "Google Tag Manager loaded more
-than once" once per scanned page (43 rows on a big site), or "Conversion
-interaction not tracked: <file>" once per PDF link. Here those become one
-issue each, with the affected pages/items listed underneath, so a reader
-sees ~15 things to fix instead of 70 rows.
-
-The report's "Start here" page lists the most urgent of these; the
-appendix lists every place each of them was found.
+Groups repeated findings into issues to fix: the same problem on 40 pages
+becomes one issue with the places listed, so readers see ~15 issues, not 70 rows.
 """
 
 from __future__ import annotations
@@ -23,10 +13,10 @@ from pdf.components import short_url
 
 SEVERITY_ORDER = {"critical": 0, "warning": 1, "info": 2}
 
-# Modules whose findings are commentary rather than something to fix.
+# Modules whose findings are comments, not things to fix.
 _SKIP_MODULES = {"ai"}
 
-# Plain-language "why it matters", most specific match first.
+# Plain-language "why it matters", most specific first.
 _WHY_BY_TITLE = [
     (r"broken important cta|broken .*link|did not work|404", "Visitors click this and nothing useful happens, so you lose leads and trust."),
     (r"not tracked|no analytics detected|tracking gap|no analytics event", "These actions happen on your site but never reach analytics, so conversions are under-reported."),
@@ -68,9 +58,7 @@ class Issue:
 
 
 def _split_title(title: str):
-    """'Conversion interaction not tracked: Go to slide 2' -> ('Conversion
-    interaction not tracked', 'Go to slide 2'). Titles without a
-    'Prefix: subject' shape come back unchanged with no subject."""
+    """'Prefix: subject' -> ('Prefix', 'subject'); other titles come back unchanged."""
     if ":" in title:
         head, tail = title.split(":", 1)
         if len(head.split()) >= 2 and tail.strip() and not head.lower().startswith("http"):
@@ -123,7 +111,7 @@ def group_findings(findings: List[dict], module_scores: Optional[Dict[str, int]]
             issue.recommendation = f["recommendation"].strip()
     issues = list(groups.values())
     for i in issues:
-        # A single "Prefix: subject" finding keeps its full, specific title.
+        # A single "Prefix: subject" finding keeps its full title.
         if i.count == 1 and getattr(i, "_subject_titled", False) and i.items:
             pass
     issues.sort(key=lambda i: (SEVERITY_ORDER[i.severity], module_scores.get(i.module, 100), -i.count, i.title))

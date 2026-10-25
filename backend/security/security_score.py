@@ -1,23 +1,7 @@
 """
-security/security_score.py
-
-Turns the flat finding lists every other security/ module returns into
-a single weighted 0-100 score with a per-category breakdown — same
-shape as accessibility/accessibility_score.py and
-performance/performance_score.py, so this drops straight into
-services.audit_service in place of the
-`breakdown["security"] = random.randint(80, 99)` placeholder.
-
-Scoring model: every category starts at 100 and loses points per
-finding by severity, then categories are combined by weight. SSL and
-HTTPS get the largest weights since a failure there (expired cert, no
-TLS at all) undermines every other control — a perfect CSP on a site
-serving plain HTTP is not "mostly secure". A category with no findings
-scores 100, same reasoning as accessibility_score.py: absence of
-findings in an *available* category is a real signal (nothing wrong
-was found), it's only ssl.py's `checked=False` case (non-https URL)
-that should be excluded from scoring entirely rather than counted as a
-clean pass — see `score_security`'s `ssl_checked` parameter.
+Turns security findings into a 0-100 score. SSL and HTTPS weigh most.
+Categories with no findings score 100; the SSL category is skipped for
+http URLs (no handshake was possible).
 """
 
 from __future__ import annotations
@@ -29,7 +13,7 @@ MODULE = "security"
 
 SEVERITY_PENALTY = {"critical": 30, "warning": 12, "info": 3}
 
-# Must sum to 1.0 (before any renormalization when ssl is excluded).
+# Must sum to 1.0.
 CATEGORY_WEIGHTS: Dict[str, float] = {
     "ssl": 0.25,            # certificate trust/expiry/protocol strength
     "https": 0.20,          # is the site even served over, and enforcing, HTTPS
@@ -52,20 +36,7 @@ class SecurityScoreResult:
 
 
 def score_security(findings: List[dict], ssl_checked: bool = True) -> SecurityScoreResult:
-    """
-    Scores a flat list of finding dicts (as returned by security.https,
-    security.ssl, security.headers, security.hsts, security.csp,
-    security.mixed_content, concatenated for one audited URL) into an
-    overall score plus per-category breakdown.
-
-    Pass `ssl_checked=False` when security.ssl.check_ssl returned an
-    unchecked SslInfo (i.e. the URL wasn't https at all, so no
-    handshake was attempted) — the ssl category is dropped from
-    scoring entirely rather than counted as a clean 100, since the
-    https category's own "not served over HTTPS" finding already
-    covers that failure without double-counting it as two separate
-    perfect/failing categories.
-    """
+    """Scores security findings. ssl_checked=False drops the SSL category (http URL; already covered by HTTPS)."""
     by_category: Dict[str, List[dict]] = {}
     for finding in findings:
         category = finding.get("category") or _OTHER_CATEGORY

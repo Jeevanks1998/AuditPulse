@@ -1,21 +1,8 @@
 """
-ai/provider.py
+The one place that calls the AI provider (AI_PROVIDER = "groq" or "anthropic").
 
-Single low-level entry point for talking to the configured AI provider
-(config.settings.AI_PROVIDER: "anthropic" with ANTHROPIC_API_KEY, or "groq"
-with GROQ_API_KEY — Groq's free tier, OpenAI-compatible API). Every other module in
-this package (executive_summary.py, recommendations.py, business_impact.py,
-action_plan.py, chatbot.py) calls through `call_ai` / `call_ai_json` rather
-than touching httpx or the Anthropic API directly, so there's exactly one
-place that knows the request shape, the timeout, and how a response gets
-turned back into text.
-
-Deliberately NOT fail-safe: `call_ai` / `call_ai_json` raise `AIProviderError`
-on anything that goes wrong (unconfigured provider, network failure, bad
-response shape, invalid JSON). Callers — not this module — decide what a
-failure means for them (most fall back to a deterministic heuristic, see
-each module's `_heuristic_*` function), the same division of responsibility
-services.ai_service used before this package existed.
+call_ai / call_ai_json raise AIProviderError on any failure; each caller
+decides its own fallback.
 """
 
 from __future__ import annotations
@@ -33,19 +20,15 @@ ANTHROPIC_VERSION = "2023-06-01"
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-# Default model per provider; settings.AI_MODEL overrides it (e.g. when a
-# provider retires a model, change the setting instead of the code).
-# Groq retired llama-3.3-70b-versatile on 2026-08-16; gpt-oss-120b is its
-# recommended replacement.
+# Default model per provider. Set AI_MODEL to override (e.g. when a model is retired).
 DEFAULT_MODELS = {
     "anthropic": "claude-sonnet-4-6",
     "groq": "openai/gpt-oss-120b",
 }
-# Kept for backwards compatibility with anything importing it.
+# Kept for older imports.
 AI_MODEL = DEFAULT_MODELS["anthropic"]
 
-# gpt-oss models "think" before answering and those tokens count against
-# max_tokens; give them headroom so the answer itself is never cut off.
+# gpt-oss models spend tokens thinking first; extra room so the answer isn't cut off.
 GROQ_REASONING_HEADROOM = 1500
 
 DEFAULT_TIMEOUT_SECONDS = 20.0
@@ -53,7 +36,7 @@ DEFAULT_MAX_TOKENS = 500
 
 
 class AIProviderError(Exception):
-    """Raised for any failure calling the AI provider — missing config, network, or parse errors."""
+    """Any AI call failure: missing key, network or bad response."""
 
 
 def _provider() -> str:
@@ -82,12 +65,7 @@ async def call_ai(
     max_tokens: int = DEFAULT_MAX_TOKENS,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> str:
-    """
-    Sends a single user-turn message to the configured provider and returns
-    the concatenated text of the response. Raises AIProviderError if no
-    provider is configured, the request fails, or the response has no text
-    content — never returns an empty/placeholder string silently.
-    """
+    """Sends one prompt and returns the reply text. Raises AIProviderError on any failure."""
     if not is_configured():
         raise AIProviderError(
             f"AI provider not configured (AI_PROVIDER={settings.AI_PROVIDER!r}; set ANTHROPIC_API_KEY "
@@ -124,7 +102,7 @@ async def call_ai(
 
 
 async def _call_groq(prompt: str, *, system: Optional[str], max_tokens: int, timeout: float) -> str:
-    """Groq's OpenAI-compatible chat completions API (free tier, no training on inputs)."""
+    """Groq chat API (OpenAI-compatible, free tier)."""
     model = _model()
     messages = []
     if system:
@@ -168,13 +146,7 @@ async def call_ai_json(
     max_tokens: int = DEFAULT_MAX_TOKENS,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> Any:
-    """
-    Like `call_ai`, but parses the response as JSON. The prompt should
-    instruct the model to return ONLY JSON (no prose, no markdown fences) —
-    this still strips ``` fences defensively since models don't always obey
-    that instruction perfectly. Raises AIProviderError if the result isn't
-    valid JSON.
-    """
+    """Like call_ai, but parses the reply as JSON (code fences are stripped)."""
     text = await call_ai(prompt, system=system, max_tokens=max_tokens, timeout=timeout)
     cleaned = _strip_code_fences(text)
     try:

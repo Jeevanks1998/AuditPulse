@@ -1,10 +1,5 @@
 """
-pdf/components.py
-
-Reusable building blocks for the report: pills, score ring / bars, stat
-tiles, light data tables, accent cards, section headers and compressed
-images. Every section module composes these so the whole PDF shares one
-look (the same one as the web app).
+Shared PDF pieces: pills, score ring, bars, tiles, tables, cards, headers and images.
 """
 
 from __future__ import annotations
@@ -39,15 +34,12 @@ from pdf.theme import (
     score_color,
 )
 
-CONTENT_WIDTH = 178 * mm  # A4 width minus 2 x 16 mm margins
+CONTENT_WIDTH = 178 * mm  # A4 width minus 16 mm margins
 
 
-# --------------------------------------------------------------------------
 # Text helpers
-# --------------------------------------------------------------------------
 def short_url(url: Optional[str], keep_host: bool = False, limit: int = 60) -> str:
-    """Readable form of a URL: a file link becomes its file name, a page
-    becomes its path ("/about-us"). Long values are shortened."""
+    """Short form of a URL: a file becomes its name, a page its path. Long values are cut."""
     if not url:
         return ""
     text = str(url).strip()
@@ -80,14 +72,11 @@ def hostname(url: str) -> str:
 
 
 def soft_wrap(text: str) -> str:
-    """Escaped text with zero-width break opportunities after / _ - so a long
-    URL or file name wraps inside a table cell instead of overflowing."""
+    """Lets long URLs / file names wrap inside table cells."""
     return re.sub(r"([/_\-.?&=])", "\\1\u200b", esc(text))
 
 
-# --------------------------------------------------------------------------
 # Pills / badges
-# --------------------------------------------------------------------------
 def pill(text: str, fg, bg, width: Optional[float] = None, font_size: float = 7.5) -> Table:
     style = STYLES["Pill"].clone("pill_tmp", fontSize=font_size, leading=font_size + 1.5, textColor=fg)
     t = Table([[Paragraph(esc(text), style)]], colWidths=[width] if width else None, cornerRadii=[4, 4, 4, 4])
@@ -108,13 +97,11 @@ def state_pill(state: str, width: float = 20 * mm) -> Table:
 
 
 def inline_tag(text: str, fg, bg=None) -> str:
-    """Coloured inline label for use inside a Paragraph."""
+    """Coloured inline label inside a Paragraph."""
     return f'<font name="{FONT_SEMIBOLD}" color="{hexstr(fg)}">{esc(text)}</font>'
 
 
-# --------------------------------------------------------------------------
-# Score ring + bars
-# --------------------------------------------------------------------------
+# Score ring and bars
 class ScoreRing(Flowable):
     def __init__(self, score: Optional[int], size: float = 34 * mm, stroke: float = 3.2 * mm,
                  track=None, label: str = "/ 100", text_color=None, on_dark: bool = False):
@@ -153,7 +140,7 @@ class ScoreRing(Flowable):
 
 
 class Bar(Flowable):
-    """A horizontal progress bar (0-100)."""
+    """Horizontal bar (0-100)."""
 
     def __init__(self, value: Optional[float], width: float, height: float = 2.4 * mm, color=None, track=None):
         super().__init__()
@@ -175,7 +162,7 @@ class Bar(Flowable):
 
 
 class StackedBar(Flowable):
-    """Segments [(value, color)] laid end to end — severity mix."""
+    """Coloured segments end to end (severity mix)."""
 
     def __init__(self, segments, width: float, height: float = 3 * mm):
         super().__init__()
@@ -203,7 +190,7 @@ class StackedBar(Flowable):
 
 
 class IconTile(Flowable):
-    """Small rounded square with a simple vector glyph (no icon font needed)."""
+    """Small rounded square with a simple drawn icon."""
 
     def __init__(self, kind: str, fg, bg, size: float = 8 * mm):
         super().__init__()
@@ -267,9 +254,7 @@ def module_icon(module: str, size: float = 8 * mm) -> IconTile:
     return IconTile(module if module in ("consent", "analytics", "journey") else "dot", fg, bg, size)
 
 
-# --------------------------------------------------------------------------
 # Layout helpers
-# --------------------------------------------------------------------------
 def heading_with_icon(icon: Flowable, title: str, sub: Optional[str] = None, style: str = "H2",
                       width: float = CONTENT_WIDTH) -> Table:
     text = [Paragraph(esc(title), STYLES[style].clone("hwi", spaceBefore=0, spaceAfter=0))]
@@ -288,7 +273,7 @@ def heading_with_icon(icon: Flowable, title: str, sub: Optional[str] = None, sty
 
 def card(rows: List[list], col_widths: Sequence[float], accent=None, background=WHITE,
          padding: float = 4 * mm, border=BORDER) -> Table:
-    """A rounded bordered box. With `accent`, a coloured strip runs down the left edge."""
+    """Rounded box; `accent` adds a coloured strip on the left."""
     if accent is not None:
         rows = [[""] + list(r) for r in rows]
         col_widths = [1.4 * mm] + list(col_widths)
@@ -315,7 +300,7 @@ def card(rows: List[list], col_widths: Sequence[float], accent=None, background=
 
 
 def stat_tiles(items: Iterable[tuple], width: float = CONTENT_WIDTH, cols: Optional[int] = None) -> Table:
-    """items: (value, label[, value_color]) -> a row of equal tiles."""
+    """items: (value, label[, value_color]) -> a row of tiles."""
     items = list(items)
     if not items:
         return Spacer(1, 0)
@@ -369,8 +354,7 @@ def stat_tiles(items: Iterable[tuple], width: float = CONTENT_WIDTH, cols: Optio
 
 def data_table(header: Sequence[str], rows: List[list], widths: Sequence[float],
                align_right: Sequence[int] = (), zebra: bool = False) -> Table:
-    """Light table: soft grey header, thin row dividers, no heavy grid.
-    Cells may be strings (escaped + wrapped) or flowables."""
+    """Light table: grey header, thin dividers. Cells may be text or flowables."""
     def cell(v, col):
         if isinstance(v, (Flowable, list)):
             return v
@@ -420,8 +404,7 @@ def section_intro(kicker: str, title: str, lead: Optional[str] = None) -> List[F
 
 def module_banner(module: str, title: str, score: Optional[int], lead: str, width: float = CONTENT_WIDTH,
                   stat: Optional[str] = None, stat_label: Optional[str] = None) -> Table:
-    """Header block that opens a module section: icon, title, one-line
-    explanation, and the module score as a big coloured number."""
+    """Section header: icon, title, one-line explanation and the module score."""
     fg, bg = module_color(module)
     icon = module_icon(module, 11 * mm)
     text = [
@@ -460,14 +443,10 @@ def keep(*flowables) -> KeepTogether:
     return KeepTogether(list(flowables))
 
 
-# --------------------------------------------------------------------------
 # Images (compressed so the PDF stays small)
-# --------------------------------------------------------------------------
 def load_image(path: Optional[str], max_w: float, max_h: float, crop_aspect: Optional[float] = None,
                max_px: int = 1100, quality: int = 72) -> Optional[Image]:
-    """Loads a screenshot, optionally crops it to the top `crop_aspect`
-    (height / width) part, downsizes it and re-encodes it as JPEG.
-    Returns None if the file is missing or unreadable."""
+    """Loads a screenshot, optionally crops the top part, shrinks it and saves as JPEG. None if missing."""
     if not path or not Path(path).is_file():
         return None
     try:
@@ -494,7 +473,7 @@ def load_image(path: Optional[str], max_w: float, max_h: float, crop_aspect: Opt
 
 
 def framed_image(img: Optional[Image], caption: Optional[str], width: float, missing_height: float = 40 * mm) -> Table:
-    """An image (or a 'not captured' placeholder) in a thin frame with a caption under it."""
+    """Image (or a "not captured" placeholder) in a frame with a caption."""
     if img is None:
         body = Table([[Paragraph("Screenshot not available", STYLES["Caption"])]], colWidths=[width - 4 * mm],
                      rowHeights=[missing_height])

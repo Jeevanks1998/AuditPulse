@@ -1,9 +1,5 @@
 """
-schemas/dashboard.py
-
-Aggregated response model for dashboard.html: dashboard.js loads stats
-and the recent-audits list together via Promise.all, so `/dashboard/`
-returns both in a single `DashboardOut` payload (api/dashboard.py).
+Dashboard response: stats and recent audits together.
 """
 
 from typing import List

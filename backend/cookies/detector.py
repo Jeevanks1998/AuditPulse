@@ -1,20 +1,6 @@
 """
-cookies/detector.py
-
-Parses raw `Set-Cookie` response header strings into structured
-`Cookie` objects. Takes strings rather than an httpx.Response so the
-caller decides where the headers came from — crawler.crawler's
-httpx.AsyncClient responses (crawler/crawler.py's `_fetch_one` doesn't
-currently expose them, so a caller wiring this in reads
-`response.headers.get_list("set-cookie")` before that page's ParsedPage
-goes out of scope), a Playwright page's `context.cookies()` normalized
-to the same header string shape, or a fixture in a test.
-
-Deliberately doesn't use `http.cookies.SimpleCookie` — it silently
-drops cookies with certain characters/casing quirks real sites still
-send, and it can't represent more than one Set-Cookie line with the
-same name from different paths. A small hand-rolled parser here keeps
-every cookie the server actually sent.
+Reads raw Set-Cookie header strings into Cookie objects. A small custom
+parser, because http.cookies.SimpleCookie drops some real-world cookies.
 """
 
 from __future__ import annotations
@@ -35,13 +21,13 @@ class Cookie:
     secure: bool = False
     http_only: bool = False
     same_site: Optional[str] = None  # "Strict" | "Lax" | "None" | None (unset)
-    max_age_seconds: Optional[float] = None  # resolved from Max-Age, else Expires; None = session
-    source_url: Optional[str] = None  # page that set it, for cross-referencing with consent timing
+    max_age_seconds: Optional[float] = None  # from Max-Age, else Expires; None = session cookie
+    source_url: Optional[str] = None  # page that set it
     raw: str = field(default="", repr=False)
 
 
 def parse_set_cookie_headers(headers: List[str], source_url: Optional[str] = None) -> List[Cookie]:
-    """Parses every `Set-Cookie` header value seen for one response into Cookie objects."""
+    """Parses every Set-Cookie header of one response."""
     cookies: List[Cookie] = []
     for raw in headers or []:
         parsed = _parse_one(raw, source_url)
@@ -51,11 +37,7 @@ def parse_set_cookie_headers(headers: List[str], source_url: Optional[str] = Non
 
 
 def merge_cookie_lists(*lists: List[Cookie]) -> List[Cookie]:
-    """
-    De-dupes across pages/requests by (name, domain, path) — same
-    cookie re-set on every page shouldn't be counted N times in an
-    N-page crawl. Keeps the first occurrence (earliest set).
-    """
+    """Removes duplicates across pages by (name, domain, path), keeping the first."""
     seen = set()
     merged: List[Cookie] = []
     for cookie_list in lists:
@@ -120,7 +102,7 @@ def _parse_one(raw: str, source_url: Optional[str]) -> Optional[Cookie]:
 
 
 def _expires_to_max_age(expires_value: str) -> Optional[float]:
-    """Best-effort `Expires=<HTTP-date>` -> seconds-from-now, matching Max-Age's shape."""
+    """Expires date -> seconds from now."""
     from datetime import datetime, timezone
     from email.utils import parsedate_to_datetime
 
@@ -138,7 +120,7 @@ def _expires_to_max_age(expires_value: str) -> Optional[float]:
 
 
 def is_third_party(cookie: Cookie, first_party_hostname: Optional[str]) -> bool:
-    """A cookie is third-party if its domain doesn't match (or isn't a parent of) the site's own hostname."""
+    """Third-party when the cookie's domain isn't the site's own domain (or a parent of it)."""
     if not cookie.domain or not first_party_hostname:
         return False
     cookie_domain = cookie.domain.lower().lstrip(".")

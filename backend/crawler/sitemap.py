@@ -1,18 +1,7 @@
 """
-crawler/sitemap.py
-
-Discovers and flattens a site's sitemap(s) into a plain list of page
-URLs. Recurses through <sitemapindex> trees (a sitemap of sitemaps) and
-follows whatever `Sitemap:` lines robots.py found in robots.txt, plus a
-couple of conventional default paths, so the crawler can seed its
-frontier from the site's own published URL list rather than relying
-purely on link-following (useful for sites with thin nav or JS-only
-menus).
-
-Every fetch/parse failure here is swallowed and logged rather than
-raised — a broken or absent sitemap should never stop the crawl, it
-just means the frontier starts smaller and grows from link discovery
-instead.
+Collects page URLs from the site's sitemap(s), following sitemap indexes,
+robots.txt Sitemap: lines and the usual default paths. Failures are logged,
+never raised.
 """
 
 from __future__ import annotations
@@ -29,8 +18,8 @@ from config.logging import logger
 
 SITEMAP_NS = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
 DEFAULT_SITEMAP_PATHS = ("/sitemap.xml", "/sitemap_index.xml")
-MAX_URLS = 5000            # hard cap on how many URLs we'll ever return
-MAX_NESTED_SITEMAPS = 25   # guards against a pathological/looping sitemap index
+MAX_URLS = 5000            # never return more than this
+MAX_NESTED_SITEMAPS = 25   # guards against looping sitemap indexes
 FETCH_TIMEOUT_SECONDS = 10.0
 
 
@@ -40,11 +29,7 @@ async def discover_sitemap_urls(
     known_sitemaps: Optional[List[str]] = None,
     timeout: float = FETCH_TIMEOUT_SECONDS,
 ) -> List[str]:
-    """
-    Returns a deduped, capped list of page URLs pulled from every
-    sitemap this site declares (robots.txt-listed ones first, falling
-    back to the conventional /sitemap.xml / /sitemap_index.xml paths).
-    """
+    """Page URLs from every sitemap (robots.txt ones first, then /sitemap.xml, /sitemap_index.xml)."""
     candidates = list(known_sitemaps or [])
     for path in DEFAULT_SITEMAP_PATHS:
         candidates.append(urljoin(base_url, path))
@@ -86,7 +71,7 @@ async def _fetch_and_parse(
             try:
                 raw = gzip.GzipFile(fileobj=BytesIO(raw)).read()
             except OSError:
-                pass  # not actually gzipped despite the hint; parse as-is
+                pass  # not really gzipped; parse as is
         root = ET.fromstring(raw)
     except (httpx.HTTPError, ET.ParseError) as exc:
         logger.debug(f"sitemap.py: skipping {sitemap_url}: {exc}")

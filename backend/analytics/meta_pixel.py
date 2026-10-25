@@ -1,14 +1,5 @@
 """
-analytics/meta_pixel.py
-
-Detects the Meta (Facebook) Pixel: the fbevents.js loader, any
-fbq('init', 'PIXEL_ID') / fbq('track', ...) calls, and the recommended
-<noscript><img src=".../tr?id=..."> fallback for browsers without
-JavaScript — the same script+noscript pairing pattern as GTM
-(analytics/gtm.py), and for the same reason.
-
-Reads crawler.parser.ParsedPage.soup directly, same rationale as the
-other analytics/* modules.
+Detects the Meta (Facebook) Pixel: fbevents.js, fbq('init'/'track') calls and the <noscript> fallback.
 """
 
 from __future__ import annotations
@@ -38,7 +29,7 @@ class MetaPixelDetection:
 
 
 def detect_meta_pixel(page: ParsedPage) -> MetaPixelDetection:
-    """Scans this page's <script>/<noscript> tags for Meta Pixel signals."""
+    """Looks for the Meta Pixel in <script> / <noscript> tags."""
     result = MetaPixelDetection()
     pixel_ids: List[str] = []
 
@@ -66,7 +57,7 @@ def detect_meta_pixel(page: ParsedPage) -> MetaPixelDetection:
 
 
 def check_meta_pixel(page: ParsedPage) -> List[dict]:
-    """Findings for Meta Pixel configuration issues. Absence of the pixel is not itself a finding."""
+    """Findings for Meta Pixel problems. No pixel at all is not a finding."""
     detection = detect_meta_pixel(page)
     findings: List[dict] = []
 

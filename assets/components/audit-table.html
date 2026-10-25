@@ -1,12 +1,4 @@
-<!-- ==========================================================================
-     components/audit-table.html
-     Reusable tabular audit list, built on the existing .dtable styles in
-     assets/css/style.css. Used by history.html (see assets/js/history.js),
-     which fetches rows from window.Api.audits.getRecent() and renders them
-     with window.Components.renderAuditRow(audit) from assets/js/components.js.
-
-     Optional loader: assets/js/include.js → Components.include('audit-table')
-     ========================================================================== -->
+<!-- Audit table. Rows come from history.js (Components.renderAuditRow). Optional loader: Components.include('audit-table') -->
 <div class="card card__pad">
   <div class="card__head">
     <h3>Audit History</h3>
@@ -24,7 +16,7 @@
         </tr>
       </thead>
       <tbody id="auditTableBody">
-        <!-- rows injected by assets/js/history.js via Components.renderAuditRow() -->
+        <!-- rows added by history.js -->
       </tbody>
     </table>
   </div>

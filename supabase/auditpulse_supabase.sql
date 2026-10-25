@@ -1,24 +1,12 @@
--- =============================================================================
--- AuditPulse — Supabase database setup
--- =============================================================================
--- Run this ONCE in the AuditPulse Supabase project:
---   Supabase dashboard -> SQL Editor -> New query -> paste all of this -> Run
---
--- Safe to run more than once, and safe on a database that already has data:
---   * every table/index uses IF NOT EXISTS
---   * the Google Authenticator columns are added only if missing
---   * the migration version is only recorded on a brand-new database
---
--- After this, deploy on Railway as normal: its start command runs
--- `alembic upgrade head`, which will find nothing left to do.
--- No demo user or admin is created. Users come from the Access Portal.
--- =============================================================================
+-- AuditPulse database setup for Supabase.
+-- Run once: Supabase -> SQL Editor -> New query -> paste -> Run.
+-- Safe to run again and on a database with data (IF NOT EXISTS everywhere).
+-- After this, `alembic upgrade head` at start-up has nothing left to do.
+-- No users are created; they come from the Access Portal.
 
 BEGIN;
 
--- -----------------------------------------------------------------------------
--- 1. Tables and indexes (generated from backend/models — matches the code)
--- -----------------------------------------------------------------------------
+-- 1. Tables and indexes (match backend/models)
 
 CREATE TABLE IF NOT EXISTS users (
 	id SERIAL NOT NULL, 
@@ -264,13 +252,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS ix_reports_audit_id ON reports (audit_id);
 CREATE UNIQUE INDEX IF NOT EXISTS ix_reports_share_token ON reports (share_token);
 CREATE INDEX IF NOT EXISTS ix_reports_user_id ON reports (user_id);
 
--- -----------------------------------------------------------------------------
--- 2. Google Authenticator sign-in (email -> 6-digit code, no password)
---    For a database created before this change: add the new columns.
---      New user:              mfa_enabled = false, auth_setup_required = true
---      After first QR setup:  mfa_enabled = true,  auth_setup_required = false
---      Admin reset:           mfa_enabled = false, auth_setup_required = true
--- -----------------------------------------------------------------------------
+-- 2. Google Authenticator sign-in columns (for databases created before it).
+--    New user: mfa_enabled false, auth_setup_required true.
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_secret VARCHAR(64);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE;
@@ -280,15 +263,11 @@ ALTER TABLE users ALTER COLUMN auth_setup_required SET DEFAULT TRUE;
 -- Passwords are no longer used.
 ALTER TABLE users ALTER COLUMN hashed_password DROP NOT NULL;
 
--- Per-audit privacy region (Auto / EU / UK / US-CA / IN) chosen on the audit page.
+-- Per-audit privacy region (Auto / EU / UK / US-CA / IN).
 ALTER TABLE audits ADD COLUMN IF NOT EXISTS target_region VARCHAR(10);
 
--- -----------------------------------------------------------------------------
--- 3. Migration bookkeeping (Alembic)
---    Brand-new database: record it as fully up to date, so Railway's
---    `alembic upgrade head` doesn't try to re-apply old migrations.
---    Existing database: left alone; alembic applies whatever is missing.
--- -----------------------------------------------------------------------------
+-- 3. Alembic bookkeeping: a new database is marked up to date so old migrations
+--    aren't re-applied; an existing one is left for alembic.
 
 CREATE TABLE IF NOT EXISTS alembic_version (
     version_num VARCHAR(32) NOT NULL,

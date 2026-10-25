@@ -1,14 +1,6 @@
 """
-accessibility/aria.py
-
-Static ARIA checks that only need the parsed DOM, no rendering: invalid
-`role` values, `aria-*` attributes referencing an `id` that doesn't
-exist anywhere on the page, `aria-hidden="true"` on an element that's
-still keyboard-focusable (screen reader users can't perceive it, but
-sighted keyboard users can still tab to an invisible-to-AT control —
-a classic WCAG 4.1.2 failure), and redundant roles that just restate an
-element's implicit native role. Reads crawler.parser.ParsedPage.soup
-directly since none of this is pulled into ParsedPage's normal fields.
+ARIA checks on the parsed page: invalid roles, references to missing ids,
+aria-hidden on focusable elements, and roles that repeat the tag's own role.
 """
 
 from __future__ import annotations
@@ -20,8 +12,7 @@ from crawler.parser import ParsedPage
 MODULE = "accessibility"
 CATEGORY = "aria"
 
-# WAI-ARIA 1.2 role list (abstract roles excluded — those are never
-# valid as an author-supplied role="..." value).
+# Valid ARIA 1.2 roles (abstract roles are never valid in markup).
 VALID_ROLES = {
     "alert", "alertdialog", "application", "article", "banner", "button",
     "cell", "checkbox", "columnheader", "combobox", "complementary",
@@ -37,12 +28,12 @@ VALID_ROLES = {
     "tooltip", "tree", "treegrid", "treeitem",
 }
 
-# Attributes whose value is expected to be one or more element `id`s.
+# Attributes whose value is one or more element ids.
 ID_REFERENCE_ATTRS = ("aria-labelledby", "aria-describedby", "aria-controls", "aria-owns", "aria-activedescendant")
 
 FOCUSABLE_SELECTORS = ("a[href]", "button", "input", "select", "textarea", "[tabindex]")
 
-# Native tag -> the role it already implies; role="..." repeating this adds nothing.
+# Tag -> role it already has; repeating it adds nothing.
 REDUNDANT_ROLE_FOR_TAG = {
     "button": "button", "a": "link", "nav": "navigation", "main": "main",
     "header": "banner", "footer": "contentinfo", "form": "form",
@@ -72,7 +63,7 @@ def _check_invalid_roles(page: ParsedPage, soup) -> List[dict]:
     bad = []
     for tag in soup.find_all(attrs={"role": True}):
         role = (tag.get("role") or "").strip().lower()
-        # role can be a space-separated fallback list per the ARIA spec
+        # role may list several fallback roles
         tokens = [t for t in role.split() if t]
         if tokens and not any(t in VALID_ROLES for t in tokens):
             bad.append((tag.name, role))

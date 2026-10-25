@@ -1,15 +1,6 @@
 """
-api/scheduler.py
-
-Recurring audit schedules. settings.html's "Weekly / Mondays, 6:00 AM"
-fields are a user's *default* cadence (see api/settings.py); this module
-lets a user manage one or more explicit recurring jobs per URL, and
-trigger any of them immediately.
-
-The Schedule model plus all CRUD/run-now logic live in
-services.scheduler_service — this file only defines the request/response
-schemas (kept local since nothing outside this router needs them) and
-wires up routes.
+Recurring audit schedules: create, edit, delete and run now.
+Logic lives in services.scheduler_service.
 """
 
 from datetime import datetime
@@ -28,21 +19,12 @@ from services import audit_service, scheduler_service
 
 router = APIRouter()
 
-# Phase 4: Reviewer and Viewer don't have the "scheduler" module at all
-# (config/permissions.py), so every route below — including the plain
-# list — requires it via require_module("scheduler") in place of the
-# plain get_current_user dependency. Unlike audits/settings, there's no
-# partial access here: a role either sees schedules or it doesn't.
+# Every route needs the "scheduler" permission (Reviewers and Viewers don't have it).
 
 
-# --------------------------------------------------------------------------
 # Schemas
-# --------------------------------------------------------------------------
 class ScheduleEmailDelivery(BaseModel):
-    """Who gets the report after every completed run, and what's attached.
-
-    `attachments` are keys of emailer.attachments.ATTACHMENT_CHOICES (the
-    same checkboxes as the report's "Send to POC" dialog)."""
+    """Who receives the report after each run, and which attachments (same choices as "Send to POC")."""
 
     enabled: bool = False
     to: List[EmailStr] = Field(default_factory=list, max_length=25)
@@ -86,16 +68,14 @@ class ScheduleCreate(BaseModel):
     @field_validator("url")
     @classmethod
     def _public_url(cls, v: str) -> str:
-        # Same rules as a one-off audit: public http(s) websites only.
+        # Same rules as a one-off audit: public http(s) sites only.
         from schemas.audit import normalize_audit_url
         return normalize_audit_url(v)
     frequency: str = Field(default="Weekly", pattern="^(Daily|Weekly|Monthly|Yearly)$")
     time_label: str = "Mondays, 6:00 AM"
     depth: str = Field(default="homepage", pattern="^(homepage|full)$")
     modules: List[str] = Field(default_factory=list)
-    # Per-frequency recurrence detail (time/timezone/weekday/month_day/...)
-    # and the schedule's active window (start_date/end_date/never_expires).
-    # Both are free-form dicts — see scheduler_service.Schedule for why.
+    # Recurrence details (time, timezone, weekday...) and active dates (start, end, never_expires).
     schedule: Optional[dict] = None
     schedule_period: Optional[dict] = None
     email_delivery: Optional[ScheduleEmailDelivery] = None
@@ -129,9 +109,7 @@ class ScheduleOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-# --------------------------------------------------------------------------
 # Routes
-# --------------------------------------------------------------------------
 @router.get("/", response_model=List[ScheduleOut])
 async def list_schedules(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(require_module("scheduler"))

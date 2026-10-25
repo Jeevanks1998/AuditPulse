@@ -1,12 +1,6 @@
 """
-api/ai.py
-
-The AI-assistant panel behind a completed audit's report: executive
-summary, prioritized findings, business impact, action plan, and a
-free-text chat endpoint — one route per ai/ module, all requiring the
-same "owned + completed" audit that api/reports.py checks for. Parses
-requests and shapes responses only; every actual call into ai/ goes
-through services.ai_service.
+AI endpoints for a completed audit: summary, priorities, business impact,
+action plan and chat. Logic lives in services.ai_service.
 """
 
 import dataclasses
@@ -47,8 +41,7 @@ async def priorities(
     current_user: User = Depends(get_current_user),
 ):
     ranked = await ai_service.get_priorities(audit_id, db, current_user)
-    # ai.priority returns PrioritizedFinding dataclasses; Pydantic v2 won't
-    # coerce a dataclass into PriorityItemOut, which made this endpoint 500.
+    # Convert dataclasses to dicts; Pydantic won't do it (caused a 500).
     items = [dataclasses.asdict(r) if dataclasses.is_dataclass(r) else r for r in ranked]
     return PrioritiesOut(audit_id=audit_id, priorities=items)
 

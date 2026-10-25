@@ -1,16 +1,8 @@
-/* ==========================================================================
-   settings.js — settings.html page logic.
-
-   Loads the signed-in user's profile + preferences from window.Api.settings
-   (backend/api/settings.py), fills the form, and saves changes back with a
-   PATCH containing only the fields that actually changed. Also handles the
-   theme swatches, API-key show/copy/regenerate, and the JSON data export.
-
-   Backend note: reading settings works for every role, but saving,
-   regenerating the API key and exporting are gated to the "settings"
-   module (Admin only — see backend/config/permissions.py). For other
-   roles those calls come back 403 and the message is shown as a toast.
-   ========================================================================== */
+/*
+ * Settings page: loads the profile and preferences, saves only changed fields,
+ * and handles theme, API key and data export. Saving, the API key and export
+ * need the "settings" permission (403 is shown as a toast).
+ */
 
 (function () {
   var U = window.Utils;
@@ -45,16 +37,14 @@
 
     var THEME_KEY = (window.APP_CONFIG && window.APP_CONFIG.STORAGE_KEYS && window.APP_CONFIG.STORAGE_KEYS.THEME) || 'auditpulse:theme';
 
-    var loaded = null;      // last values received from / saved to the server
+    var loaded = null;      // last values from / saved to the server
     var theme = 'light';    // current swatch selection
     var apiKey = '';
     var apiKeyVisible = false;
 
-    /* ------------------------------ helpers ------------------------------ */
+    /* Helpers */
 
-    // A <select> can only show options it has. If the account holds a value
-    // this page doesn't list (e.g. a provider chosen elsewhere), add it so
-    // saving doesn't silently overwrite it with the first option.
+    // Add a missing option so saving doesn't overwrite the stored value.
     function setSelect(select, value) {
       if (value == null || value === '') return;
       var has = Array.prototype.some.call(select.options, function (o) { return o.value === value; });
@@ -79,7 +69,7 @@
       apiKeyToggle.disabled = apiKeyCopy.disabled = apiKeyRegen.disabled = !apiKey;
     }
 
-    /* -------------------------------- theme ------------------------------- */
+    /* Theme */
 
     function applyTheme(choice) {
       var dark = choice === 'dark' ||
@@ -87,7 +77,7 @@
       if (dark) document.documentElement.setAttribute('data-theme', 'dark');
       else document.documentElement.removeAttribute('data-theme');
 
-      // Keep the topbar light/dark buttons in step.
+      // Keep the top bar toggle in step.
       var toggle = document.querySelector('.theme-toggle');
       if (toggle) {
         var lightBtn = toggle.querySelector('[aria-label="Light mode"]');
@@ -96,8 +86,7 @@
         if (darkBtn) darkBtn.classList.toggle('is-active', dark);
       }
 
-      // The topbar toggle only knows light/dark. "System" is stored as
-      // "no explicit choice" so app.js falls back to the OS preference.
+      // "System" is stored as no choice, so app.js follows the OS.
       if (choice === 'system') U.storageRemove(THEME_KEY);
       else U.storageSet(THEME_KEY, choice);
     }
@@ -121,12 +110,12 @@
       });
     });
 
-    /* ----------------------------- form <-> data ---------------------------- */
+    /* Form <-> data */
 
     function readForm() {
       return {
         name: els.name.value.trim(),
-        // email is read-only: it's the sign-in identity, managed in the Access Portal
+        // email is read-only (managed in the Access Portal)
         company: els.company.value.trim(),
         aiProvider: els.aiProvider.value,
         notifyAuditCompleted: els.notifyAuditCompleted.checked,
@@ -175,7 +164,7 @@
       U.on(els[k], ev, updateDirty);
     });
 
-    /* -------------------------------- load --------------------------------- */
+    /* Load */
 
     function load() {
       saveBtn.disabled = true;
@@ -195,8 +184,7 @@
             scheduleTime: s.scheduleTime || ''
           };
           fillForm(s);
-          // Settings are the source of truth for the theme; carry them to
-          // this browser (e.g. a new device) without waiting for a click.
+          // Apply the saved theme in this browser straight away.
           applyTheme(loaded.theme);
           updateDirty();
         })
@@ -205,7 +193,7 @@
         });
     }
 
-    /* -------------------------------- save --------------------------------- */
+    /* Save */
 
     function validate(patch) {
       var ok = true;
@@ -238,7 +226,7 @@
           Object.keys(patch).forEach(function (k) { loaded[k] = patch[k]; });
           if (s && s.apiKey) { apiKey = s.apiKey; renderApiKey(); }
 
-          // Reflect a new name in the topbar chip straight away.
+          // Update the name in the top bar.
           if ('name' in patch) {
             var nameEl = document.querySelector('.profile-chip__name');
             if (nameEl) nameEl.textContent = patch.name;
@@ -263,7 +251,7 @@
       updateDirty();
     });
 
-    /* ------------------------------- API key ------------------------------- */
+    /* API key */
 
     U.on(apiKeyToggle, 'click', function () {
       apiKeyVisible = !apiKeyVisible;
@@ -298,7 +286,7 @@
       });
     });
 
-    /* -------------------------------- export ------------------------------- */
+    /* Export */
 
     U.on(exportBtn, 'click', function () {
       window.Loader.setButtonLoading(exportBtn, true, 'Preparing…');
@@ -314,7 +302,7 @@
         .then(function () { window.Loader.setButtonLoading(exportBtn, false); });
     });
 
-    /* ------------------------- section nav highlight ------------------------ */
+    /* Section nav highlight */
 
     var navLinks = U.qsa('.settings-nav a');
     navLinks.forEach(function (link) {

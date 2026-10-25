@@ -1,14 +1,5 @@
 """
-analytics/linkedin.py
-
-Detects the LinkedIn Insight Tag: the inline snippet that sets
-`_linkedin_partner_id` and loads insight.min.js from snap.licdn.com,
-plus the recommended <noscript><img src=".../px.ads.linkedin.com/
-collect..."> fallback for browsers without JavaScript — same
-script+noscript pairing pattern as GTM and the Meta Pixel.
-
-Reads crawler.parser.ParsedPage.soup directly, same rationale as the
-other analytics/* modules.
+Detects the LinkedIn Insight Tag (_linkedin_partner_id + insight.min.js) and its <noscript> fallback.
 """
 
 from __future__ import annotations
@@ -36,7 +27,7 @@ class LinkedInDetection:
 
 
 def detect_linkedin(page: ParsedPage) -> LinkedInDetection:
-    """Scans this page's <script>/<noscript> tags for LinkedIn Insight Tag signals."""
+    """Looks for the LinkedIn Insight Tag in <script> / <noscript> tags."""
     result = LinkedInDetection()
     partner_ids: List[str] = []
 
@@ -59,7 +50,7 @@ def detect_linkedin(page: ParsedPage) -> LinkedInDetection:
 
 
 def check_linkedin(page: ParsedPage) -> List[dict]:
-    """Findings for LinkedIn Insight Tag issues. Absence of the tag is not itself a finding."""
+    """Findings for LinkedIn tag problems. No tag at all is not a finding."""
     detection = detect_linkedin(page)
     findings: List[dict] = []
 

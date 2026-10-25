@@ -1,14 +1,5 @@
 """
-analytics/hotjar.py
-
-Detects Hotjar (heatmaps/session recordings/surveys). The classic
-install snippet defines a window._hjSettings object with `hjid` (site
-ID) and `hjsv` (snippet version) before loading
-static.hotjar.com/c/hotjar-<hjid>.js — both the site ID and an easy
-"is this an old snippet" signal live in that one inline block.
-
-Reads crawler.parser.ParsedPage.soup directly, same rationale as the
-other analytics/* modules.
+Detects Hotjar: site ID (hjid) and snippet version (hjsv) from its inline snippet.
 """
 
 from __future__ import annotations
@@ -26,8 +17,7 @@ HOTJAR_SRC_RE = re.compile(r"static\.hotjar\.com/c/hotjar-(\d+)", re.IGNORECASE)
 HJID_RE = re.compile(r"hjid\s*:\s*(\d+)", re.IGNORECASE)
 HJSV_RE = re.compile(r"hjsv\s*:\s*(\d+)", re.IGNORECASE)
 
-# Snippet versions below this are several years old; Hotjar's current
-# snippet has been on v6 for a long time, so anything under this is worth flagging.
+# Snippet versions below this are years old.
 MIN_CURRENT_HJSV = 6
 
 
@@ -40,7 +30,7 @@ class HotjarDetection:
 
 
 def detect_hotjar(page: ParsedPage) -> HotjarDetection:
-    """Scans this page's <script> tags for Hotjar signals."""
+    """Looks for Hotjar in the page's scripts."""
     result = HotjarDetection()
     site_ids: List[str] = []
     versions: List[int] = []
@@ -64,7 +54,7 @@ def detect_hotjar(page: ParsedPage) -> HotjarDetection:
 
 
 def check_hotjar(page: ParsedPage) -> List[dict]:
-    """Findings for Hotjar configuration issues. Absence of Hotjar is not itself a finding."""
+    """Findings for Hotjar problems. No Hotjar at all is not a finding."""
     detection = detect_hotjar(page)
     findings: List[dict] = []
 

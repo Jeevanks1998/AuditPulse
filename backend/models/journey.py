@@ -1,14 +1,5 @@
 """
-models/journey.py
-
-Result of the "journey" audit module (Customer Journey Mapping — see
-journey/ and config.constants.AUDIT_MODULES). One row per audit.
-
-Everything is stored as JSON produced by journey.run_customer_journey:
-health (counts / rates / score), the scanned pages, every discovered
-interaction (classification, signals, test outcome, tracking, screenshot
-paths), forms, downloads, the journey map (nodes / edges / site tree /
-journeys), site-level tracking summary and the QA findings.
+Journey Map result for one audit, stored as JSON: health, pages, interactions, forms, downloads, map, tracking and findings.
 """
 
 from datetime import datetime, timezone

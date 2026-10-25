@@ -1,16 +1,11 @@
-/* ==========================================================================
-   Customer Journey — report page + dashboard card.
-   Rendered by report.js / dashboard.js from JourneyOut.report_view
-   (backend reports/journey_view.py). Every number and status comes from
-   the scan; "Not tested" / "Not executed (safety)" are explicit states.
-   ========================================================================== */
+/* Journey Map on the report page and dashboard (from report_view). */
 
 .jr { display: flex; flex-direction: column; gap: var(--sp-5); }
 .jr-block { display: flex; flex-direction: column; gap: var(--sp-2); }
 .jr-title { margin: 0; font-size: var(--fs-sm); font-weight: 600; color: var(--text-primary); }
 .jr-muted { margin: 0; font-size: var(--fs-sm); color: var(--text-tertiary); }
 
-/* ---- health ---- */
+/* Health */
 .jr-health { display: grid; grid-template-columns: 180px 1fr; gap: var(--sp-4); align-items: stretch; }
 .jr-score {
   border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-sunken);
@@ -31,7 +26,7 @@
 .jr-rates { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); font-size: var(--fs-sm); color: var(--text-secondary); margin-top: var(--sp-2); }
 .jr-rates strong { color: var(--text-primary); }
 
-/* ---- chips ---- */
+/* Chips */
 .jr-chip {
   display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-pill);
   font-size: var(--fs-2xs, 11px); font-weight: 600; white-space: nowrap; border: 1px solid var(--border);
@@ -48,7 +43,7 @@
 .jr-bar__fill { display: block; height: 100%; background: var(--color-primary); }
 .jr-bar__n { font-family: var(--font-mono); text-align: right; color: var(--text-secondary); }
 
-/* ---- map ---- */
+/* Map */
 .jr-map { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--sp-4); align-items: start; }
 .jr-map__main { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
 .jr-flows { display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -146,13 +141,13 @@
   .jr-bar { grid-template-columns: 96px 1fr 32px; }
 }
 
-/* Report v2: use the width instead of one long column */
+/* Wide screens: flows in a grid */
 @media (min-width: 1200px) {
   .jr-flows { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--sp-2); }
   .jr-bars { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--sp-8); }
 }
 
-/* ---- evidence-driven journey map (provenance, analytics split, health breakdown) ---- */
+/* Journey details (source, analytics split, health breakdown) */
 .jr-provenance {
   margin: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-md); font-size: var(--fs-sm);
   background: var(--color-primary-soft); color: var(--text-secondary); border: 1px solid transparent;
@@ -192,7 +187,7 @@
 .jr-pipeline span:not(.jr-arrow) { padding: 2px 8px; border-radius: var(--radius-pill); border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); }
 .jr-note { margin: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-md); background: var(--surface-sunken); font-size: var(--fs-sm); color: var(--text-secondary); }
 
-/* ---- Plain-language overview (top of the Journey Map section) ---- */
+/* Summary at the top of the Journey Map */
 .jr-ov { border: 1px solid var(--border); border-radius: var(--radius-card, 12px); padding: var(--sp-4); margin-bottom: var(--sp-4); background: var(--surface); }
 .jr-ov__headline { margin: 0 0 var(--sp-3); font-size: var(--fs-lg, 18px); font-weight: 700; color: var(--text-primary); }
 .jr-ov__h { margin: var(--sp-3) 0 6px; font-size: var(--fs-sm); font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .04em; }

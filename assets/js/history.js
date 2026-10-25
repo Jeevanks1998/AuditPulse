@@ -1,10 +1,4 @@
-/* ==========================================================================
-   history.js — history.html page logic. Lists the user's audits
-   (window.Api.audits.getRecent()) or, in the "Deleted" view, the deleted
-   audits (window.Api.history.list({ deleted: true })), rendered with
-   window.Components.renderAuditRow(). Delete moves an audit to Deleted
-   (soft delete, with Undo); Restore brings it back.
-   ========================================================================== */
+/* History page: the user's audits, or deleted audits in the "Deleted" view. Delete (with Undo) and Restore. */
 
 (function () {
   var U = window.Utils;
@@ -74,7 +68,7 @@
     });
     if (searchInput) searchInput.addEventListener('input', applyFilter);
 
-    // Delete / Restore buttons (event delegation — rows are re-rendered).
+    // Delete / Restore buttons (rows are re-rendered, so delegate).
     tableBody.addEventListener('click', function (e) {
       var del = e.target.closest('[data-delete-audit]');
       var res = e.target.closest('[data-restore-audit]');

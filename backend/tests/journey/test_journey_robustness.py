@@ -1,12 +1,7 @@
 """
-Robustness of the Customer Journey scan on real-world sites:
-
-  * elements are found again by what they are (signature), not by their
-    DOM-order number, which changes between two loads of the same page
-    (axa.it: order differed from element #274 on);
-  * a time limit keeps everything already found instead of returning nothing
-    ("The journey map scan could not run: unknown error" on axa.de);
-  * an audit where no module produced a score is "not scored", not 0/100.
+Journey Map robustness on real sites: elements are found again by signature
+(element order changes between loads), a time limit keeps partial results,
+and an audit with no score is "not scored", not 0.
 """
 
 import asyncio
@@ -29,8 +24,7 @@ def _it(**kw):
 
 
 def test_relocate_by_signature_when_dom_order_changed():
-    # After reload a carousel added elements before it: the old id p1e57 is now
-    # a different element; the quote link is p1e61.
+    # After reload a carousel added elements: old id p1e57 is now something else; the quote link is p1e61.
     fresh = {"elements": [
         {"id": "p1e57", "signature": "a|/reviews", "position": {"x": 0, "y": 880}, "visible": True},
         {"id": "p1e61", "signature": "a|/quote", "position": {"x": 100, "y": 905}, "visible": True},

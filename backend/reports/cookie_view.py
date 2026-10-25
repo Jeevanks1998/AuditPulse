@@ -1,26 +1,12 @@
 """
-reports/cookie_view.py
+Cookie Scanner: every cookie AuditPulse saw on the site, from what the audit
+recorded in a real browser. Sources: the consent check (before consent,
+after Reject, after Accept, then other pages after Accept), the Journey Map
+pages, and the homepage's Set-Cookie headers.
 
-Cookie Scanner: one inventory of every cookie AuditPulse saw on the site,
-built from what the audit already observed in a real browser. Nothing is
-guessed or hard-coded per site.
-
-Sources (each one optional):
-
-  * Consent module (homepage, fresh browser per leg):
-      before consent  — page loaded, banner not touched
-      after Reject    — Reject clicked (+ the next page view after Reject)
-      after Accept    — Accept clicked in a separate fresh browser
-  * Customer Journey (every crawled page, consent accepted): the page on
-    which each cookie first appeared.
-  * The server's own Set-Cookie headers on the homepage response.
-
-Per cookie: name, domain, path, first/third party, category, purpose,
-vendor, lifetime and whether it exceeds the guidance for its category,
-Secure / HttpOnly / SameSite, size, which consent states it was present
-in, the page that set it, and plain-language issues.
-
-Cookie *values* are never stored or shown.
+Per cookie: name, domain, party, category, vendor, lifetime, security
+flags, which states it appeared in, the page that set it, and any issues.
+Cookie values are never stored or shown.
 """
 
 from __future__ import annotations
@@ -55,13 +41,12 @@ STATE_LABELS = {
 }
 CATEGORY_ORDER = (MARKETING, ANALYTICS, UNKNOWN, FUNCTIONAL, CONSENT_MANAGEMENT, ESSENTIAL)
 
-# Second-level labels under which the registrable domain has three labels
-# (axa.co.uk, example.com.au …).
+# Labels that make a three-part main domain (axa.co.uk, example.com.au).
 _SLD_SUFFIXES = {"co", "com", "org", "net", "gov", "ac", "edu", "ne", "or", "go", "gv"}
 
 
 def site_domain(host: Optional[str]) -> str:
-    """Registrable domain of a host: www.axa.ie -> axa.ie, shop.axa.co.uk -> axa.co.uk."""
+    """Main domain of a host: www.axa.ie -> axa.ie, shop.axa.co.uk -> axa.co.uk."""
     h = (host or "").lower().strip(".")
     parts = h.split(".")
     if len(parts) <= 2:
@@ -134,7 +119,7 @@ class _Entry:
 
 
 def _detail_from(c: dict, observed_at: Optional[float]) -> Optional[dict]:
-    """Expiry / flags from a stored cookie dict. None when this record predates full capture."""
+    """Expiry and flags from a stored cookie. None for older records without them."""
     if "secure" not in c:
         return None
     exp = c.get("expires")
@@ -151,7 +136,7 @@ def _detail_from(c: dict, observed_at: Optional[float]) -> Optional[dict]:
 
 
 def build_cookie_inventory(consent: Optional[dict], journey: Optional[dict], url: str = "") -> dict:
-    """The Cookie Scanner presentation model (JSON-ready). Never raises on partial data."""
+    """Builds the Cookie Scanner view. Works with partial data."""
     host = urlparse(url or "").hostname or ""
     site = site_domain(host)
     entries: Dict[tuple, _Entry] = {}
@@ -176,7 +161,7 @@ def build_cookie_inventory(consent: Optional[dict], journey: Optional[dict], url
         if e.detail is None:
             e.detail = _detail_from(c, observed_at)
 
-    # --- Consent module: three browser states on the homepage -------------
+    # Consent check: the three states on the homepage
     rr = (consent or {}).get("runtime_result") or {}
     consent_observed = _epoch(rr.get("tested_at"))
     consent_ran = bool(rr.get("available"))
@@ -199,7 +184,7 @@ def build_cookie_inventory(consent: Optional[dict], journey: Optional[dict], url
                     if state not in s["states"]:
                         s["states"].append(state)
 
-    # --- Cookie Scanner sweep: other pages visited after Accept ------------
+    # Other pages visited after Accept
     site_pages = [p for p in (rr.get("site_pages") or []) if not p.get("error")] if consent_ran else []
     if site_pages:
         tested_states.add("journey")
@@ -209,7 +194,7 @@ def build_cookie_inventory(consent: Optional[dict], journey: Optional[dict], url
             for c in p.get("cookies_set") or []:
                 add(c, "journey", p.get("url"), consent_observed)
 
-    # --- Customer Journey: page that first set each cookie ----------------
+    # Journey Map: the page that first set each cookie
     j_pages = (journey or {}).get("pages") or []
     journey_observed = _epoch((journey or {}).get("started_at"))
     journey_pages_with_data = [p for p in j_pages if "cookies_set" in p]
@@ -223,7 +208,7 @@ def build_cookie_inventory(consent: Optional[dict], journey: Optional[dict], url
         notes.append("This audit's Journey Map ran before page-by-page cookie capture was added. "
                      "Run the audit again to see which page sets each cookie.")
 
-    # --- Server Set-Cookie headers on the homepage ------------------------
+    # Server Set-Cookie headers on the homepage
     for c in (consent or {}).get("cookies_detected") or []:
         name = c.get("name")
         domain = (c.get("domain") or host or "").lstrip(".").lower()
@@ -298,7 +283,7 @@ def _present(e: _Entry, site: str, tested: set) -> dict:
     needs = requires_consent(cls.category)
     seen = {s: (s in e.states) if s in tested else None for s in STATES}
     if "server" in e.states and seen["before_consent"] is not True:
-        seen["before_consent"] = True   # sent with the very first response, before any choice
+        seen["before_consent"] = True   # sent with the first response, before any choice
 
     days = d.get("days")
     session = bool(d.get("session"))
@@ -317,8 +302,7 @@ def _present(e: _Entry, site: str, tested: set) -> dict:
         issues.append("SameSite=None without Secure (browsers reject it)")
     if party == "third" and d.get("secure") is False:
         issues.append("Third-party cookie without Secure")
-    # Login/session cookies only: analytics & marketing cookies are written by
-    # JavaScript by design, so HttpOnly can't apply to them.
+    # Only for login/session cookies: analytics cookies are set by JavaScript, so HttpOnly can't apply.
     if _looks_like_session_id(e.name) and d.get("http_only") is False and cls.category in (ESSENTIAL, UNKNOWN):
         issues.append("Looks like a session cookie but JavaScript can read it (no HttpOnly)")
 
@@ -382,7 +366,7 @@ def _headline(s: dict, available: bool, tested: set = frozenset()) -> str:
 
 
 def inventory_csv(inv: dict) -> str:
-    """CSV of the inventory (same columns as the report's export button)."""
+    """CSV of the inventory (same columns as the export button)."""
     import csv
     import io
 

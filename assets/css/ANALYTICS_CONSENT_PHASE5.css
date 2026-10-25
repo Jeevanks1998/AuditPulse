@@ -1,19 +1,7 @@
-/* ==========================================================================
-   Phase 5 — Analytics & Consent Health
-   
-   Redesigns the "Analytics Health" and "Consent Health" cards (§6 runtime
-   checks in dashboard.js) from a plain checkmark list into KPI tiles that
-   match the Phase 4 visual language (card-based, color-coded, animated).
-
-   IMPORTANT: every value rendered into these tiles comes straight from the
-   /audits/{id}/analytics and /audits/{id}/consent API responses (see
-   dashboard.js renderAnalyticsHealthCard / renderConsentHealthCard). There
-   is no synthetic or placeholder data here — a tile whose underlying field
-   wasn't tested renders a "Not tested" state instead of a fabricated value.
-
-   All HTML IDs (#analyticsHealthCard, #analyticsHealthBody, etc.) are
-   unchanged from Phase 3/4, so this is additive CSS only.
-   ========================================================================== */
+/*
+ * Analytics and Consent health cards on the dashboard (KPI tiles).
+ * Every value comes from the API; untested values show "Not tested".
+ */
 
 .health-check-card {
   display: flex;
@@ -21,7 +9,7 @@
   gap: var(--sp-5);
 }
 
-/* ---- KPI tile grid ---- */
+/* KPI tiles */
 .health-kpi-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -91,8 +79,7 @@
   font-weight: 500;
 }
 
-/* Status color variants — driven by real pass/fail/not-tested state,
-   never by a hard-coded default. */
+/* Status colours (from the real pass / fail / not tested state) */
 .health-kpi-tile[data-status="good"] .health-kpi-tile__icon {
   background: var(--color-success-soft);
   color: var(--color-success);
@@ -117,7 +104,7 @@
 }
 .health-kpi-tile[data-status="neutral"] .health-kpi-tile__value { color: var(--text-primary); }
 
-/* Not-tested / no-data state — explicit, not zeroed-out or hidden */
+/* Not tested / no data */
 .health-kpi-tile[data-status="untested"] .health-kpi-tile__value {
   color: var(--text-tertiary);
   font-style: italic;
@@ -130,8 +117,7 @@
   color: var(--text-tertiary);
 }
 
-/* Per-vendor page-view chips (Analytics Health, only rendered when the
-   runtime pass actually ran) */
+/* Page-view chips per tool (only when the live check ran) */
 .health-vendor-chips {
   grid-column: 1 / -1;
   display: flex;
@@ -160,10 +146,7 @@
 .health-vendor-chip[data-status="good"] .health-vendor-chip__dot { background: var(--color-success); }
 .health-vendor-chip[data-status="bad"] .health-vendor-chip__dot { background: var(--color-error); }
 
-/* ---- Compliance detail (GDPR / CCPA) ----
-   Kept as a distinct block below the KPI tiles rather than squeezed into a
-   tile, since each can expand into a multi-line "why did it fail" list
-   sourced from the backend's gdpr_checks/ccpa_checks dicts. */
+/* GDPR / CCPA detail block below the tiles */
 .health-compliance-block {
   grid-column: 1 / -1;
   display: flex;
@@ -182,10 +165,7 @@
 
 .health-compliance-row .badge { font-size: var(--fs-xs); }
 
-/* Full per-check ✓/✕/○ list (renderCheckListRows in dashboard.js), shown
-   above each GDPR/CCPA roll-up row — .check-item itself is already styled
-   globally in style.css, this just spaces the list and shrinks it to fit
-   the health card. */
+/* Per-check list above each GDPR/CCPA row */
 .health-compliance-checklist {
   display: flex;
   flex-direction: column;
@@ -221,9 +201,7 @@
   color: var(--text-secondary);
 }
 
-/* Real runtime-verified enforcement (does Reject actually block tracking,
-   does Accept actually allow it) — separate from the compliance checklist
-   because it comes from consent.runtimeResult, not consent.*Checks. */
+/* Live Accept/Reject results */
 .health-runtime-note {
   grid-column: 1 / -1;
   font-size: var(--fs-xs);
@@ -232,17 +210,14 @@
   border-top: 1px dashed var(--border);
 }
 
-/* ---- Responsive ---- */
+/* Responsive */
 @media (max-width: 640px) {
   .health-kpi-grid {
     grid-template-columns: 1fr;
   }
 }
 
-/* ---- Dark mode ----
-   Matches the app's [data-theme="dark"] attribute (set by the manual
-   theme toggle in app.js), not the OS-level prefers-color-scheme —
-   see the note in HEALTH_OVERVIEW_PHASE4.css for why. */
+/* Dark mode (uses the app's [data-theme] setting, not the OS setting) */
 [data-theme="dark"] .health-kpi-tile {
   background: rgba(255, 255, 255, 0.02);
 }
@@ -254,15 +229,7 @@
 }
 
 
-/* ==========================================================================
-   Phase 4 — Consent evidence (report page)
-
-   Rendered by report.js from ConsentOut.report_view (backend
-   reports/consent_view.py) — the same presentation model the PDF, JSON
-   export and evidence ZIP use. Every state shown here comes from that
-   model: "Not tested" / "Not assessed" are explicit states, never a
-   silent pass or a fabricated fail.
-   ========================================================================== */
+/* Consent evidence on the report page (rendered by report.js from report_view) */
 
 .cev { display: flex; flex-direction: column; gap: var(--sp-4); }
 

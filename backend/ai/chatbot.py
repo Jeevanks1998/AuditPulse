@@ -1,19 +1,7 @@
 """
-ai/chatbot.py
+Answers questions about one completed audit, using only that audit's data.
 
-Conversational Q&A over a single completed audit — "why is my SEO score
-so low", "what should I fix first" — grounded entirely in that audit's
-own breakdown/findings so the model never has to (and never should)
-invent facts about a site it hasn't crawled. Backs a future chat widget
-on report.html; for now it's exposed as a plain async function so
-services/ai_service.py (and, through it, an api/ router) can call it
-without any chat-specific plumbing living in this package.
-
-Unlike the rest of ai/, there's no meaningful heuristic fallback for
-free-form questions — you can't template your way to an answer for an
-arbitrary question. When the provider is unavailable or fails, this
-returns a short, honest message saying so (never a fabricated answer,
-never an exception the caller has to handle specially).
+If the AI is unavailable it says so plainly; it never makes up an answer.
 """
 
 from __future__ import annotations
@@ -23,7 +11,7 @@ from typing import Dict, List, Optional
 from config.logging import logger
 from ai.provider import AIProviderError, call_ai
 
-MAX_HISTORY_TURNS = 6  # most recent (question, answer) pairs kept for context
+MAX_HISTORY_TURNS = 6  # earlier question/answer pairs sent as context
 UNAVAILABLE_MESSAGE = (
     "I can't reach the AI assistant right now (no provider configured, or the request failed). "
     "You can still review the full findings list and score breakdown in the report above."
@@ -38,11 +26,7 @@ async def ask_about_audit(
     findings: Optional[List[dict]] = None,
     history: Optional[List[Dict[str, str]]] = None,
 ) -> str:
-    """
-    Answers a free-text `question` about one audit, grounded in its own
-    scores/findings. `history` is an optional list of {"question", "answer"}
-    dicts from earlier turns in the same chat, most-recent-last.
-    """
+    """Answers `question` about one audit. `history` holds earlier {"question", "answer"} turns, oldest first."""
     question = (question or "").strip()
     if not question:
         return "Ask me anything about this audit — for example, \"what should I fix first?\""

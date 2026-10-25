@@ -1,26 +1,7 @@
 """
-services/scheduler_service.py
-
-Recurring audit schedules. settings.html's "Weekly / Mondays, 6:00 AM"
-fields are a user's *default* cadence (see api/settings.py); this module
-lets a user manage one or more explicit recurring jobs per URL, and
-trigger any of them immediately.
-
-The Schedule model lives here rather than in models/ — it's config for
-*when* an audit runs, not audit result data, so it wasn't part of the
-models/ package (audit, report, website, user, issue, consent, analytics,
-history), and living next to the service that owns its only read/write
-path avoids api/ <-> services/ import cycles. It still shares the same
-`Base` and links out to `models.website.Website` / `models.audit.Audit`
-like everything else, so table creation in config.database.init_db()
-picks it up regardless.
-
-Note: this only provides the CRUD + manual trigger. Actual periodic
-execution belongs in a Celery beat worker (CELERY_BROKER_URL /
-CELERY_RESULT_BACKEND are already in config.settings) that periodically
-queries for schedules whose `next_run_at` has passed and calls
-`services.audit_service.run_audit_pipeline` for each — that worker isn't
-implemented here.
+Recurring audit schedules: create, edit, delete and run now. The Schedule
+model lives here because only this service reads and writes it.
+Timed runs are started by scheduler/jobs.py.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -42,9 +23,7 @@ FREQUENCY_DAYS = {"Daily": 1, "Weekly": 7, "Monthly": 30, "Yearly": 365}
 DEFAULT_RUN_NOW_MAX_PAGES = 50
 
 
-# --------------------------------------------------------------------------
 # Model
-# --------------------------------------------------------------------------
 class Schedule(Base):
     __tablename__ = "schedules"
 
@@ -60,27 +39,14 @@ class Schedule(Base):
     depth: Mapped[str] = mapped_column(String(20), default="homepage")
     modules: Mapped[list] = mapped_column(JSON, default=list)
 
-    # Structured recurrence detail behind `frequency`/`time_label` — e.g.
-    # {"time": "09:00 AM", "timezone": "Asia/Kolkata", "weekday": "Monday"}
-    # for Weekly, or {"year_month": "September", "year_day": 15, ...} for
-    # Yearly. Kept as JSON (rather than a column per field) since the shape
-    # varies by frequency; see api/scheduler.py's ScheduleCreate for the
-    # per-frequency keys the frontend sends.
+    # Recurrence details, e.g. {"time": "09:00 AM", "timezone": "Asia/Kolkata", "weekday": "Monday"}. Varies by frequency.
     schedule: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=None)
 
-    # The window during which the recurring schedule is active — distinct
-    # from `frequency`/`schedule` (how often it repeats). Once `end_date`
-    # passes (and never_expires is false), the schedule should stop firing;
-    # not enforced here since periodic execution isn't implemented yet (see
-    # module docstring) — the eventual Celery beat worker should check it.
+    # When the schedule is active (start_date, end_date, never_expires).
     schedule_period: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=None)
 
-    # Email the report automatically after every run that completes:
-    # {"enabled": bool, "to": [...], "cc": [...], "attachments": [keys from
-    # emailer.attachments.ATTACHMENT_CHOICES], "subject": str|None,
-    # "message": str|None} plus the outcome of the latest delivery
-    # ("last_status", "last_sent_at", "last_error", "last_audit_id") —
-    # see services/scheduled_email.py.
+    # Automatic email after each run: {"enabled", "to", "cc", "attachments",
+    # "subject", "message"} plus the last result (see services/scheduled_email.py).
     email_delivery: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=None)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -91,9 +57,7 @@ class Schedule(Base):
     )
 
 
-# --------------------------------------------------------------------------
 # Helpers
-# --------------------------------------------------------------------------
 def compute_next_run(frequency: str, from_time: Optional[datetime] = None) -> datetime:
     base = from_time or datetime.now(timezone.utc)
     return base + timedelta(days=FREQUENCY_DAYS.get(frequency, 7))
@@ -103,9 +67,7 @@ _DELIVERY_STATE_KEYS = ("last_status", "last_sent_at", "last_error", "last_audit
 
 
 def _delivery_config(delivery, previous: Optional[dict] = None) -> Optional[dict]:
-    """Normalise the modal's email settings for storage, keeping the last
-    delivery result from `previous` so editing recipients doesn't wipe
-    the "Last email" status shown in the table."""
+    """Cleans up the dialog's email settings, keeping the last delivery result."""
     if delivery is None:
         return None
     data = delivery.model_dump() if hasattr(delivery, "model_dump") else dict(delivery)
@@ -125,9 +87,7 @@ async def get_owned_schedule(schedule_id: int, db: AsyncSession, user: User) -> 
     return schedule
 
 
-# --------------------------------------------------------------------------
-# CRUD + manual trigger
-# --------------------------------------------------------------------------
+# Create / edit / delete / run now
 async def list_schedules(db: AsyncSession, user: User) -> List[Schedule]:
     result = await db.execute(
         select(Schedule).where(Schedule.user_id == user.id).order_by(Schedule.created_at.desc())
@@ -197,13 +157,7 @@ async def delete_schedule(schedule_id: int, db: AsyncSession, user: User) -> Non
 
 
 async def run_schedule_now(schedule_id: int, db: AsyncSession, user: User) -> Audit:
-    """
-    Fires a schedule's audit immediately, independent of `next_run_at`.
-    Persists the new Audit + bumps the schedule's last/next run, but does
-    not start the background pipeline — the caller (api/scheduler.py)
-    owns BackgroundTasks and should call `audit_service.run_audit_pipeline`
-    with the returned audit's id.
-    """
+    """Starts a schedule's audit now. The caller starts the background pipeline."""
     schedule = await get_owned_schedule(schedule_id, db, user)
 
     audit = audit_service.new_audit(

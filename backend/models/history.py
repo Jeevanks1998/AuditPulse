@@ -1,17 +1,6 @@
 """
-models/history.py
-
-History is a lightweight, append-only activity log — one row per
-notable account event (login, audit started/completed/failed, settings
-changed, schedule created/run, report shared, etc.). It's distinct from
-the "audit history" list on history.html (that's just a paginated view
-over Audit, served by api/history.py): History powers a broader
-account-activity feed and gives every other module a single, cheap way
-to record "something happened" without designing a bespoke table for it.
-
-`log_event` is the one helper every router should call to write an
-entry; keeping it here (rather than duplicating `db.add(History(...))`
-everywhere) keeps the event_type vocabulary consistent.
+Account activity log: one row per event (login, audit started, settings
+changed...). Write entries with log_event().
 """
 
 from datetime import datetime, timezone
@@ -45,7 +34,7 @@ class HistoryEventType(str, Enum):
     API_KEY_REGENERATED = "api_key_regenerated"
     ACCESS_SYNCED = "access_synced"  # role/access pushed from the Access Portal
     ACCESS_REVOKED = "access_revoked"  # access pulled by the Access Portal
-    AUTHENTICATOR_SETUP = "authenticator_setup"  # first Google Authenticator pairing at login
+    AUTHENTICATOR_SETUP = "authenticator_setup"  # first authenticator set-up
     AUTHENTICATOR_RESET = "authenticator_reset"  # admin reset from the Access Portal
 
 
@@ -66,9 +55,7 @@ class History(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
     )
 
-    # ----------------------------------------------------------------
     # Relationships
-    # ----------------------------------------------------------------
     user: Mapped["User"] = relationship("User", back_populates="activity_events")
 
     def __repr__(self) -> str:  # pragma: no cover
@@ -83,7 +70,7 @@ async def log_event(
     audit_id: Optional[int] = None,
     meta: Optional[dict] = None,
 ) -> History:
-    """Append one activity row. Does not commit — caller controls the transaction."""
+    """Adds one activity row. Doesn't commit."""
     entry = History(
         user_id=user_id,
         audit_id=audit_id,

@@ -1,16 +1,5 @@
 """
-images/image_score.py
-
-Turns the flat finding lists from images/optimizer.py, alt.py,
-lazyload.py, and broken.py into a single weighted 0-100 score with a
-per-category breakdown — same shape as seo/seo_score.py and
-ux/ux_score.py, so it drops into Audit.breakdown / AuditStatsOut.
-breakdown as breakdown["images"] alongside the other module scores.
-
-"broken" is weighted heaviest since a broken image is a visible defect
-regardless of any other image-quality concern; "optimization" is next
-since format/CLS issues affect every visitor, while "alt" and
-"lazyload" are comparatively lower-stakes refinements.
+Turns image findings into a 0-100 score. Broken images weigh most.
 """
 
 from __future__ import annotations
@@ -43,7 +32,7 @@ class ImageScoreResult:
 
 
 def score_images(findings: List[dict]) -> ImageScoreResult:
-    """Scores a flat list of finding dicts (images/* run_*_checks output) into an overall score."""
+    """Scores a list of image findings."""
     by_category: Dict[str, List[dict]] = {}
     for finding in findings:
         category = finding.get("category") or _OTHER_CATEGORY

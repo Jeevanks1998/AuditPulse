@@ -1,19 +1,6 @@
 """
-scheduler/jobs.py
-
-The job body behind cron.py's "check-due-schedules" beat entry: finds
-every recurring Schedule (services/scheduler_service.py) whose
-next_run_at has passed, fires an audit for it, and rolls next_run_at
-forward — the exact same "create an Audit + bump last/next run" logic
-services.scheduler_service.run_schedule_now uses for a manual "Run now"
-click, just triggered by a clock instead of a request.
-
-This intentionally duplicates a small amount of that function rather
-than calling it directly: run_schedule_now takes a `user` (for its
-404/ownership check) because it's answering a request on that user's
-behalf, whereas this job is iterating *every* due schedule regardless of
-whose it is — there's no "current user" here, so it fetches user_id
-straight off the Schedule row instead.
+Starts an audit for every schedule whose next run time has passed, and moves
+the next run forward. Like "Run now", but for all users on a timer.
 """
 
 from datetime import datetime, timezone

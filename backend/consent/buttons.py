@@ -1,36 +1,15 @@
 """
-consent/buttons.py
+Finds the consent buttons, only inside the cookie banner (not elsewhere on the page).
 
-Consent-control detection, scoped to the consent banner.
+1. Find the banner (known CMP selectors, a cookie dialog, or the smallest
+   element that mentions cookies and holds a consent button).
+2. List the buttons inside it.
+3. Keep each button's exact text and classify what it does, e.g.
+   "Accept only strictly necessary cookies" -> reject_non_essential.
 
-The old version scanned every <button>/<a>/<input> on the whole page,
-so an unrelated "Continue" button in a checkout form or a "Settings"
-link in the nav could be reported as the banner's Accept or Manage
-control. This version:
-
-  1. locates the consent banner/container first (known CMP selectors,
-     an ARIA dialog that talks about cookies/consent, or the smallest
-     element that both mentions cookies/consent and holds a consent
-     control);
-  2. inventories clickable controls *inside that container only*;
-  3. keeps each control's exact visible text, and classifies it into a
-     semantic action separately:
-
-        Displayed text:  "Accept only strictly necessary cookies"
-        Detected action: reject_non_essential
-        Evidence:        Rendered consent banner
-
-Classification rules worth calling out:
-  * a bare "Continue" is NOT accept ("Accept and continue" is);
-    "Continue without accepting" is reject_non_essential
-  * "OK" / "Got it" are acknowledge, NOT accept
-  * "Close" / "Dismiss" / "×" are dismiss, NOT reject
-
-The same label rules (`classify_label`) and container selectors
-(`CONSENT_CONTAINER_SELECTORS`) are used by consent/runtime.py against
-the *rendered* page, which is the authoritative source for
-client-rendered CMPs (OneTrust, Didomi, Sourcepoint…) whose banner
-never exists in the raw HTML this module reads.
+Rules: a bare "Continue" isn't Accept; "OK" / "Got it" are acknowledge;
+"Close" / "×" are dismiss, not Reject. runtime.py uses the same rules on
+the rendered page (needed for banners added by JavaScript).
 """
 
 from __future__ import annotations
@@ -44,7 +23,7 @@ from crawler.parser import ParsedPage
 MODULE = "consent"
 CATEGORY = "buttons"
 
-# ---- semantic actions ------------------------------------------------------
+# Button actions
 ACCEPT_ALL = "accept_all"
 ACCEPT = "accept"
 REJECT_ALL = "reject_all"
@@ -61,7 +40,7 @@ REJECT_ACTIONS = frozenset({REJECT_ALL, REJECT, REJECT_NON_ESSENTIAL})
 MANAGE_ACTIONS = frozenset({MANAGE_PREFERENCES})
 CONSENT_ACTIONS = ACCEPT_ACTIONS | REJECT_ACTIONS | MANAGE_ACTIONS | frozenset({SAVE_PREFERENCES})
 
-# Preference order when choosing which detected control to click.
+# Which button to click first when several match.
 ACCEPT_CLICK_ORDER = (ACCEPT_ALL, ACCEPT)
 REJECT_CLICK_ORDER = (REJECT_ALL, REJECT, REJECT_NON_ESSENTIAL)
 
@@ -81,10 +60,8 @@ ACTION_LABELS = {
 EVIDENCE_RENDERED = "Rendered consent banner"
 EVIDENCE_STATIC = "Consent banner markup (static HTML)"
 
-# ---- label classification ---------------------------------------------------
-# Applied to a normalized label (lower-case, "&" -> "and", punctuation
-# stripped, whitespace collapsed). Ordered: the first matching rule wins,
-# so the more specific "necessary only" wordings come before plain accept.
+# Label rules: applied to the cleaned-up label; the first match wins, so
+# "necessary only" wordings come before plain accept.
 _C = "(?: cookies?)?"  # optional trailing "cookie(s)"
 
 _RULES: List[Tuple[str, re.Pattern]] = [
@@ -140,13 +117,8 @@ def normalize_label(label: str) -> str:
     return text
 
 
-# ---- word-based fallback ------------------------------------------------------
-# The exact-phrase rules above are precise but can't list every wording a
-# banner uses ("Accetta tutti i cookie", "Personalizza preferenze", "Alle
-# Cookies akzeptieren und weiter"…). When none of them matches, the label is
-# classified from the *kinds* of words it contains, in many languages:
-# accept / reject / "without accepting" / necessary-only / manage / save,
-# plus "all". Order matters: refusing wordings win over accept words
+# Fallback for wordings the exact rules miss: classify by the kinds of words
+# in the label, in many languages. Refusal words win over accept words
 # ("continua senza accettare" contains "accettare").
 _W_ALL = r"(?:all|alle|alles|tutti|tutte|tutto|tout|tous|toutes|todo|todos|todas|tudo|wszystk\w*|allt|alla|kaikki|toate|v[šs]echny|minden)"
 _W_ACCEPT = (r"(?:(?:j'|j)?accept\w*|accett\w*|acept\w*|aceit\w*|akzept\w*|akcept\w*|zustimm\w*|einverstanden|allow\w*|agree\w*"
@@ -167,9 +139,7 @@ _W_MANAGE = (r"(?:manage|personali[sz]\w*|personnalis\w*|customi[sz]\w*|gestisci
              r"|ustawienia|inst[äa]llningar|indstillinger|innstillinger)")
 
 
-# Words a plain accept/reject button may contain besides the verb and "all"
-# ("Accetta tutti i cookie", "Alle Cookies akzeptieren und weiter"). Any other
-# word ("Accept order", "Accept terms") means it isn't a cookie choice.
+# Words a plain accept/reject button may also contain. Any other word ("Accept order") means it isn't a cookie choice.
 _W_FILLER = (r"(?:cookies?|cookie|consent|the|i|il|lo|la|le|les|los|las|gli|de|des|du|di|del|dei|delle|der|die|das|den|dem"
              r"|and|e|ed|et|y|und|en|og|och|a|al|au|aux|to|my|mi|mes|mes|je|j'|ich|io|me|moi|nous|we|for|per|pour|para|f[üu]r"
              r"|continue|continua|continuer|continuar|weiter|proceed|close|chiudi|fermer|cerrar|schlie[sß]en|now|ora|maintenant"
@@ -188,8 +158,7 @@ def _has(word_re: str, text: str) -> bool:
     return re.search(rf"(?:^|\s){word_re}(?:\s|$)", text) is not None
 
 
-# "Non-essential", "not necessary", "optional"… name the cookies that NEED
-# consent — the opposite of "necessary only".
+# Words naming the cookies that need consent ("non-essential", "optional").
 _W_OPTIONAL = (r"(?:optional|optionnels?|facoltativ\w*|opcional\w*|zus[äa]tzlich\w*|additional|marketing|analytics?"
                r"|analitic\w*|profilazione|statisti\w*|advertising|pubblicit\w*|publicit\w*|werbung)")
 
@@ -205,13 +174,11 @@ def _classify_by_words(norm: str) -> str:
         return UNCLASSIFIED                    # a sentence, not a button
     accept, reject = _has(_W_ACCEPT, norm), _has(_W_REJECT, norm)
     if _negated_necessary(norm):
-        # Judge accept/reject without the "non-essential" phrase itself ("non"
-        # is also a refusal word in French/Italian).
+        # Remove the "non-essential" phrase before judging ("non" is also a refusal word).
         rest = re.sub(rf"(?:^|\s)(?:non ?|not |nicht |no |pas |nie ){_W_NECESSARY}(?=\s|$)", " ", norm)
         rest = re.sub(r"(?:^|\s)non(?:essential|necessary)\w*", " ", rest).strip()
         accept, reject = _has(_W_ACCEPT, rest), _has(_W_REJECT, rest)
-        # "Accept non-essential cookies" accepts the optional ones;
-        # "Reject non-essential cookies" keeps only the necessary ones.
+        # "Reject non-essential" keeps only necessary cookies.
         if reject or _has(_W_WITHOUT, norm):
             return REJECT_NON_ESSENTIAL
         if accept and _only_cookie_words(norm, _W_ACCEPT, _W_OPTIONAL, r"non", r"not", r"nicht",
@@ -233,7 +200,7 @@ def _classify_by_words(norm: str) -> str:
 
 
 def classify_label(label: str) -> str:
-    """Semantic action for one control's visible label. Never raises."""
+    """What a button does, from its visible text. Never raises."""
     norm = normalize_label(label)
     if not norm or len(norm) > 80:
         return UNCLASSIFIED
@@ -243,9 +210,7 @@ def classify_label(label: str) -> str:
     return _classify_by_words(norm)
 
 
-# ---- container detection ---------------------------------------------------
-# CSS selectors for consent containers, most specific first. Shared with
-# consent/runtime.py (rendered DOM) and consent/screenshots.py.
+# Banner selectors, most specific first. Shared with runtime.py and screenshots.py.
 CONSENT_CONTAINER_SELECTORS: List[str] = [
     "#onetrust-banner-sdk", "#onetrust-pc-sdk",
     "#CybotCookiebotDialog",
@@ -279,30 +244,29 @@ CONSENT_CONTAINER_SELECTORS: List[str] = [
     "[id*='gdpr-banner' i]", "[class*='gdpr-banner' i]", "[id*='gdpr-consent' i]",
 ]
 
-# Text that makes an element "about consent" (used for ARIA dialogs and the
-# text heuristic). Kept to cookie/consent vocabulary in a few languages.
+# Words that make an element "about consent" (a few languages).
 CONSENT_TEXT_PATTERN = (
     r"cookie|consent|tracking technolog|personal data|your privacy|privacy choices|"
     r"datenschutz|einwilligung|traceurs|consentement|consentimiento|consenso"
 )
 CONSENT_TEXT_RE = re.compile(CONSENT_TEXT_PATTERN, re.IGNORECASE)
 
-_MAX_CONTAINER_TEXT = 4000  # an element with more text than this is a page section, not a banner
+_MAX_CONTAINER_TEXT = 4000  # more text than this is a page section, not a banner
 _MAX_ANCESTOR_HOPS = 8
 _CLICKABLE_TAGS = ["button", "a", "input"]
 
 
 @dataclass
 class ConsentControl:
-    """One control found inside the consent banner — the single source of truth for consent buttons."""
+    """One button found inside the cookie banner."""
     label: str                       # exact visible text
-    action: str                      # semantic action (see ACTION_LABELS)
+    action: str                      # what it does (see ACTION_LABELS)
     evidence: str = EVIDENCE_STATIC
-    selector: Optional[str] = None   # how runtime re-locates it for clicking
+    selector: Optional[str] = None   # used to find it again for clicking
     frame: str = "main"              # "main" or the iframe URL
-    visible: Optional[bool] = None   # None = unknown (static markup)
+    visible: Optional[bool] = None   # None = unknown (raw HTML)
     clickable: Optional[bool] = None
-    layer: int = 1                   # 1 = first banner layer, 2 = preference panel
+    layer: int = 1                   # 1 = banner, 2 = preference panel
     tag: Optional[str] = None
 
     @property
@@ -319,7 +283,7 @@ class ConsentControl:
 
 @dataclass
 class ButtonsDetection:
-    # Back-compat flags/labels (consent_score and older callers read these).
+    # Simple flags read by consent_score and older code.
     accept_found: bool = False
     reject_found: bool = False
     manage_found: bool = False
@@ -327,7 +291,7 @@ class ButtonsDetection:
     reject_labels: List[str] = field(default_factory=list)
     manage_labels: List[str] = field(default_factory=list)
 
-    # New: banner-scoped evidence.
+    # Where the banner was found.
     container_found: bool = False
     container_hint: Optional[str] = None     # selector / id / class that identified the banner
     detected_via: Optional[str] = None        # cmp_selector | aria_dialog | text_heuristic | cmp_iframe
@@ -336,7 +300,7 @@ class ButtonsDetection:
 
     @property
     def has_reject_parity(self) -> bool:
-        """True when accept and reject are both offered on the first banner layer."""
+        """True when Accept and Reject are both on the banner itself."""
         return self.accept_found and self.reject_found
 
     def controls_for(self, actions) -> List[ConsentControl]:
@@ -359,7 +323,7 @@ class ButtonsDetection:
                   detected_via=detected_via, source=source, controls=list(controls))
         for c in controls:
             if c.layer != 1:
-                continue  # parity is judged on the first layer only
+                continue  # only the banner itself counts
             if c.action in ACCEPT_ACTIONS:
                 det.accept_found = True
                 det.accept_labels.append(c.label)
@@ -407,11 +371,8 @@ def _too_big(el) -> bool:
 
 
 def detect_consent_container(soup) -> Tuple[Optional[object], Optional[str], Optional[str]]:
-    """
-    Locates the consent banner in static markup. Returns
-    (element, detected_via, hint) or (None, None, None).
-    """
-    # 1. known CMP / consent selectors that actually hold a consent control
+    """Finds the cookie banner in raw HTML. Returns (element, how_found, hint) or (None, None, None)."""
+    # 1. known banner selectors that contain a consent button
     for sel in CONSENT_CONTAINER_SELECTORS:
         try:
             matches = soup.select(sel)
@@ -421,8 +382,7 @@ def detect_consent_container(soup) -> Tuple[Optional[object], Optional[str], Opt
             if _too_big(el):
                 continue
             container = el
-            # A matched inner element (e.g. ".cookie-banner__text") may hold no
-            # controls; climb a few levels to the element that does.
+            # Matched an inner element with no buttons: climb up a few levels.
             for _ in range(3):
                 if any(classify_label(_label_of(t)) in CONSENT_ACTIONS for t in _clickables(container)):
                     break
@@ -434,7 +394,7 @@ def detect_consent_container(soup) -> Tuple[Optional[object], Optional[str], Opt
                 via = "aria_dialog" if sel.startswith("[role=") else "cmp_selector"
                 return container, via, sel
 
-    # 2. text heuristic: smallest ancestor of an accept/reject control that talks about cookies/consent
+    # 2. smallest element around an Accept/Reject button that mentions cookies
     for tag in _clickables(soup):
         action = classify_label(_label_of(tag))
         if action not in ACCEPT_ACTIONS and action not in REJECT_ACTIONS:
@@ -451,10 +411,7 @@ def detect_consent_container(soup) -> Tuple[Optional[object], Optional[str], Opt
 
 
 def detect_buttons(page: ParsedPage) -> ButtonsDetection:
-    """
-    Static (raw HTML) banner-scoped detection. Controls outside the
-    detected consent container are ignored entirely.
-    """
+    """Finds banner buttons in raw HTML. Buttons outside the banner are ignored."""
     container, via, hint = detect_consent_container(page.soup)
     if container is None:
         return ButtonsDetection(container_found=False, source="static")
@@ -482,11 +439,8 @@ def check_buttons(
     banner_detected: bool = True,
     detection: Optional[ButtonsDetection] = None,
 ) -> List[dict]:
-    """
-    `banner_detected=False` skips these findings entirely (banner.py's own
-    "no banner" finding is the more useful one). `detection` lets the
-    caller pass the runtime (rendered-banner) inventory instead of the
-    static one.
+    """Findings for the banner's buttons. Skipped when there's no banner.
+    `detection` lets the caller pass the rendered banner's buttons instead.
     """
     if not banner_detected:
         return []
@@ -497,7 +451,7 @@ def check_buttons(
 
     if not detection.container_found:
         if detection.source == "static":
-            # Client-rendered CMPs aren't in raw HTML — not a failure on its own.
+            # Banners added by JavaScript aren't in raw HTML; not a failure by itself.
             findings.append(_finding(
                 "info",
                 "Consent banner controls not present in static HTML",

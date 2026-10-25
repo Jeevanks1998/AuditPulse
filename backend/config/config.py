@@ -1,13 +1,5 @@
 """
-config/config.py
-
-Convenience aggregator so the rest of the app can do:
-
-    from config.config import settings, logger, constants
-
-instead of importing from several config submodules individually.
-Kept thin on purpose — actual logic lives in settings.py / database.py /
-logging.py / constants.py.
+Shortcut: `from config.config import settings, logger, constants`.
 """
 
 from config import constants

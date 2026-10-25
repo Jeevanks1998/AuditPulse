@@ -1,17 +1,7 @@
 """
-analytics/data_layer.py
-
-Checks for the GTM/GA4-style `dataLayer` convention: an array most tag
-managers read events from, initialized as `window.dataLayer =
-window.dataLayer || []` and fed via `dataLayer.push({...})` calls. This
-module doesn't care which tag manager owns it — it just looks at
-whether one exists, whether it's ever pushed to, and what event names
-show up, splitting GTM's own built-in events ('gtm.js', 'gtm.dom',
-'gtm.load') and a conventional 'page_view'/'pageview' from anything
-else (treated as a custom event).
-
-Reads crawler.parser.ParsedPage.soup directly, same rationale as the
-other analytics/* modules.
+Checks the dataLayer (the array tag managers read events from): does it
+exist, is it pushed to, and which events appear. GTM's own events and
+page_view are separated from custom events.
 """
 
 from __future__ import annotations
@@ -36,8 +26,8 @@ MAX_EVENT_NAMES_REPORTED = 10
 
 @dataclass
 class DataLayerDetection:
-    present: bool = False  # dataLayer referenced at all (init or push)
-    explicitly_initialized: bool = False  # a `dataLayer = window.dataLayer || []`-style line was found
+    present: bool = False  # dataLayer mentioned at all
+    explicitly_initialized: bool = False  # `dataLayer = window.dataLayer || []` found
     push_call_count: int = 0
     event_names: List[str] = field(default_factory=list)
     pageview_events: int = 0
@@ -45,13 +35,13 @@ class DataLayerDetection:
 
 
 def detect_data_layer(page: ParsedPage) -> DataLayerDetection:
-    """Scans this page's inline <script> tags for dataLayer init/push activity."""
+    """Looks for dataLayer set-up and pushes in inline scripts."""
     result = DataLayerDetection()
     event_names: List[str] = []
 
     for tag in page.soup.find_all("script"):
         if tag.get("src"):
-            continue  # only inline scripts can contain literal push() payloads
+            continue  # only inline scripts show the pushed data
         body = tag.string or tag.get_text() or ""
         if not body or "dataLayer" not in body:
             continue
@@ -72,12 +62,7 @@ def detect_data_layer(page: ParsedPage) -> DataLayerDetection:
 
 
 def check_data_layer(page: ParsedPage, gtm_detected: bool = False) -> List[dict]:
-    """
-    Findings for dataLayer setup issues. `gtm_detected` (from
-    analytics.gtm.detect_gtm(page).detected) lets this flag the specific
-    case of GTM being installed with no dataLayer activity anywhere on
-    the page, which usually means events aren't reaching it.
-    """
+    """Findings for dataLayer problems; flags GTM installed with no dataLayer activity."""
     detection = detect_data_layer(page)
     findings: List[dict] = []
 

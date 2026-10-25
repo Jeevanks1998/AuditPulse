@@ -1,42 +1,15 @@
 """
-consent/network.py
+Records every request a page makes before any cookie button is clicked,
+and sorts each request (also used by runtime.py).
 
-Live capture of every network request a page fires *before* any
-consent-banner button is clicked, plus the request classifier shared
-with consent/runtime.py.
+Category: CMP, TAG_MANAGER, ANALYTICS, ADVERTISING, SOCIAL, CONTENT_CDN,
+FONT, OTHER_THIRD_PARTY, FIRST_PARTY or UNKNOWN.
+Activity: collection (a data-collection hit: the only real tracking),
+loader (a library download), embed, infrastructure / content.
 
-Classification is evidence-based. Every request gets a category:
-
-    CMP               — the consent platform itself (cdn.cookielaw.org…)
-    TAG_MANAGER       — tag containers (googletagmanager.com, Tealium,
-                        Adobe Launch…). Loading one is an *observation*,
-                        not tracking: a container can be configured to
-                        fire nothing until consent.
-    ANALYTICS         — measurement vendors
-    ADVERTISING       — ad / retargeting / conversion vendors
-    SOCIAL            — social widgets / embeds
-    CONTENT_CDN       — public JS/CSS CDNs and media hosts
-    FONT              — web-font hosts
-    OTHER_THIRD_PARTY — some other third-party host we don't recognize
-    FIRST_PARTY       — the audited site itself
-    UNKNOWN           — no hostname (data:, blob:, about:)
-
-…and an activity:
-
-    collection — a data-collection hit (GA /g/collect, facebook.com/tr,
-                 any doubleclick.net hit…). Only these are *tracking*.
-    loader     — a vendor's library being downloaded (gtag.js,
-                 fbevents.js, hotjar-*.js). Observation only.
-    embed      — a social/video embed
-    infrastructure / content — CMP, CDN, font, first-party traffic
-
-So "GTM loaded" is an Observation, while "Google Analytics collection
-request observed" is "Tracking activity before consent". `tracker_requests`
-(used by consent.behavior and consent.runtime for their verdicts) returns
-*only* confirmed tracking activity.
-
-Playwright is optional: every entry point degrades to an empty/None
-result rather than raising when it isn't installed or can't launch.
+So "GTM loaded" is only an observation; a Google Analytics collection hit is
+tracking. tracker_requests returns only real tracking.
+If the browser can't run, results are empty, never an error.
 """
 
 from __future__ import annotations
@@ -50,9 +23,9 @@ from config.logging import logger
 from config.browser import launch_chromium
 
 NAVIGATION_TIMEOUT_MS = 20_000
-SETTLE_MS = 1_500  # brief idle window after load to catch requests fired from a setTimeout/deferred script
+SETTLE_MS = 1_500  # short wait after load for delayed requests
 
-# ---- categories -------------------------------------------------------------
+# Categories
 CMP = "CMP"
 TAG_MANAGER = "TAG_MANAGER"
 ANALYTICS = "ANALYTICS"
@@ -82,7 +55,7 @@ CATEGORY_LABELS = {
     UNKNOWN: "Unknown",
 }
 
-# ---- activities -------------------------------------------------------------
+# Activities
 COLLECTION = "collection"
 LOADER = "loader"
 EMBED = "embed"
@@ -92,10 +65,9 @@ CONTENT = "content"
 _TRACKING_CATEGORIES = frozenset({ANALYTICS, ADVERTISING})
 _LOADER_RESOURCE_TYPES = frozenset({"script", "stylesheet", "document"})
 
-# (domain suffix, path regex or None, category, vendor, activity or None)
-# First matching rule wins, so specific (domain+path) rules come before the
-# domain-wide fallback for the same host. activity None => derived from the
-# request's resource type (script => loader, beacon/xhr/image => collection).
+# Rules: (domain suffix, path regex or None, category, vendor, activity or None).
+# First match wins, so specific rules come before a domain's general rule.
+# activity None = from the request type (script -> loader, others -> collection).
 _RULES: List[Tuple[str, Optional[re.Pattern], str, str, Optional[str]]] = []
 
 
@@ -103,7 +75,7 @@ def _r(domain: str, path: Optional[str], category: str, vendor: str, activity: O
     _RULES.append((domain, re.compile(path, re.IGNORECASE) if path else None, category, vendor, activity))
 
 
-# --- CMP infrastructure ---
+# Consent tools (CMPs)
 for _d, _v in [
     ("cookielaw.org", "OneTrust"), ("onetrust.com", "OneTrust"), ("onetrust.io", "OneTrust"),
     ("cookiebot.com", "Cookiebot"), ("cookiebot.eu", "Cookiebot"),
@@ -120,7 +92,7 @@ for _d, _v in [
 ]:
     _r(_d, None, CMP, _v, INFRASTRUCTURE)
 
-# --- Tag managers: loading the container is an observation, not tracking ---
+# Tag managers (loading one is not tracking)
 _r("googletagmanager.com", r"/g/collect|/collect\b", ANALYTICS, "Google Analytics", COLLECTION)
 _r("googletagmanager.com", None, TAG_MANAGER, "Google Tag Manager", LOADER)
 _r("tiqcdn.com", None, TAG_MANAGER, "Tealium iQ", LOADER)
@@ -130,7 +102,7 @@ _r("commander1.com", None, TAG_MANAGER, "Commanders Act", LOADER)
 _r("ensighten.com", None, TAG_MANAGER, "Ensighten", LOADER)
 _r("segment.com", None, TAG_MANAGER, "Segment", LOADER)
 
-# --- Analytics ---
+# Analytics
 _r("google-analytics.com", r"/(g/|j/|r/)?collect|/__utm\.gif", ANALYTICS, "Google Analytics", COLLECTION)
 _r("google-analytics.com", r"\.js$", ANALYTICS, "Google Analytics", LOADER)
 _r("google-analytics.com", None, ANALYTICS, "Google Analytics")
@@ -181,7 +153,7 @@ _r("medallia.com", r"/api/web/events|/events?\b", ANALYTICS, "Medallia", COLLECT
 _r("medallia.com", None, ANALYTICS, "Medallia", LOADER)
 _r("matomo.org", None, ANALYTICS, "Matomo")
 
-# --- Advertising ---
+# Advertising
 _r("connect.facebook.net", None, ADVERTISING, "Meta Pixel", LOADER)
 _r("facebook.com", r"^/tr/?$", ADVERTISING, "Meta Pixel", COLLECTION)
 _r("facebook.com", r"^/plugins/|^/v[0-9.]+/plugins/", SOCIAL, "Meta", EMBED)
@@ -219,7 +191,7 @@ _r("ct.pinterest.com", None, ADVERTISING, "Pinterest Tag", COLLECTION)
 _r("s.pinimg.com", r"^/ct/", ADVERTISING, "Pinterest Tag", LOADER)
 _r("quantserve.com", None, ADVERTISING, "Quantcast Measure")
 
-# --- Social widgets / embeds ---
+# Social widgets / embeds
 for _d, _v in [
     ("platform.twitter.com", "Twitter/X"), ("syndication.twitter.com", "Twitter/X"),
     ("platform.linkedin.com", "LinkedIn"), ("youtube.com", "YouTube"),
@@ -229,7 +201,7 @@ for _d, _v in [
 ]:
     _r(_d, None, SOCIAL, _v, EMBED)
 
-# --- Fonts ---
+# Fonts
 for _d, _v in [
     ("fonts.googleapis.com", "Google Fonts"), ("fonts.gstatic.com", "Google Fonts"),
     ("use.typekit.net", "Adobe Fonts"), ("p.typekit.net", "Adobe Fonts"),
@@ -239,7 +211,7 @@ for _d, _v in [
 ]:
     _r(_d, None, FONT, _v, CONTENT)
 
-# --- Content / CDN ---
+# Content / CDN
 for _d, _v in [
     ("cdnjs.cloudflare.com", "cdnjs"), ("cdn.jsdelivr.net", "jsDelivr"), ("unpkg.com", "unpkg"),
     ("ajax.googleapis.com", "Google Hosted Libraries"), ("code.jquery.com", "jQuery CDN"),
@@ -251,15 +223,13 @@ for _d, _v in [
 ]:
     _r(_d, None, CONTENT_CDN, _v, CONTENT)
 
-# First-party / server-side GA4 hit: `/g/collect?v=2&tid=G-…` on any host.
+# GA4 hit on any host: /g/collect?...tid=G-...
 _GA4_COLLECT_PATH_RE = re.compile(r"/g/collect$", re.IGNORECASE)
 _GA4_COLLECT_QUERY_RE = re.compile(r"(^|&)tid=G-", re.IGNORECASE)
-# Piano Analytics / AT Internet through a site's own (CNAME) collect domain:
-# /event or /hit.xiti with a numeric site id and Piano's visitor id.
+# Piano through a site's own domain: /event or /hit.xiti with site id and visitor id.
 _PIANO_COLLECT_PATH_RE = re.compile(r"/(event|hit\.xiti)$", re.IGNORECASE)
 
-# Back-compat: the old domain -> display-name table, derived from the rules
-# above (consent.runtime and older callers imported this name).
+# Older domain -> name table, built from the rules (still imported elsewhere).
 KNOWN_TRACKER_DOMAINS: Dict[str, str] = {
     d: v for d, _p, c, v, _a in _RULES if c in (TAG_MANAGER, ANALYTICS, ADVERTISING)
 }
@@ -269,11 +239,9 @@ KNOWN_TRACKER_DOMAINS: Dict[str, str] = {
 class NetworkRequest:
     url: str
     domain: str
-    resource_type: str  # Playwright's request.resource_type
+    resource_type: str  # Playwright's request type
     is_third_party: bool
-    # Vendor display name for any recognized ANALYTICS / ADVERTISING /
-    # TAG_MANAGER host (e.g. "Google Tag Manager"). Present on loaders too,
-    # so it is a *label*, not proof of tracking — see `is_tracking`.
+    # Vendor name for any known tracking/tag host. Also set on loaders, so it isn't proof of tracking (see is_tracking).
     tracker_name: Optional[str] = None
     category: str = UNKNOWN
     vendor: Optional[str] = None
@@ -281,12 +249,12 @@ class NetworkRequest:
 
     @property
     def is_tracking(self) -> bool:
-        """Confirmed tracking activity: an analytics/advertising data-collection hit."""
+        """Real tracking: an analytics/advertising collection hit."""
         return self.category in _TRACKING_CATEGORIES and self.activity == COLLECTION
 
     @property
     def is_observation(self) -> bool:
-        """Worth reporting but not proof of tracking (tag managers, vendor loaders, embeds)."""
+        """Worth reporting but not tracking (tag managers, loaders, embeds)."""
         return not self.is_tracking and (
             self.category == TAG_MANAGER
             or (self.category in _TRACKING_CATEGORIES and self.activity == LOADER)
@@ -301,7 +269,7 @@ class NetworkRequest:
 
 @dataclass
 class PreConsentNetworkResult:
-    available: bool = False  # False when Playwright wasn't usable — callers must not treat this as "clean"
+    available: bool = False  # False when the browser couldn't run; that isn't "clean"
     requests: List[NetworkRequest] = field(default_factory=list)
     error: Optional[str] = None
 
@@ -311,12 +279,12 @@ class PreConsentNetworkResult:
 
     @property
     def tracker_requests(self) -> List[NetworkRequest]:
-        """Confirmed tracking activity only (analytics/advertising collection hits)."""
+        """Real tracking hits only."""
         return tracking_requests(self.requests)
 
     @property
     def vendor_requests(self) -> List[NetworkRequest]:
-        """Every request to a recognized analytics/advertising/tag-manager vendor (loaders included)."""
+        """Every request to a known analytics/advertising/tag-manager vendor (loaders included)."""
         return [r for r in self.requests if r.tracker_name]
 
     def by_category(self) -> Dict[str, List[NetworkRequest]]:
@@ -335,7 +303,7 @@ def group_by_category(requests: List[NetworkRequest]) -> Dict[str, List[NetworkR
 
 
 def summarize_requests(requests: List[NetworkRequest], max_items: int = 8) -> dict:
-    """JSON-friendly evidence summary: counts per category + sample vendors/URLs."""
+    """Summary for the report: counts per category and sample vendors/URLs."""
     groups = group_by_category(requests)
     summary: Dict[str, dict] = {}
     for cat, reqs in groups.items():
@@ -346,8 +314,7 @@ def summarize_requests(requests: List[NetworkRequest], max_items: int = 8) -> di
             "vendors": vendors[:max_items],
             "tracking_count": sum(1 for r in reqs if r.is_tracking),
             "samples": [r.short() for r in reqs[:max_items]],
-            # The actual data-collection requests (not loaders) — what the
-            # report names under "Tracking before consent".
+            # The actual collection hits, listed in the report as "Tracking before consent".
             "tracking_samples": [f"{r.vendor or CATEGORY_LABELS.get(cat, cat)}|{r.short()}"
                                  for r in reqs if r.is_tracking][:max_items],
         }
@@ -355,11 +322,7 @@ def summarize_requests(requests: List[NetworkRequest], max_items: int = 8) -> di
 
 
 async def capture_pre_consent_requests(url: str, settle_ms: int = SETTLE_MS) -> PreConsentNetworkResult:
-    """
-    Loads `url` in a fresh, cookie-less browser context and records every
-    request fired up to `settle_ms` after load — deliberately never
-    clicks any banner button.
-    """
+    """Loads `url` in a fresh, cookie-less browser and records every request. Never clicks the banner."""
     try:
         from playwright.async_api import async_playwright
     except ImportError:
@@ -391,7 +354,7 @@ async def capture_pre_consent_requests(url: str, settle_ms: int = SETTLE_MS) -> 
 
 
 def _registrable(host: str) -> str:
-    """Rough eTLD+1 (handles common 2-level public suffixes like co.uk / com.au / co.in)."""
+    """Rough main domain (handles co.uk, com.au, co.in)."""
     parts = host.split(".")
     if len(parts) >= 3 and parts[-2] in {"co", "com", "org", "net", "gov", "ac", "edu", "gouv"} and len(parts[-1]) == 2:
         return ".".join(parts[-3:])
@@ -429,7 +392,7 @@ def _classify(request_url: str, resource_type: str, first_party_hostname: str) -
 
     if category is None:
         if _GA4_COLLECT_PATH_RE.search(path) and _GA4_COLLECT_QUERY_RE.search(parsed.query or ""):
-            # Server-side / first-party GA4 tagging still sends a GA4 hit.
+            # Server-side GA4 still sends a GA4 hit.
             category, vendor, activity = ANALYTICS, "Google Analytics", COLLECTION
         elif _PIANO_COLLECT_PATH_RE.search(path) and re.search(r"(^|&)s=\d+(&|$)", parsed.query or "") \
                 and "idclient=" in (parsed.query or ""):
@@ -444,9 +407,7 @@ def _classify(request_url: str, resource_type: str, first_party_hostname: str) -
             category, activity = OTHER_THIRD_PARTY, CONTENT
 
     if activity is None:
-        # Vendor host without a specific path rule: a script/stylesheet
-        # download is the vendor's library; anything else (image pixel,
-        # xhr/fetch, beacon/ping) is a data-collection hit.
+        # Known vendor without a path rule: script/stylesheet = loader; anything else = collection hit.
         activity = LOADER if rtype in _LOADER_RESOURCE_TYPES else COLLECTION
 
     tracker_name = vendor if category in (ANALYTICS, ADVERTISING, TAG_MANAGER) else None
@@ -459,7 +420,7 @@ def _classify(request_url: str, resource_type: str, first_party_hostname: str) -
 
 
 def classify_request(request_url: str, resource_type: str = "other", first_party_hostname: str = "") -> NetworkRequest:
-    """Public wrapper around the classifier (handy for tests and other modules)."""
+    """Classifies one request URL."""
     return _classify(request_url, resource_type, first_party_hostname)
 
 
@@ -468,15 +429,9 @@ def _names(reqs: List[NetworkRequest]) -> List[str]:
 
 
 def check_pre_consent_network(result: PreConsentNetworkResult) -> List[dict]:
-    """
-    Findings from an already-captured PreConsentNetworkResult. Returns
-    nothing when `available` is False — an unavailable capture is a
-    missing check, not a passing one.
-
-    Only confirmed collection hits produce the critical
-    "Tracking activity before consent" finding. Tag managers and vendor
-    libraries that loaded without any downstream collection hit are
-    reported as observations.
+    """Findings from the captured requests. Nothing when the capture didn't run.
+    Only real collection hits give the critical "Tracking before consent"
+    finding; loaders and tag managers are observations.
     """
     if not result.available:
         return []

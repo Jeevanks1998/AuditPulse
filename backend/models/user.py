@@ -1,14 +1,5 @@
 """
-models/user.py
-
-The User model — auth fields plus the profile/preferences fields shown on
-settings.html (name, company, aiProvider, notification toggles, theme,
-language, default schedule, API key), so api/settings.py can read/write
-it directly instead of needing a second table.
-
-Relationships fan out to every other domain model: a user owns audits,
-tracked websites, recurring schedules, generated reports, and activity
-history events.
+A user: sign-in fields, profile and preferences (settings page), role and access from the Access Portal.
 """
 
 from datetime import datetime, timezone
@@ -32,36 +23,20 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120), default="")
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    # Legacy column from the old email + password login. Sign-in is now
-    # email -> Google Authenticator (TOTP) only (see api/auth.py), so
-    # nothing reads or writes this any more. Kept nullable rather than
-    # dropped so existing rows and old backups stay loadable.
+    # Old password column, no longer used (sign-in is Google Authenticator). Kept so old rows still load.
     hashed_password: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     company: Mapped[str] = mapped_column(String(120), default="")
     ai_provider: Mapped[str] = mapped_column(String(60), default="Claude (Anthropic)")
     api_key: Mapped[str] = mapped_column(String(64), unique=True)
 
-    # Set by the AuditPulse Access Portal (see api/access_management.py).
-    # Accounts created directly here (register/login-email, before the
-    # portal ever syncs them) default to "Viewer" — the least-privileged
-    # of the portal's four fixed roles — rather than an empty string, so
-    # any future role-gated UI has a safe default to check against.
+    # Role from the Access Portal. Defaults to "Viewer" (least access).
     role: Mapped[str] = mapped_column(String(40), default="Viewer")
 
-    # Phase 5 of the Access Portal integration (see api/access_management.py).
-    # Deliberately a *second* column, separate from is_active below, even
-    # though today the portal is the only writer of both:
-    #   - is_active           general account status ("Active" in the
-    #                         portal's own user list) — also used as the
-    #                         API-key auth on/off switch (middleware/auth.py).
-    #   - auditpulse_access   whether this specific person's role/assignment
-    #                         grants them AuditPulse itself, independent of
-    #                         whether their portal account overall is active.
-    #                         A user can be Active in the portal but have
-    #                         AuditPulse Access: No (e.g. licensed for other
-    #                         portal-managed apps only) — login must reject
-    #                         that case with a distinct message from an
-    #                         inactive account. See api/auth.py's login().
+    # Two separate flags, both set by the Access Portal:
+    #   is_active         - the account is active (also turns API-key access on/off)
+    #   auditpulse_access - this person may use AuditPulse
+    # Someone can be active in the portal without AuditPulse access; login shows a
+    # different message for each case.
     auditpulse_access: Mapped[bool] = mapped_column(Boolean, default=True)
 
     notify_audit_completed: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -76,20 +51,10 @@ class User(Base):
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    # ----------------------------------------------------------------
-    # Google Authenticator (TOTP) sign-in — see api/auth.py.
-    #
-    #   New user (created by the Access Portal sync):
-    #       mfa_enabled = False, auth_setup_required = True
-    #   After the first successful authenticator setup at login:
-    #       mfa_enabled = True,  auth_setup_required = False
-    #   Admin clicks "Reset Authenticator" in the Access Portal:
-    #       mfa_enabled = False, auth_setup_required = True, mfa_secret = None
-    #
-    # mfa_secret holds the base32 TOTP secret. During first-time setup it
-    # is written before mfa_enabled flips to True, so a half-finished setup
-    # simply gets a fresh secret on the next login attempt.
-    # ----------------------------------------------------------------
+    # Google Authenticator sign-in:
+    #   new user:                mfa_enabled False, auth_setup_required True
+    #   after first set-up:      mfa_enabled True,  auth_setup_required False
+    #   admin reset in portal:   back to the new-user state, secret cleared
     mfa_secret: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     auth_setup_required: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -103,9 +68,7 @@ class User(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
-    # --------------------------------------------------------------------
     # Relationships
-    # --------------------------------------------------------------------
     audits: Mapped[List["Audit"]] = relationship(
         "Audit", back_populates="user", cascade="all, delete-orphan"
     )
@@ -122,26 +85,13 @@ class User(Base):
         order_by="History.created_at.desc()",
     )
 
-    # --------------------------------------------------------------------
     # Computed, not stored
-    # --------------------------------------------------------------------
     @property
     def permissions(self) -> Dict[str, bool]:
-        """Module access map for this user's current role.
+        """Module access for this user's role, worked out on each read so role changes apply at once."""
+        from config.permissions import get_permissions  # local import
 
-        Derived from config/permissions.py's MODULE_PERMISSIONS on every
-        read rather than stored, so a role change from the Access Portal
-        (which only ever writes `role`) takes effect immediately without a
-        separate sync step. Exposed on schemas.user.UserOut so the
-        frontend (assets/js/permissions.js) can read `user.permissions`
-        straight off the logged-in session instead of keeping its own copy
-        of the role matrix as the only source of truth.
-        """
-        from config.permissions import get_permissions  # local import: config/permissions.py's
-
-        # require_module() already imports this module lazily for the same
-        # reason (see its docstring) — keeps the import graph one-way
-        # instead of a models <-> config cycle at process start-up.
+        # Imported inside the function to avoid a models <-> config import cycle.
         return get_permissions(self.role)
 
     def __repr__(self) -> str:  # pragma: no cover - debugging helper

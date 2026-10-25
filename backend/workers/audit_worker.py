@@ -1,18 +1,6 @@
 """
-workers/audit_worker.py
-
-Celery tasks wrapping services.audit_service — the same pipeline
-api/audit.py currently fires with FastAPI BackgroundTasks, now runnable
-out-of-process with retries and visibility.
-
-Celery tasks are synchronous by definition (the worker calls the
-function directly, no event loop of its own), but the whole app is
-async SQLAlchemy end to end, so every task here follows one pattern:
-a thin sync `@celery_app.task` wrapper that does nothing but
-`asyncio.run(...)` an `async def _*_async(...)` implementation. Each
-task run gets its own event loop and, inside that, its own DB session
-via config.database.AsyncSessionLocal — never a request-scoped session,
-since none exists here.
+Celery tasks for audits. Each task is a small sync wrapper that runs its async
+code in its own event loop with its own database session.
 """
 
 import asyncio
@@ -22,13 +10,7 @@ from config.config import logger
 from config.database import AsyncSessionLocal
 from workers.celery_worker import celery_app
 
-# --------------------------------------------------------------------------
-# run_audit_task — the main entry point. Same job api/audit.py's
-# BackgroundTasks call does today (services.audit_service.run_audit_pipeline);
-# swapping `background_tasks.add_task(...)` for
-# `workers.audit_worker.run_audit_task.delay(audit.id)` is a one-line change
-# once a worker process is actually running.
-# --------------------------------------------------------------------------
+# run_audit_task: runs one audit (same as the API's background task)
 @celery_app.task(
     name="workers.audit_worker.run_audit_task",
     bind=True,
@@ -40,12 +22,7 @@ from workers.celery_worker import celery_app
     retry_jitter=True,
 )
 def run_audit_task(self, audit_id: int) -> dict:
-    """Runs one audit end to end. Retries on unexpected failure (network
-    blips, transient DB errors); services.audit_service.run_audit_pipeline
-    already catches per-audit exceptions and marks the row 'failed', so a
-    retry here only fires if something *outside* that try/except blew up
-    (e.g. the DB was unreachable at task start).
-    """
+    """Runs one audit, retrying only if something outside the pipeline's own error handling failed."""
     logger.info(f"[audit_worker] starting audit {audit_id} (attempt {self.request.retries + 1})")
     try:
         asyncio.run(_run_audit_async(audit_id))
@@ -56,15 +33,12 @@ def run_audit_task(self, audit_id: int) -> dict:
 
 
 async def _run_audit_async(audit_id: int) -> None:
-    # Local import avoids a module import cycle at worker start-up
-    # (services.audit_service pulls in services.ai_service, models, etc.)
+    # Local import avoids a cycle at start-up.
     from services.audit_service import run_audit_pipeline
 
     await run_audit_pipeline(audit_id)
 
-    # Chain a best-effort report pre-warm + reminder check once the audit
-    # is done, so the PDF/JSON are already cached and the user gets a
-    # critical-issue nudge without waiting on the next beat tick.
+    # Then pre-build the report and send any critical-issue alert.
     from models.audit import Audit
 
     async with AsyncSessionLocal() as db:
@@ -79,12 +53,7 @@ async def _run_audit_async(audit_id: int) -> None:
             notify_critical_issues_task.delay(audit_id)
 
 
-# --------------------------------------------------------------------------
-# requeue_stuck_audits_task — periodic safety net (wired into
-# scheduler/cron.py's beat schedule). Catches audits left in 'running' by a
-# worker that died mid-pipeline (no exception was ever persisted, so the row
-# just sits there forever otherwise).
-# --------------------------------------------------------------------------
+# requeue_stuck_audits_task: marks audits stuck in "running" by a crashed worker
 @celery_app.task(name="workers.audit_worker.requeue_stuck_audits_task")
 def requeue_stuck_audits_task(stuck_after_minutes: int = 30) -> dict:
     logger.info("[audit_worker] scanning for stuck audits")

@@ -1,11 +1,5 @@
 """
-api/audit.py
-
-Endpoints to start a run, poll its progress, and fetch a result. Parses
-requests and shapes responses only — the create flow, query helpers, and
-the background pipeline itself all live in services.audit_service, so
-other callers (services.scheduler_service, a future Celery worker,
-tests) can reuse them without going through HTTP.
+Endpoints to start an audit, check progress and get results. Logic lives in services.audit_service.
 """
 
 from typing import List
@@ -36,10 +30,7 @@ async def start_audit(
     payload: AuditCreate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    # Phase 4: the only "audits" module action a role can be blocked from
-    # is kicking off a new one — Viewer is the one role without it (see
-    # config/permissions.py). Reading existing audits (stats/recent/by id,
-    # below) stays open to every authenticated user, Viewer included.
+    # Starting an audit needs the "audits" permission (Viewers can't); reading is open to all signed-in users.
     current_user: User = Depends(require_module("audits")),
 ):
     audit = await audit_service.start_audit(db, current_user, payload)
@@ -127,7 +118,7 @@ async def audit_journey(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Customer Journey result: pages, interactions, journey map, tracking validation, QA findings."""
+    """Journey Map result: pages, interactions, map, tracking checks and findings."""
     audit = await db.get(Audit, audit_id)
     if not audit or audit.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audit not found")
@@ -162,8 +153,7 @@ async def audit_cookies(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Cookie Scanner: every cookie seen (consent states + journey pages), with category,
-    party, lifetime, Secure/HttpOnly/SameSite, the page that set it and plain-language issues."""
+    """Cookie Scanner: every cookie found, with category, party, lifetime, flags, the page that set it and any issues."""
     _audit, inventory = await _cookie_inventory(audit_id, db, current_user)
     return inventory
 

@@ -1,23 +1,8 @@
 """
-reports/generator.py
-
-Canonical ReportPayload data model (§8: "one canonical data model for
-dashboard/report/PDF/email"). Every export surface — the JSON export
-(reports/json_report.py), the standalone HTML export
-(reports/html_report.py), the PDF export (pdf/pdf_generator.py and the
-rest of pdf/), the evidence ZIP (reports/evidence.py), and the POC email
-attachments (emailer/attachments.py) — is built from one ReportPayload
-instance, so score/finding/evidence content is computed exactly once per
-export and can never drift between formats.
-
-`build_report_payload` is the only place that assembles one: it takes the
-already-fetched Audit/Consent/Analytics data (services.report_service has
-no idea this module exists beyond that one call) and layers the
-AI-enriched executive_summary/business_impact/action_plan/priorities on
-top via ai/* — each of which independently falls back to a deterministic
-heuristic on a provider outage rather than raising (see ai/__init__.py),
-so a missing/failed ANTHROPIC_API_KEY degrades report quality, it never
-breaks report generation.
+ReportPayload: the one data model every report output is built from (JSON,
+HTML, PDF, evidence ZIP, email attachments), so they never disagree.
+build_report_payload() assembles it and adds the AI sections, which fall
+back to templates if the AI is unavailable.
 """
 
 from __future__ import annotations
@@ -38,12 +23,7 @@ from schemas.report import MODULE_LABELS, ScoreCell
 # severity distribution / ai/priority.py's SEVERITY_RANK.
 SEVERITIES = ("critical", "warning", "info")
 
-# Mirrors pdf.theme.SCORE_BAND_LABELS / assets/js/dashboard.js's
-# healthBadgeLabel wording, and config.constants.SCORE_BANDS' thresholds —
-# reports/generator.py can't import pdf.theme (pdf/* imports *this*
-# module), so the same good/mid/bad bands and labels are re-declared here
-# as the one source every export format (not just the PDF) reads
-# `overall_status` from.
+# Score bands and labels (can't import pdf.theme here; it imports this module).
 _SCORE_BAND_GOOD = 80
 _SCORE_BAND_MID = 50
 _STATUS_LABELS = {"good": "Healthy", "mid": "Needs attention", "bad": "Issues found"}
@@ -51,7 +31,7 @@ _STATUS_LABELS = {"good": "Healthy", "mid": "Needs attention", "bad": "Issues fo
 
 @dataclass
 class ReportPayload:
-    """The one object every report export surface renders from."""
+    """The one object every report output is built from."""
 
     audit_id: int
     url: str
@@ -61,44 +41,33 @@ class ReportPayload:
     findings: List[dict]
     share_url: Optional[str] = None
 
-    # Raw module results (ConsentOut / AnalyticsOut .model_dump()), or None
-    # if that module didn't run for this audit.
+    # Raw module results, or None if the module didn't run.
     consent: Optional[dict] = None
     analytics: Optional[dict] = None
 
-    # Evidence split out of consent/analytics for standalone export (the
-    # POC email's "cookie_evidence"/"network_evidence" attachment keys,
-    # reports/evidence.py's ZIP) — see _cookie_evidence/_network_evidence
-    # below for exactly what each carries.
+    # Cookie and network evidence for exports and email attachments.
     cookie_evidence: Optional[dict] = None
     network_evidence: Optional[dict] = None
 
-    # Phase 4: the one consent presentation model (reports.consent_view) —
-    # what the report page, dashboard, PDF, JSON export and evidence ZIP
-    # all show for Consent, so the surfaces can never disagree.
+    # Consent view shared by every report output.
     consent_view: Optional[dict] = None
 
-    # Customer Journey (journey/): raw JourneyOut dump + its presentation
-    # model (reports.journey_view), None when the module didn't run.
+    # Journey Map raw result and its view; None if it didn't run.
     journey: Optional[dict] = None
     journey_view: Optional[dict] = None
 
-    # Cookie Scanner (reports.cookie_view): every cookie seen across the
-    # consent states and the journey's pages. None when neither ran.
+    # Cookie Scanner view; None if neither consent nor journey ran.
     cookie_inventory: Optional[dict] = None
 
-    # Flattened from ConsentOut's four *_screenshot_url computed fields —
-    # see _build_screenshots below.
+    # Consent screenshots (see _build_screenshots).
     screenshots: List[dict] = field(default_factory=list)
 
-    # Derived once here so every consumer (PDF metric cards, JSON export,
-    # HTML export) reads the same numbers instead of recomputing them.
+    # Worked out once so every output shows the same numbers.
     severity_counts: Dict[str, int] = field(default_factory=dict)
     weakest_module: Optional[ScoreCell] = None
     overall_status: str = ""
 
-    # AI-enriched layer (ai/*) — see this module's docstring for the
-    # fallback contract.
+    # AI sections (with template fallback).
     executive_summary: str = ""
     business_impact: List[dict] = field(default_factory=list)
     action_plan: ActionPlan = field(default_factory=ActionPlan)
@@ -106,9 +75,7 @@ class ReportPayload:
 
 
 def build_score_grid(breakdown: Dict[str, int]) -> List[ScoreCell]:
-    """Only modules actually present in `breakdown` get a cell — never a
-    placeholder score for a module that wasn't scanned (§3.4/§9: "No Dummy
-    Data Rule")."""
+    """One cell per module that actually ran; never a placeholder score."""
     return [
         ScoreCell(
             module=module,
@@ -145,13 +112,7 @@ def _overall_status(overall: int) -> str:
 
 
 def _build_screenshots(consent: Optional[dict]) -> List[dict]:
-    """Flattens ConsentOut's four *_screenshot_url computed fields into the
-    [{key, url, label}] list every consumer of ReportPayload.screenshots
-    (pdf/evidence.py's Consent Evidence grid, emailer/attachments.py's
-    "consent_screenshots" attachment, reports/evidence.py's ZIP) expects.
-    Keys are prefixed "consent-" so pdf/evidence.py can pick out the
-    consent-flow shots specifically; a bare key with no matching URL is
-    omitted rather than included with url=None."""
+    """Consent screenshot URLs as [{key, url, label}]; keys start with "consent-"; missing ones are left out."""
     if not consent:
         return []
     slots = (
@@ -168,10 +129,7 @@ def _build_screenshots(consent: Optional[dict]) -> List[dict]:
 
 
 def _cookie_evidence(consent: Optional[dict]) -> Optional[dict]:
-    """Raw cookie/tracker/consent-check evidence split out of the summarized
-    `consent` dict, for the POC email's standalone "cookie_evidence"
-    attachment and the evidence ZIP — None (not an empty dict) when consent
-    didn't run, matching every other optional payload field's contract."""
+    """Cookie and consent-check evidence for exports. None when consent didn't run."""
     if not consent:
         return None
     return {
@@ -195,11 +153,7 @@ def _cookie_evidence(consent: Optional[dict]) -> Optional[dict]:
 
 
 def _network_evidence(analytics: Optional[dict], consent: Optional[dict] = None) -> Optional[dict]:
-    """Raw runtime/vendor network evidence split out of `analytics`, plus —
-    when the consent module ran — Consent's own classified network
-    evidence (CMP / tag manager / analytics / advertising … per consent
-    state). The Analytics modules are not touched; Consent classifies its
-    own captured traffic."""
+    """Analytics network evidence, plus consent's own classified requests when it ran."""
     if not analytics and not consent:
         return None
     out: dict = {}
@@ -228,12 +182,7 @@ async def build_report_payload(
     analytics: Optional[dict] = None,
     journey: Optional[dict] = None,
 ) -> ReportPayload:
-    """Assembles the one canonical payload (§8) every export/dashboard
-    surface reads from. `findings`/`breakdown`/`consent`/`analytics` are
-    passed in already-fetched (this module has no idea SQLAlchemy exists,
-    per services/report_service.py's docstring) — this only derives the
-    score grid, evidence splits, and screenshot list from them, then adds
-    the AI-enriched layer on top."""
+    """Builds the payload from already-loaded audit data, then adds the AI sections."""
     score_grid = build_score_grid(breakdown)
 
     executive_summary = await generate_executive_summary(url, overall, breakdown, findings)

@@ -1,17 +1,5 @@
 """
-security/headers.py
-
-Checks the general-purpose security response headers — everything
-except Strict-Transport-Security and Content-Security-Policy, which
-are involved enough (directive parsing, max-age math) to get their own
-modules (hsts.py, csp.py). Takes a plain header dict rather than an
-httpx.Headers/response object so it's easy to unit test and to feed
-from any fetch path (security/https.py's live GET today; a cached
-response tomorrow).
-
-Header names are matched case-insensitively by lowercasing every key
-up front, since HTTP header names are case-insensitive but Python
-dicts aren't.
+Checks general security headers (HSTS and CSP have their own files). Header names are matched case-insensitively.
 """
 
 from __future__ import annotations
@@ -23,7 +11,7 @@ CATEGORY = "headers"
 
 
 def check_security_headers(headers: Mapping[str, str], url: str) -> List[dict]:
-    """Findings for missing or misconfigured general security headers."""
+    """Findings for missing or wrong security headers."""
     if not headers:
         return []
 
@@ -57,7 +45,7 @@ def _check_content_type_options(headers: dict, url: str) -> List[dict]:
 
 
 def _check_frame_protection(headers: dict, url: str) -> List[dict]:
-    """X-Frame-Options is legacy but still widely checked; CSP frame-ancestors supersedes it."""
+    """X-Frame-Options is older; CSP frame-ancestors replaces it."""
     has_xfo = "x-frame-options" in headers
     csp = headers.get("content-security-policy", "")
     has_frame_ancestors = "frame-ancestors" in csp.lower()

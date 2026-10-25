@@ -1,24 +1,10 @@
 """
-journey/journey_qa.py
+Journey health numbers and findings, from measurements only.
 
-Turns the tested journey into measurable health numbers and QA findings.
-
-Journey health is computed only from measurements (no guesses):
-
-    interactions discovered · tested · successful · tracked · tracking gaps
-    · evidence captured · forms · downloads · CTAs · pages
-
-Findings (same {module, category, severity, title, description,
-recommendation} shape every AuditPulse module uses, plus journey evidence:
-page, interaction, observed behaviour, tracking behaviour, screenshot):
-
-  critical  conversion interaction not tracked · broken important CTA ·
-            download inaccessible · no analytics anywhere in the journey
-  warning   form interaction not tracked · important journey page sends no
-            analytics · duplicate event · tracking inconsistency ·
-            unexpected navigation
-  info      form submission not verifiable without submitting · missing
-            optional event parameter · interaction difficult to verify
+Critical: conversion not tracked, broken important CTA, download not working,
+no analytics anywhere. Warning: form not tracked, important page without
+analytics, duplicate event, inconsistent tracking, unexpected navigation.
+Info: form submit not verifiable without submitting, and similar.
 """
 
 from __future__ import annotations
@@ -84,8 +70,7 @@ def _path(url: Optional[str]) -> str:
 
 
 def _names(interactions: List[Interaction]) -> Dict[int, str]:
-    """Readable, unique names: “Scopri di più → /cat-nat” when several
-    controls share the same text, so findings are not identical lines."""
+    """Unique readable names, e.g. "Learn more -> /pricing" when several share the same text."""
     counts: Dict[str, int] = {}
     for it in interactions:
         counts[it.label] = counts.get(it.label, 0) + 1
@@ -180,7 +165,7 @@ def build_findings(interactions: List[Interaction], pages_meta: List[dict], anal
         label = CLASS_LABELS.get(kind, kind)
         name = names.get(it.index, it.label)
 
-        # Broken / inaccessible
+        # Broken / not working
         if it.status == "failed":
             if kind == DOWNLOAD:
                 findings.append(_finding(
@@ -261,12 +246,12 @@ def build_findings(interactions: List[Interaction], pages_meta: List[dict], anal
                     f"The GA4 event for “{it.label}” carries none of {', '.join(_GA4_DOWNLOAD_PARAMS)}.",
                     "Send file_name / file_extension / link_url with download events.", tracking=_events_text(it)))
 
-    # Form submission is never executed on production sites.
+    # Forms are never submitted on live sites.
     for it in unique:
         if it.classification == FORM_SUBMIT:
             form = forms_by_id.get(it.form_id or "") or {}
             if not it.visible or (form and not form.get("visible", True)):
-                continue          # hidden form (e.g. a template or a closed panel): not a visitor journey
+                continue          # hidden form: not part of a visitor journey
             hints = form.get("tracking_hints") or []
             findings.append(_finding(
                 "info", "forms", f"Form submission tracking not verifiable without submitting: {it.label}", it,
@@ -276,7 +261,7 @@ def build_findings(interactions: List[Interaction], pages_meta: List[dict], anal
                 "Verify form_submit / generate_lead tracking in a controlled test environment.",
                 tracking="Not tested — submission not executed."))
 
-    # Tracking inconsistency within one interaction type.
+    # Inconsistent tracking within one interaction type.
     by_kind: Dict[str, Dict[str, List[Interaction]]] = {}
     for it in tested:
         st = (it.tracking or {}).get("status")

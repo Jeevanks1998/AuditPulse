@@ -4,15 +4,10 @@ Revision ID: b3f7d2e9c104
 Revises: a4d2e8c6f913
 Create Date: 2026-10-03 00:00:00.000000
 
-  - schedules.email_delivery (JSON, nullable): who gets the report after
-    each scheduled run and which attachments go with it —
-    {"enabled": true, "to": [...], "cc": [...], "attachments": ["pdf"],
-     "subject": null, "message": null} plus the last delivery result
-    (last_status / last_sent_at / last_error / last_audit_id).
-  - audits.schedule_id (Integer, nullable, indexed): the schedule that
-    fired this audit, so the pipeline knows to email the report when the
-    run completes. Plain integer (no FK) so deleting a schedule never
-    touches audit history.
+schedules.email_delivery: who gets the report after each run, attachments,
+and the last delivery result.
+audits.schedule_id: the schedule that started the audit (no foreign key, so
+deleting a schedule never touches history).
 """
 from typing import Sequence, Union
 

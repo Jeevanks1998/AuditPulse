@@ -1,19 +1,9 @@
 """
-utils/bot_block.py
-
-Detects when a website's bot protection (Imperva/Incapsula, Cloudflare,
-Akamai, DataDome, HUMAN/PerimeterX, AWS WAF, Sucuri, F5) served AuditPulse a
-block or challenge page instead of the real site.
-
-Why: axa.ie (Imperva) answered our cloud server with "Request unsuccessful.
-Incapsula incident ID …" — HTTP 200, one link, no banner, no tags. Every
-module then scored that block page as if it were the website ("No cookie
-banner", "No analytics", score 0), which is wrong. When the site blocks us,
-the honest result is "not verified — the site blocked the audit", with the
-evidence (vendor, incident id, our IP) the site owner needs to allowlist us.
-
-Only strong, vendor-specific signatures are used, so a normal page that
-merely mentions "access denied" is never treated as blocked.
+Detects when a site's bot protection (Imperva, Cloudflare, Akamai, DataDome,
+PerimeterX, AWS WAF, Sucuri, F5) served a block or challenge page instead of
+the site, so it isn't scored as the website (e.g. axa.ie gave "no banner,
+no analytics, 0"). The result is "blocked", with the details the site owner
+needs to allowlist us. Only strong vendor signatures count.
 """
 
 from __future__ import annotations
@@ -25,7 +15,7 @@ from typing import List, Optional
 
 from config.logging import logger
 
-# (vendor, pattern in page HTML/title, needs_small_page)
+# (vendor, pattern in the page, only on small pages)
 _SIGNATURES = [
     ("Imperva (Incapsula)", re.compile(r"Incapsula incident ID|_Incapsula_Resource|Request unsuccessful\. Incapsula", re.I), False),
     ("Imperva Advanced Bot Protection", re.compile(r"<title>\s*Pardon Our Interruption", re.I), False),
@@ -59,7 +49,7 @@ class BotBlock:
 
 
 def detect_block(html: str, title: str = "") -> BotBlock:
-    """Classify one page's HTML. Strong vendor signatures only."""
+    """Checks one page's HTML for a block page."""
     html = html or ""
     head = html[:200_000]
     small = len(_LINK_RE.findall(head)) <= 8
@@ -76,12 +66,7 @@ def detect_block(html: str, title: str = "") -> BotBlock:
 
 
 async def browser_preflight(url: str, scan_id: str, wait_s: float = 15.0) -> BotBlock:
-    """
-    Load the homepage once in the audit browser. JavaScript challenges
-    (Cloudflare "Just a moment…", Imperva reese84) often clear themselves
-    after a few seconds and reload the page, so this waits up to `wait_s`
-    before deciding the site really blocks us.
-    """
+    """Loads the homepage in the audit browser, waiting up to `wait_s` for JavaScript challenges to clear."""
     from playwright.async_api import async_playwright
 
     from config.browser import goto_page, launch_chromium
@@ -126,7 +111,7 @@ async def browser_preflight(url: str, scan_id: str, wait_s: float = 15.0) -> Bot
 
 
 def block_finding(url: str, b: BotBlock) -> dict:
-    """The one finding shown when a site blocked the audit."""
+    """The finding shown when a site blocked the audit."""
     who = b.vendor or "its bot protection"
     details = []
     if b.incident_id:

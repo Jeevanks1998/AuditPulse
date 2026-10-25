@@ -1,11 +1,6 @@
-/* ==========================================================================
-   Scheduler page
-   ========================================================================== */
+/* Scheduler page */
 
-/* ---- Schedule modal form (mirrors settings.css's .form-grid/.form-field
-   and audit.css's .depth-select so the modal matches the rest of the app —
-   duplicated here rather than importing those page CSS files, since
-   scheduler.html is otherwise self-contained) ---- */
+/* Schedule dialog form (copied from settings.css / audit.css so this page stands alone) */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
 .form-field { display: flex; flex-direction: column; gap: 8px; }
 .form-field--full { grid-column: 1 / -1; }
@@ -54,7 +49,7 @@
 .schedule-modal .modal-dialog__body { margin-bottom: var(--sp-5); }
 .schedule-modal .modal-dialog__body > * + * { margin-top: var(--sp-4); }
 
-/* ---- Frequency segmented toggle (Daily / Weekly / Monthly / Yearly) ---- */
+/* Frequency toggle (Daily / Weekly / Monthly / Yearly) */
 .freq-toggle {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -80,8 +75,7 @@
   color: var(--color-primary);
 }
 
-/* ---- Per-frequency field group (Day/Time/Timezone etc., swapped in based
-   on the selected frequency) ---- */
+/* Fields for the selected frequency */
 [data-frequency-fields] { display: flex; flex-direction: column; gap: var(--sp-4); }
 .schedule-summary { font-style: italic; }
 
@@ -92,8 +86,7 @@
 }
 .radio-row__option input { width: 16px; height: 16px; accent-color: var(--color-primary); }
 
-/* ---- Schedule Period (separate from Frequency: how long the recurring
-   schedule stays active, not when it repeats) ---- */
+/* Schedule period (how long it stays active) */
 .schedule-period {
   border-top: 1px solid var(--border);
   padding-top: var(--sp-4);
@@ -112,13 +105,13 @@
 
 .form-field input[type="date"]:disabled { color: var(--text-tertiary); background: var(--surface-sunken); cursor: not-allowed; }
 
-/* ---- Status pill (reuses .badge tokens from style.css) ---- */
+/* Status pill */
 .schedule-status { display: inline-flex; align-items: center; gap: 6px; }
 .schedule-status__dot { width: 7px; height: 7px; border-radius: 50%; }
 .schedule-status__dot--active { background: var(--color-success); }
 .schedule-status__dot--paused { background: var(--text-tertiary); }
 
-/* ---- Row action menu ("⋯") ---- */
+/* Row action menu */
 .action-menu { position: relative; display: inline-block; }
 .action-menu .icon-btn { width: 32px; height: 32px; border: none; background: transparent; }
 .action-menu .icon-btn:hover { background: var(--surface-sunken); }
@@ -142,7 +135,7 @@
 .schedule-empty { text-align: center; padding: var(--sp-8) 0; color: var(--text-tertiary); }
 .schedule-empty p { margin-bottom: var(--sp-3); }
 
-/* ---- Email the report after each run (schedule modal) ---- */
+/* Email after each run (schedule dialog) */
 .schedule-modal .modal-dialog { max-width: 540px; }
 .sched-email { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out); }
 .sched-email.is-on { border-color: color-mix(in srgb, var(--color-primary) 40%, var(--border)); background: color-mix(in srgb, var(--color-primary) 3%, var(--surface)); }
@@ -172,7 +165,7 @@
 .report-pick__opt:has(input:checked) { border-color: var(--color-primary); background: var(--color-primary-soft); }
 .form-field .report-pick__opt input { width: 16px; height: 16px; padding: 0; flex-shrink: 0; accent-color: var(--color-primary); box-shadow: none; }
 
-/* Email column in the schedules table */
+/* Email column */
 .sched-mail { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .sched-mail__who { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: 600; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sched-mail__who svg { width: 14px; height: 14px; flex-shrink: 0; color: var(--color-primary); }

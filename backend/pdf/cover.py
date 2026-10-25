@@ -1,16 +1,5 @@
 """
-pdf/cover.py
-
-Page 1: a coloured header band (drawn on the canvas — see draw_cover_band)
-with the site, date, scope and the overall score ring, then an
-"At a glance" block underneath built from flowables:
-
-  * one card per audited module (icon, score, bar, status)
-  * how many issues need fixing now / soon / are good to know
-  * the plain-language summary
-
-The goal is that a reader who only looks at page 1 knows how the site did
-and where the problems are.
+Page 1: header band (site, date, overall score) and "At a glance": module cards, issue counts and the summary.
 """
 
 from __future__ import annotations
@@ -63,7 +52,7 @@ def _nice_date(iso: str) -> str:
 
 
 def draw_cover_band(canvas: Canvas, payload: ReportPayload) -> None:
-    """The indigo header band: brand, site, meta and the overall score ring."""
+    """The header band: brand, site, details and the score ring."""
     width, height = A4
     margin = PAGE_MARGIN_MM * mm
     top = height
@@ -163,9 +152,7 @@ def _clip(text: str, n: int) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
-# --------------------------------------------------------------------------
-# Flowables below the band
-# --------------------------------------------------------------------------
+# Below the band
 def _module_card(cell, width: float) -> Table:
     score = int(cell.score)
     status = SCORE_BAND_LABELS[score_band(score)]

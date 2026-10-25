@@ -1,13 +1,6 @@
 """
-accessibility/labels.py
-
-Accessible-name checks (WCAG 4.1.2 "Name, Role, Value") for form
-controls, buttons, and links: an input with no associated <label> (or
-aria-label/aria-labelledby/title fallback), a button or link with no
-text a screen reader can announce, and grouped radio/checkbox inputs
-with no <fieldset>/<legend> explaining what the group means as a
-whole. Reads crawler.parser.ParsedPage.soup directly for form markup
-that isn't part of ParsedPage's normal extracted fields.
+Accessible-name checks: inputs without labels, buttons/links without text,
+and radio/checkbox groups without a fieldset/legend.
 """
 
 from __future__ import annotations
@@ -19,9 +12,7 @@ from crawler.parser import ParsedPage
 MODULE = "accessibility"
 CATEGORY = "labels"
 
-# input types that don't need a visible/associated label of their own
-# (submit/button/image/hidden carry their own text or aren't perceivable controls;
-# reset is borderline but conventionally exempted the same way).
+# Input types that don't need their own label.
 LABEL_EXEMPT_INPUT_TYPES = {"hidden", "submit", "button", "image", "reset"}
 
 MAX_EXAMPLES = 5
@@ -75,7 +66,7 @@ def _has_accessible_name(control, labeled_for_ids: set) -> bool:
         return True
     if control.get("title") and control["title"].strip():
         return True
-    # <label>...<input>...</label> wrapping, without a for/id pair
+    # <label> wrapping the input
     parent = control.find_parent("label")
     if parent is not None:
         return True
@@ -136,7 +127,7 @@ def _check_ungrouped_radio_checkbox(page: ParsedPage, soup) -> List[dict]:
     ungrouped_names = []
     for name, inputs in groups.items():
         if len(inputs) < 2:
-            continue  # a lone checkbox doesn't need a fieldset, just its own label
+            continue  # a single checkbox only needs its own label
         has_fieldset = any(inp.find_parent("fieldset") is not None for inp in inputs)
         has_legend = has_fieldset and any(
             (inp.find_parent("fieldset") or {}).find("legend") for inp in inputs

@@ -1,25 +1,7 @@
 """
-analytics/duplicate_tags.py
-
-Site-level(-ish) duplicate detection that sits on top of the other
-analytics/* detectors rather than re-parsing the page itself. Each
-tracker module (ga4, gtm, adobe, piano, clarity, hotjar, meta_pixel,
-linkedin, tiktok) already knows how many times its loader appeared and
-what ID(s) it found; this module just looks across that combined list
-for two failure modes that are easy to introduce by accident (a
-snippet pasted twice by two different people/plugins, or a migration
-that added a new ID without removing the old one) and easy to miss
-when looking at any single tracker in isolation:
-
-  1. The same tracker's loader is included more than once -> double
-     hit / double session-recording / inflated pageview counts.
-  2. More than one distinct ID is configured for the same tracker on
-     one page -> possibly intentional (multi-account setups exist) but
-     worth a nudge to confirm.
-
-Callers build the `TrackerLoad` list from each detect_*() result — see
-analytics/__init__.py::run_page_checks for the wiring — rather than
-this module importing and re-running every detector itself.
+Finds tracking tags loaded twice (double-counted page views) or with more
+than one ID for the same tool (may be intended, worth checking).
+Works on the other detectors' results; doesn't re-scan the page.
 """
 
 from __future__ import annotations
@@ -35,15 +17,15 @@ CATEGORY = "duplicate_tags"
 
 @dataclass
 class TrackerLoad:
-    """One tracker's aggregated detection result, in the shape duplicate-checking needs."""
-    key: str  # short machine key, e.g. "ga4", matches the category used by that tracker's own findings
-    display_name: str  # human-readable name, e.g. "Google Analytics 4"
+    """One tool's detection summary for the duplicate check."""
+    key: str  # e.g. "ga4"
+    display_name: str  # e.g. "Google Analytics 4"
     ids: List[str] = field(default_factory=list)
-    load_count: int = 0  # number of loader/config occurrences found for this tracker
+    load_count: int = 0  # times the tag's loader or config was found
 
 
 def check_duplicate_tags(page: ParsedPage, trackers: List[TrackerLoad]) -> List[dict]:
-    """Findings for trackers loaded more than once, or configured with more than one ID, on this page."""
+    """Findings for tools loaded more than once or with several IDs on this page."""
     findings: List[dict] = []
 
     for tracker in trackers:

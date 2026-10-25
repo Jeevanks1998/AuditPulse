@@ -1,32 +1,11 @@
 """
-consent/cookies.py
+Connects the cookies/ package to the consent checks. Two sources, kept apart:
+  static  - Set-Cookie headers from one fetch (server cookies only, no timing)
+  runtime - the browser's cookies before any consent click
 
-Thin bridge between the standalone cookies/ package (detector,
-categories, expiry, validator, storage — none of which know anything
-about consent banners) and the rest of consent/.
-
-Two separate evidence sources are kept apart on purpose:
-
-  * static  — Set-Cookie headers from the single HTTP fetch of the page
-              (`analyze_cookies` / `check_pre_consent_cookies`). Sees only
-              server-set cookies; says nothing about timing.
-  * runtime — the browser cookie jar captured by consent.runtime before
-              any consent action (`bucket_cookies` is shared by both so
-              they classify identically).
-
-Classification rules that matter for consent verdicts:
-
-  * analytics / marketing        -> consent required; present before
-                                    consent = real evidence of a failure
-  * consent_management           -> the CMP storing the visitor's choice
-                                    (OptanonConsent…). Never a failure.
-  * essential (session, CSRF/XSRF,
-    load-balancing, bot protection) -> security/essential evidence. Never
-                                    a failure.
-  * functional                   -> reported, not judged
-  * unknown                      -> stays UNKNOWN, reported as "needs
-                                    review", never auto-promoted to
-                                    non-essential.
+Only analytics / marketing cookies before consent are failures. Consent-tool
+cookies, essential cookies (session, CSRF, load balancing, bot protection),
+functional and unknown cookies never are; unknown ones are "needs review".
 """
 
 from __future__ import annotations
@@ -74,7 +53,7 @@ class CookieEvidenceItem:
 
 @dataclass
 class CookieBuckets:
-    """One set of cookies, split by what each one means for consent."""
+    """Cookies grouped by what they mean for consent."""
     consent_required: List[CookieEvidenceItem] = field(default_factory=list)   # analytics + marketing
     consent_management: List[CookieEvidenceItem] = field(default_factory=list)
     essential: List[CookieEvidenceItem] = field(default_factory=list)          # session/security/LB/bot
@@ -97,10 +76,7 @@ class CookieBuckets:
 
 
 def bucket_cookies(cookies: Iterable) -> CookieBuckets:
-    """
-    Accepts anything with `.name` and `.domain` (cookies.detector.Cookie,
-    consent.runtime.CookieSnapshot) or dicts with those keys.
-    """
+    """Accepts cookie objects or dicts with `name` and `domain`."""
     buckets = CookieBuckets()
     for c in cookies:
         name = c.get("name") if isinstance(c, dict) else getattr(c, "name", "")
@@ -127,12 +103,7 @@ def analyze_cookies(
     first_party_hostname: Optional[str] = None,
     blocks_scripts_pre_consent: Optional[bool] = None,
 ) -> CookieAuditResult:
-    """
-    Runs the full cookies/ package pipeline, then — when a pre-consent
-    verdict is available from consent.behavior.evaluate_behavior — adds
-    findings for consent-required cookies observed in the initial
-    response on a page that doesn't block pre-consent scripts.
-    """
+    """Runs the cookies/ checks, plus findings for consent-required cookies when tracking isn't held back."""
     result = run_cookie_checks(cookies, page=page, first_party_hostname=first_party_hostname)
 
     if blocks_scripts_pre_consent is False:
@@ -142,15 +113,9 @@ def analyze_cookies(
 
 
 def check_pre_consent_cookies(cookies: List[Cookie]) -> List[dict]:
-    """
-    Flags analytics/marketing cookies seen in the *initial HTTP response*
-    (Set-Cookie headers) on a page whose scripts aren't confirmed to be
-    held back pre-consent.
-
-    Consent-management cookies (OptanonConsent…) and essential
-    session/security cookies (XSRF-TOKEN, session, CSRF…) are never
-    flagged. Unknown cookies produce a separate low-severity "needs
-    review" note rather than a consent failure.
+    """Flags analytics/marketing cookies in the first response when scripts aren't
+    confirmed to wait for consent. Consent-tool and essential cookies are never
+    flagged; unknown ones get a low "needs review" note.
     """
     buckets = bucket_cookies(cookies)
     findings: List[dict] = []

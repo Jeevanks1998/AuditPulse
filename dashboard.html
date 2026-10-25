@@ -20,7 +20,7 @@
 <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 <div class="app-shell">
 
-  <!-- ============ SIDEBAR ============ -->
+  <!-- Sidebar -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar__logo">
       <div class="sidebar__logo-mark" style="background:#fff;overflow:hidden;"><img src="assets/img/logo.png" alt="AuditPulse logo" style="width:100%;height:100%;object-fit:contain;"></div>
@@ -81,17 +81,13 @@
     </div>
   </aside>
 
-  <!-- ============ MAIN ============ -->
+  <!-- Main -->
   <div>
     <header class="topbar">
       <div class="topbar__left">
         <button class="icon-btn menu-toggle" id="menuToggle" aria-label="Toggle menu">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
         </button>
-        <div class="topbar__search">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-          <input type="text" placeholder="Search website or report…">
-        </div>
       </div>
 
       <div class="topbar__actions">
@@ -174,7 +170,7 @@
       </div>
       </div>
 
-      <!-- Health overview + Recent audits -->
+      <!-- Health overview + recent audits -->
       <div class="dash-section">
       <div class="dashboard-grid">
 
@@ -192,9 +188,7 @@
     </span>
   </div>
 
-  <!-- Error state: shown instead of the ring/category grid when
-       /audits/stats fails to load; hidden and cleared on any successful
-       load or retry. Never rendered alongside stale/fabricated numbers. -->
+  <!-- Shown instead of the ring when /audits/stats fails. -->
   <div class="health-overview__error" id="healthOverviewError" style="display:none;">
     <span class="health-overview__error-icon" aria-hidden="true">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v5M12 16h.01"/></svg>
@@ -203,7 +197,7 @@
     <button type="button" class="btn btn--secondary btn--sm" id="healthOverviewRetry">Try again</button>
   </div>
 
-  <!-- Main visualization: Overall score ring -->
+  <!-- Overall score ring -->
   <div class="health-overview__main" id="healthOverviewMain">
     <div class="health-overview__ring-container">
       <div class="vring vring--lg vring--animated health-overview__ring" data-band="good" id="healthRing">
@@ -221,10 +215,7 @@
       </div>
     </div>
 
-    <!-- Compact score rows: one clean container (the health-overview-card
-         itself), ring on the left, three thin-bar rows on the right — same
-         ids as before so dashboard.js needs no changes and no value here
-         is ever anything but a real API number. -->
+    <!-- Score rows (ids used by dashboard.js; values only from the API) -->
     <div class="health-overview__rows">
 
       <div class="health-row" data-category="analytics">
@@ -277,13 +268,8 @@
       </div>
       </div>
 
-      <!-- Analytics / Consent Health — runtime-validated pass/fail summary
-           for the most recent completed audit (§6), clickable into the
-           full evidence detail on report.html. Hidden entirely when the
-           latest audit didn't run these modules.
-           Note: JS toggles this element's own display (not a wrapper) to
-           reveal it, so the dash-section spacing class lives on this node
-           itself rather than an ancestor. -->
+      <!-- Analytics / Consent health for the latest completed audit; hidden if it
+           didn't run these modules. dashboard.js shows/hides this element itself. -->
       <div class="dashboard-grid dash-section" id="runtimeHealthGrid" style="display:none;">
         <div class="card card__pad health-check-card" id="analyticsHealthCard" style="display:none;">
           <div class="card__head">
@@ -370,7 +356,7 @@
 <script src="assets/js/components.js"></script>
 <script src="assets/js/dashboard.js"></script>
 
-  <!-- Phase 4 Health Overview: SVG gradient defs for the score ring -->
+  <!-- Gradients for the score ring -->
   <svg style="display: none;" width="0" height="0">
     <defs>
       <linearGradient id="gradient-good" x1="0%" y1="0%" x2="100%" y2="100%">

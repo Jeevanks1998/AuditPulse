@@ -1,15 +1,5 @@
 """
-images/lazyload.py
-
-Checks native lazy-loading usage in both directions: a page with many
-images and none of them lazy-loaded (every image competes for
-bandwidth on initial load, whether or not it's ever scrolled into
-view), and the opposite mistake of lazy-loading the very first image
-on the page, which is the one most likely to be the Largest
-Contentful Paint element — deferring its load until scroll (or until
-the browser gets around to it) delays LCP rather than helping it.
-Reads crawler.parser.ParsedPage.image_tags in document order, the
-same <img> tag list seo/alt_text.py and images/optimizer.py use.
+Lazy loading: flags image-heavy pages using none, and a lazy-loaded first image (slows the main image).
 """
 
 from __future__ import annotations

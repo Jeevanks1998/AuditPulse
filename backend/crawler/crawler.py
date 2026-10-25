@@ -1,24 +1,7 @@
 """
-crawler/crawler.py
-
-The crawl orchestrator: given a seed URL, fetches pages breadth-first
-(concurrency-limited, robots.txt-respecting), seeds the frontier from
-the sitemap when doing a full-site run, and hands each fetched page to
-parser/links/extractor so the caller gets back a flat CrawlResult with
-per-page signals and findings ready for scoring.
-
-This is what `services.audit_service.run_audit_pipeline` swaps in for
-its placeholder scoring block — `crawl_site(...)` returns real
-per-module findings via `PageResult.signals.findings`, in the same
-{module, severity, title, description} shape the placeholder pipeline
-already writes to Audit.findings, so the rest of that pipeline (Issue
-sync, Consent/Analytics writers, Website rollups) needs no changes.
-
-Usage:
-    from crawler import crawl_site
-
-    result = await crawl_site(audit.url, max_pages=audit.max_pages, depth=audit.depth)
-    all_findings = [f for page in result.ok_pages for f in page.signals.findings]
+Crawls a site breadth-first from a start URL (limited concurrency, respects
+robots.txt, uses the sitemap for full-site audits) and returns each page
+parsed and measured.
 """
 
 from __future__ import annotations
@@ -46,7 +29,7 @@ REQUEST_TIMEOUT_SECONDS = 15.0
 
 @dataclass
 class PageResult:
-    """Outcome of fetching one URL. `signals`/`links` are only populated when `ok` is True."""
+    """Result of fetching one URL; `signals`/`links` only when `ok`."""
 
     url: str
     status_code: Optional[int]
@@ -75,10 +58,7 @@ class CrawlResult:
 
 
 class Crawler:
-    """
-    One instance per audit run. Not safe to reuse across concurrent
-    calls to `run()` — construct a fresh Crawler per crawl.
-    """
+    """One instance per crawl; don't reuse it."""
 
     def __init__(
         self,
@@ -142,7 +122,7 @@ class Crawler:
         return result
 
     async def _drain_batch(self, queue: asyncio.Queue, already_crawled: int) -> List[str]:
-        """Pulls up to `concurrency` URLs off the queue, capped by remaining page budget."""
+        """Takes up to `concurrency` URLs from the queue, within the page limit."""
         batch: List[str] = []
         remaining = self.max_pages - already_crawled
         while not queue.empty() and len(batch) < self._concurrency and len(batch) < remaining:
@@ -183,7 +163,7 @@ class Crawler:
             if "text/html" not in content_type:
                 return PageResult(
                     url=url, status_code=response.status_code, ok=True, fetch_ms=elapsed_ms,
-                    error=None,  # fetched fine, just nothing to parse (e.g. a PDF the sitemap listed)
+                    error=None,  # fetched fine, nothing to parse (e.g. a PDF)
                 )
 
             page = parse_html(url, response.text)
@@ -196,6 +176,6 @@ class Crawler:
 
 
 async def crawl_site(start_url: str, max_pages: int = DEFAULT_MAX_PAGES, depth: str = "full") -> CrawlResult:
-    """Module-level convenience wrapper — the function services.audit_service imports."""
+    """Crawls `start_url` and returns the result."""
     crawler = Crawler(start_url=start_url, max_pages=max_pages, depth=depth)
     return await crawler.run()

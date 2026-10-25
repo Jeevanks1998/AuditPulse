@@ -1,19 +1,8 @@
 """
-utils/screenshot_store.py
-
-Keeps evidence screenshots available after the container's disk is wiped
-(Railway redeploys/restarts) or when the audit ran on a different service
-than the API (separate worker): see models/screenshot_blob.py.
-
-  persist_new_screenshots(since)   after an audit — copy every screenshot
-                                   written under SCREENSHOT_DIR since the
-                                   audit started into the database
-  load_screenshot(key)             for main.py's /screenshots route when the
-                                   file isn't on disk
-  restore_screenshots(urls)        before building a PDF / evidence ZIP /
-                                   email attachment — write missing files
-                                   back to disk so the existing file-based
-                                   code keeps working
+Keeps screenshots available when the server disk is wiped (see models/screenshot_blob.py):
+  persist_new_screenshots - after an audit, copy new screenshots to the database
+  load_screenshot         - serve one from the database when the file is gone
+  restore_screenshots     - write missing files back before building PDFs / ZIPs / emails
 """
 
 from __future__ import annotations
@@ -38,7 +27,7 @@ def _enabled() -> bool:
 
 
 def safe_key(key: str) -> Optional[str]:
-    """Normalise a "/screenshots/<key>" tail; None if it tries to escape the folder."""
+    """Cleans a "/screenshots/<key>" path; None if it tries to leave the folder."""
     key = (key or "").replace("\\", "/").split("?", 1)[0].lstrip("/")
     if key.startswith("screenshots/"):
         key = key[len("screenshots/"):]
@@ -58,7 +47,7 @@ def key_from_url(url: Optional[str]) -> Optional[str]:
 
 
 def _compress(data: bytes) -> Tuple[bytes, str]:
-    """Re-encode as a compact JPEG (keeps size in the database reasonable)."""
+    """Re-saves as a small JPEG."""
     try:
         from PIL import Image
 
@@ -102,7 +91,7 @@ def _files_since(since: datetime) -> List[Path]:
 
 
 async def persist_new_screenshots(db, since: datetime) -> int:
-    """Copy screenshots written since `since` into screenshot_blobs. Returns how many were stored."""
+    """Copies screenshots written since `since` into the database. Returns how many."""
     if not _enabled():
         return 0
     from sqlalchemy import delete
@@ -152,7 +141,7 @@ async def load_screenshot(key: str) -> Optional[Tuple[bytes, str]]:
     async with AsyncSessionLocal() as db:
         row = await db.get(ScreenshotBlob, key)
         if row is None:
-            # Consent screenshots are also looked up by bare file name.
+            # Consent screenshots are also looked up by file name.
             from sqlalchemy import select
             name = key.rsplit("/", 1)[-1]
             row = (await db.execute(select(ScreenshotBlob).where(ScreenshotBlob.key == name))).scalar_one_or_none()
@@ -160,7 +149,7 @@ async def load_screenshot(key: str) -> Optional[Tuple[bytes, str]]:
 
 
 def collect_screenshot_urls(obj, out: Optional[Set[str]] = None) -> Set[str]:
-    """Every "/screenshots/..." string anywhere inside a payload / dict / list."""
+    """Every "/screenshots/..." string inside a dict / list."""
     out = set() if out is None else out
     if isinstance(obj, str):
         if "/screenshots/" in obj or obj.startswith("screenshots/"):
@@ -177,7 +166,7 @@ def collect_screenshot_urls(obj, out: Optional[Set[str]] = None) -> Set[str]:
 
 
 async def restore_screenshots(urls: Iterable[str]) -> int:
-    """Write screenshots that are missing on disk back from the database."""
+    """Writes screenshots missing on disk back from the database."""
     if not _enabled():
         return 0
     keys = {k for k in (key_from_url(u) for u in urls) if k}

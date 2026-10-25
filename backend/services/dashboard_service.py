@@ -1,14 +1,5 @@
 """
-services/dashboard_service.py
-
-Aggregated view behind dashboard.html: health-ring score, the four stat
-cards, and the "recent audits" list. dashboard.js loads stats + recent
-together via Promise.all, so `get_summary` returns both in one payload;
-`get_stats` / `get_recent` are kept too in case a route wants to fetch
-them independently.
-
-This is a thin wrapper — the actual queries live in services.audit_service
-so "what counts as this user's audits" isn't duplicated across services.
+Dashboard data (stats and recent audits). Queries live in audit_service.
 """
 
 from typing import List

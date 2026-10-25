@@ -1,24 +1,7 @@
 """
-journey/journey_screenshots.py
-
-Visual evidence for discovered journey interactions:
-
-    before interaction   → viewport screenshot (element scrolled into view)
-    highlighted          → same view with the discovered element outlined and
-                           labelled ("detected: CTA") so the evidence clearly
-                           corresponds to the element
-    after interaction    → viewport (or the destination page / opened modal /
-                           focused form)
-    page                 → full-page screenshot of each scanned page
-
-Files are written under the existing screenshot directory (the one main.py
-already serves at /screenshots), reusing crawler/screenshots.py's
-directory and safe-filename helpers rather than a separate system:
-
-    <SCREENSHOT_DIR>/journey/<scan_id>/<page-slug>/interaction_001_before.png
-                                                   interaction_001_highlighted.png
-                                                   interaction_001_after.png
-    <SCREENSHOT_DIR>/journey/<scan_id>/pages/<page-slug>.png
+Journey screenshots: before, highlighted (element outlined and labelled) and
+after each interaction, plus a full screenshot of each page. Saved under
+<SCREENSHOT_DIR>/journey/<scan_id>/.
 """
 
 from __future__ import annotations
@@ -74,7 +57,7 @@ MAX_SNAPSHOT_HEIGHT = 5_000  # px
 
 
 class EvidenceWriter:
-    """Writes journey screenshots for one scan and returns /screenshots-relative paths."""
+    """Writes one scan's journey screenshots; returns /screenshots paths."""
 
     def __init__(self, scan_id: str) -> None:
         self.root = Path(_screenshot_dir()) / "journey" / _safe_filename(scan_id)
@@ -98,8 +81,7 @@ class EvidenceWriter:
         out = self.root / "pages" / f"{page_slug(page_url)}.png"
         out.parent.mkdir(parents=True, exist_ok=True)
         try:
-            # A full-page capture renders the whole page into one bitmap; on
-            # very long pages that is hundreds of MB inside Chromium. Cap it.
+            # Cap full-page captures: very long pages use a lot of memory.
             size = await page.evaluate(
                 "() => [document.documentElement.clientWidth || innerWidth,"
                 " Math.max(document.body ? document.body.scrollHeight : 0, document.documentElement.scrollHeight)]")
@@ -124,7 +106,7 @@ class EvidenceWriter:
             return None
 
     async def element(self, page, selector: str, page_url: str, index: int, kind: str) -> Optional[str]:
-        """Clip to one element (e.g. the form) — falls back to the viewport."""
+        """Crops to one element (e.g. the form); falls back to the view."""
         out = self._path(page_url, f"interaction_{index:03d}_{kind}.png")
         try:
             loc = page.locator(selector).first

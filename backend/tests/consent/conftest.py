@@ -1,12 +1,6 @@
 """
-Test harness for the consent scanner.
-
-Serves the HTML fixtures in ./fixtures from a local HTTP server and makes
-Chromium resolve *every* hostname to 127.0.0.1, so the fixture pages can
-use realistic hosts (www.example-shop.de, www.googletagmanager.com,
-cdn.privacy-mgmt.com, …) without touching the network. Request
-classification only looks at hostname + path, so plain http on a local
-port exercises exactly the same code paths as production.
+Consent test set-up: serves ./fixtures from a local server and makes Chromium
+resolve every host name to it, so fixtures can use realistic hosts offline.
 """
 
 from __future__ import annotations

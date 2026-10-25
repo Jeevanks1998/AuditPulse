@@ -1,17 +1,7 @@
 """
-middleware/logging.py
-
-One log line per request, through the same loguru sink
-config/logging.py already sets up (so these lines get the identical
-format/rotation/file-and-stdout routing as everything else the app
-logs) — replaces having to piece together what happened from uvicorn's
-own access log, which doesn't know about request ids, auth, or which
-user made the call.
-
-Also stamps an `X-Request-ID` response header (generating one if the
-client didn't send one), and puts it on `request.state.request_id` so
-middleware/errors.py can include the same id in an error response body —
-one id a person can search logs for, end to end.
+One log line per request (method, path, status, time, user). Adds an
+X-Request-ID header and request.state.request_id, so an error can be found
+in the logs by that id.
 """
 
 import time

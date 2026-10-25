@@ -1,24 +1,8 @@
 """
-analytics/analytics_score.py
+Turns analytics findings into a 0-100 score, and builds the analytics
+summary saved to the database (build_analytics_summary).
 
-Turns the flat finding lists every other analytics/* module returns
-into a single weighted 0-100 score with a per-category breakdown — the
-same shape Audit.breakdown["analytics"] / AuditStatsOut.breakdown
-already carry for the other modules (see seo/seo_score.py,
-accessibility/accessibility_score.py for the identical pattern).
-
-Also exposes `build_analytics_summary`, which maps the individual
-detect_*() results onto models.analytics.Analytics's columns
-(trackers_detected, tag_manager_detected, gtm_container_id,
-ga_measurement_id, data_layer_present, pageview_events_found,
-custom_events_found, analytics_score) — this is what
-services.audit_service._write_analytics_result should build from once
-it's wired to the real detectors instead of its current
-random.randint(...) placeholder.
-
-Unlike SEO/accessibility, "no trackers found" is not a defect here —
-plenty of legitimate sites run no analytics at all — so a category with
-zero findings simply stays at 100 rather than being read as a failure.
+A category with no findings stays at 100.
 """
 
 from __future__ import annotations
@@ -27,16 +11,14 @@ import dataclasses
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional
 
-if TYPE_CHECKING:  # avoid importing analytics.runtime at module load time
+if TYPE_CHECKING:  # avoid importing analytics.runtime at load time
     from analytics.runtime import AnalyticsRuntimeResult
 
 MODULE = "analytics"
 
 SEVERITY_PENALTY = {"critical": 30, "warning": 15, "info": 5}
 
-# Must sum to 1.0. Categories not listed here (e.g. an unrecognized
-# `category` value on a finding) are folded into "other" at a small
-# default weight so nothing is silently dropped from the overall score.
+# Must sum to 1.0. Unknown categories count as "other".
 CATEGORY_WEIGHTS: Dict[str, float] = {
     "ga4": 0.15,
     "gtm": 0.15,
@@ -67,13 +49,7 @@ TRACKER_DISPLAY_NAMES: Dict[str, str] = {
     "tagcommander": "TagCommander",
 }
 
-# Which attribute on each vendor's Detection dataclass holds its list of
-# actual detected IDs/configurations (ga4.GA4Detection.measurement_ids,
-# adobe.AdobeDetection.report_suites, ...). Used by build_analytics_summary
-# to build `vendor_configs` generically instead of one hard-coded field per
-# vendor, so a vendor with more than one detected ID (e.g. two GA4
-# properties on the same page) is represented as-is rather than truncated
-# to a single value.
+# Which field on each tool's detection result holds its IDs (a page can have several).
 VENDOR_ID_ATTR: Dict[str, str] = {
     "ga4": "measurement_ids",
     "gtm": "container_ids",
@@ -97,11 +73,7 @@ class AnalyticsScoreResult:
 
 
 def score_analytics(findings: List[dict]) -> AnalyticsScoreResult:
-    """
-    Scores a flat list of finding dicts (as returned by
-    analytics.run_page_checks, or concatenated across an entire crawl)
-    into an overall score plus per-category breakdown.
-    """
+    """Scores a list of analytics findings."""
     by_category: Dict[str, List[dict]] = {}
     for finding in findings:
         category = finding.get("category") or _OTHER_CATEGORY
@@ -143,7 +115,7 @@ def _score_category(category_findings: List[dict]) -> int:
 
 @dataclass
 class AnalyticsSummary:
-    """Field-for-field match with models.analytics.Analytics, minus audit_id/id/created_at."""
+    """Same fields as models.analytics.Analytics (minus id, audit_id, created_at)."""
     trackers_detected: List[str] = field(default_factory=list)
     tag_manager_detected: bool = False
     gtm_container_id: Optional[str] = None
@@ -153,32 +125,18 @@ class AnalyticsSummary:
     custom_events_found: int = 0
     analytics_score: int = 0
 
-    # analytics.runtime.run_analytics_runtime's live Page View/Scroll/Click
-    # verdicts. runtime_available: the Playwright pass executed at all.
-    # runtime_tested: it captured at least one real vendor request, i.e.
-    # this is genuine live evidence rather than an empty pass. Both are
-    # the same boolean today (analytics/runtime.py has no separate
-    # "ran but found nothing to click" leg the way consent/runtime.py
-    # does) but kept as two fields for symmetry with ConsentSummary and
-    # room for that distinction later.
+    # Live browser check results. runtime_available: the check ran.
+    # runtime_tested: it captured at least one real tool request.
     runtime_available: bool = False
     runtime_tested: bool = False
     runtime_result: Optional[dict] = None
 
-    # Every detected vendor's actual configuration, keyed by vendor_key
-    # (ga4, gtm, adobe, piano, clarity, hotjar, meta_pixel, linkedin,
-    # tiktok) -> list of detected IDs. A vendor detected via a loader
-    # script but with no ID extractable from the markup is present with
-    # an empty list; an undetected vendor is simply absent from this
-    # dict — never a placeholder/fallback ID. gtm_container_id and
-    # ga_measurement_id above are kept for backward compatibility
-    # (first detected value only); this is the full, multi-ID-aware
-    # source of truth.
+    # Tool key -> IDs found (e.g. {"ga4": ["G-..."]}). A tool found without an ID
+    # has an empty list; tools not found are absent. gtm_container_id and
+    # ga_measurement_id above hold only the first ID, for older code.
     vendor_configs: Dict[str, List[str]] = field(default_factory=dict)
 
-    # Phase 2 full-site fields — see models.analytics.Analytics for the
-    # column-level docs. Left at their defaults for a homepage-only audit;
-    # populated by services.audit_service._run_analytics_checks_site.
+    # Full-site fields; left empty for a homepage-only audit.
     page_results: List[dict] = field(default_factory=list)
     site_coverage: Dict[str, int] = field(default_factory=dict)
     cross_page_findings: List[dict] = field(default_factory=list)
@@ -195,17 +153,8 @@ def build_analytics_summary(
     score_result: Optional[AnalyticsScoreResult] = None,
     runtime_result: Optional["AnalyticsRuntimeResult"] = None,
 ) -> AnalyticsSummary:
-    """
-    Assembles an AnalyticsSummary ready to pass straight into
-    models.analytics.Analytics(**vars(summary), audit_id=...). Takes
-    the individual detect_*() results rather than the ParsedPage
-    itself, since __init__.run_page_checks already computed all of
-    them once and there's no reason to re-scan the page here.
-
-    `other_detections` is an optional {category_key: detection} map for
-    adobe/piano/clarity/hotjar/linkedin — anything with a truthy
-    `.detected` contributes its display name to trackers_detected and
-    its actual ID list (per VENDOR_ID_ATTR) to vendor_configs.
+    """Builds the AnalyticsSummary saved to the database from the detect_*() results.
+    `other_detections` maps extra tools (adobe, piano, ...) to their detection result.
     """
     trackers: List[str] = []
     vendor_configs: Dict[str, List[str]] = {}
@@ -222,10 +171,7 @@ def build_analytics_summary(
             continue
         trackers.append(TRACKER_DISPLAY_NAMES.get(key, key))
         attr = VENDOR_ID_ATTR.get(key)
-        # Detected-but-no-ID-extracted (e.g. a loader script with no
-        # parseable account id) is represented as an empty list, never
-        # omitted or backfilled with a placeholder — the vendor is
-        # still real evidence, it just has no configuration value.
+        # Found but no ID: keep the tool with an empty list.
         vendor_configs[key] = list(getattr(detection, attr, []) or []) if attr else []
 
     pageview_events = data_layer_detection.pageview_events
@@ -239,8 +185,7 @@ def build_analytics_summary(
 
     return AnalyticsSummary(
         trackers_detected=trackers,
-        # Any tag manager counts, not only GTM (TagCommander is common on
-        # European sites).
+        # Any tag manager counts, not only GTM (TagCommander is common in Europe).
         tag_manager_detected=bool(
             gtm_detection.detected
             or getattr((other_detections or {}).get("tagcommander"), "detected", False)
@@ -258,18 +203,11 @@ def build_analytics_summary(
     )
 
 
-# ============================================================================
-# Phase 2 — full-site: page-level results, cross-page consistency, site
-# coverage, and a site-level score derived from actual page-level evidence
-# (never the homepage score standing in for the whole site).
-# ============================================================================
+# Full-site analytics: per-page results, cross-page checks and site score
 
 @dataclass
 class PageAnalyticsResult:
-    """One crawled page's analytics evidence — the unit services.audit_service
-    aggregates across a full-site crawl. `findings` are this page's own
-    (module=analytics) findings only; cross-page findings are computed
-    separately by check_cross_page_consistency once every page is in."""
+    """One page's analytics result in a full-site audit (cross-page findings are separate)."""
 
     url: str
     trackers_detected: List[str] = field(default_factory=list)
@@ -279,20 +217,13 @@ class PageAnalyticsResult:
     runtime_available: bool = False
     runtime_tested: bool = False
     runtime_result: Optional[dict] = None
-    # Only the raw HTML was checked and it showed nothing, on a site whose
-    # tags are injected by JavaScript: absence here is not evidence.
+    # Only raw HTML was checked and it showed nothing on a JavaScript-tagged site: not evidence.
     not_verified: bool = False
 
 
 def check_cross_page_consistency(pages: List[PageAnalyticsResult]) -> List[dict]:
-    """
-    Compares actual detected vendor_configs across every scanned page and
-    flags real discrepancies — a tracker present on some pages and absent
-    from others, or the same vendor configured with different IDs on
-    different pages (different GA4 Measurement IDs, GTM Container IDs,
-    Adobe Report Suites, Piano Site IDs, Clarity/Hotjar/Meta/LinkedIn/
-    TikTok IDs). Only ever produced from >= 2 real crawled pages — a
-    single-page audit has nothing to compare, so this returns [].
+    """Finds differences between pages: a tool on some pages but not others, or
+    different IDs for the same tool. Needs at least 2 pages.
     """
     pages = [p for p in pages if not p.not_verified]
     if len(pages) < 2:
@@ -322,7 +253,7 @@ def check_cross_page_consistency(pages: List[PageAnalyticsResult]) -> List[dict]
                 affected_urls=missing_urls,
             ))
 
-        # Different actual IDs configured for the same vendor across pages.
+        # Different IDs for the same tool on different pages.
         ids_to_pages: Dict[str, List[str]] = {}
         for p in pages_with:
             for vendor_id in p.vendor_configs.get(vendor_key) or []:
@@ -346,13 +277,7 @@ def check_cross_page_consistency(pages: List[PageAnalyticsResult]) -> List[dict]
 def score_site_analytics(
     pages: List[PageAnalyticsResult], cross_page_findings: Optional[List[dict]] = None
 ) -> AnalyticsScoreResult:
-    """
-    Site-level score derived from every scanned page's actual findings
-    plus real cross-page consistency findings — never just the homepage's
-    score. A single-page ("homepage" depth) audit degrades to exactly
-    score_analytics(homepage findings), which is the correct answer when
-    there's only one real page of evidence to score.
-    """
+    """Site score from every page's findings plus cross-page findings (one page = that page's score)."""
     combined: List[dict] = []
     for p in pages:
         combined += p.findings
@@ -363,11 +288,7 @@ def score_site_analytics(
 def compute_site_coverage(
     pages: List[PageAnalyticsResult], cross_page_findings: Optional[List[dict]] = None
 ) -> Dict[str, int]:
-    """
-    Actual calculated coverage from the pages that were really crawled —
-    every count here comes from `pages`/`cross_page_findings`, never a
-    fixed or estimated number.
-    """
+    """Coverage counts from the pages actually scanned."""
     cross_page_findings = cross_page_findings or []
     inconsistent_urls = set()
     for f in cross_page_findings:
@@ -378,8 +299,7 @@ def compute_site_coverage(
         "pages_scanned": len(pages),
         "pages_with_analytics": sum(1 for p in pages if p.trackers_detected),
         "pages_without_analytics": sum(1 for p in pages if not p.trackers_detected and not p.not_verified),
-        # Raw HTML showed nothing on a site whose tags are added by
-        # JavaScript — neither "with" nor "without" can be claimed.
+        # Raw HTML showed nothing on a JavaScript-tagged site: can't say with or without.
         "pages_not_verified": sum(1 for p in pages if p.not_verified),
         "pages_with_runtime_failures": sum(
             1 for p in pages if p.runtime_available and any(
@@ -391,20 +311,9 @@ def compute_site_coverage(
     }
 
 
-# ============================================================================
-# Phase 2.5 — Consent + Analytics correlation. Connects consent.runtime's
-# actual before/after-consent network capture (consent/runtime.py's
-# ConsentRuntimeResult) with analytics' detected vendors, so a tracker that
-# fires regardless of a Reject click (or that only appears after Accept) is
-# flagged from real observed network requests — never assumed.
-# ============================================================================
+# Consent + analytics: did detected tools fire before consent, after Reject or after Accept?
 
-# consent/network.py's KNOWN_TRACKER_DOMAINS labels requests by a plain
-# display name (domain-matched), not by analytics' vendor_key — this maps
-# the overlap between the two so a detected analytics vendor can be matched
-# against consent's captured request list. Vendors consent/network.py has
-# no domain entry for (Adobe, Piano, LinkedIn) simply can't be correlated
-# and are skipped, rather than guessed at.
+# Consent tracker name -> analytics tool key. Tools consent can't see (Adobe, Piano, LinkedIn) are skipped.
 _CONSENT_TRACKER_NAME_TO_VENDOR_KEY = {
     "google analytics": "ga4",
     "google tag manager": "gtm",
@@ -421,13 +330,8 @@ def check_consent_analytics_correlation(
     consent_runtime_result,
     page_url: str,
 ) -> List[dict]:
-    """
-    Compares actually-detected analytics vendors against
-    consent.runtime.run_consent_runtime's real captured network requests
-    before consent, after Reject, and after Accept. Only ever produces a
-    finding when the runtime pass actually ran and actually captured a
-    matching request — an unavailable/not-run consent runtime pass yields
-    no findings here, never an assumed pass or fail.
+    """Checks detected analytics tools against the consent check's captured requests
+    (before consent, after Reject, after Accept). No findings if that check didn't run.
     """
     findings: List[dict] = []
     if consent_runtime_result is None or not getattr(consent_runtime_result, "available", False):
@@ -461,12 +365,7 @@ def check_consent_analytics_correlation(
         before is not None and getattr(before, "available", False)
         and after_accept is not None and getattr(after_accept, "available", False)
     ):
-        # "Did the vendor fire at all" — any request to the vendor counts
-        # here (a tag manager container load included), not only confirmed
-        # collection hits, so a GTM container that loaded isn't reported as
-        # "did not fire". `vendor_requests` is consent.runtime's
-        # every-recognized-vendor list; older result objects only had
-        # tracker_requests.
+        # Any request to the tool counts as "fired" (including a GTM container load).
         def _vendor_reqs(state):
             return getattr(state, "vendor_requests", None) or state.tracker_requests
 
@@ -478,16 +377,12 @@ def check_consent_analytics_correlation(
             _CONSENT_TRACKER_NAME_TO_VENDOR_KEY.get((r.tracker_name or "").lower())
             for r in _vendor_reqs(after_accept)
         }
-        # A detected vendor that never fires even once consent is
-        # *accepted* is a real functional gap, not a compliance win —
-        # worth surfacing distinctly from the Phase 1 "detected but never
-        # fires at runtime" finding since this specifically confirms it
-        # doesn't fire even with consent granted.
+        # A tool that never fires even after Accept is broken tracking, not good compliance.
         for vendor_key in vendor_configs:
             if vendor_key in before_vendor_keys or vendor_key in accept_vendor_keys:
                 continue
             if vendor_key not in _CONSENT_TRACKER_NAME_TO_VENDOR_KEY.values():
-                continue  # not one consent/network.py can observe at all
+                continue  # the consent check can't see this tool
             label = TRACKER_DISPLAY_NAMES.get(vendor_key, vendor_key)
             findings.append(_finding(
                 "warning",
@@ -517,10 +412,6 @@ def _finding(
         "recommendation": recommendation,
     }
     if affected_urls:
-        # Extra, additive key — every other module's findings already
-        # persist fine without it (models.issue only reads the six
-        # standard keys), so this is purely additional evidence for the
-        # report's cross-page section, not a shape change other code
-        # needs to handle.
+        # Extra key used by the report's cross-page section.
         finding["affected_urls"] = affected_urls
     return finding

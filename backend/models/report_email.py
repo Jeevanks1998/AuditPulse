@@ -1,14 +1,5 @@
 """
-models/report_email.py
-
-Email History (requirements §10): one row per "Send to POC" attempt
-(§9.1) — who it went to, what was sent, and whether it succeeded — so
-report.html can show a send history alongside the report and so a failed
-send can be diagnosed without digging through server logs.
-
-Distinct from models.report.Report (the shareable-link artifact): this
-tracks outbound *email* deliveries of that report, which can happen zero,
-one, or many times for the same audit.
+Email History: one row per "Send to POC" attempt (recipients, content, result).
 """
 
 from datetime import datetime, timezone
@@ -31,21 +22,14 @@ class ReportEmail(Base):
     audit_id: Mapped[int] = mapped_column(ForeignKey("audits.id", ondelete="CASCADE"), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
 
-    # Stored as JSON lists rather than a single delimited string so a
-    # multi-recipient To/CC/BCC round-trips exactly as entered in the modal.
+    # Lists, so recipients come back exactly as entered.
     recipient_to: Mapped[list] = mapped_column(JSON, default=list)
     recipient_cc: Mapped[list] = mapped_column(JSON, default=list)
-    # Bcc is kept out of the message headers by emailer.service (envelope
-    # only, or it stops being blind) but IS stored here: "Resend" on the
-    # Email Reports page reloads the previous send into the composer, and a
-    # resend that silently dropped the blind recipients would be a different
-    # email than the one the row claims to be repeating. It is exposed only
-    # to the row's own owner — never to any other recipient.
+    # BCC is stored (for Resend) but never shown to other recipients.
     recipient_bcc: Mapped[list] = mapped_column(JSON, default=list)
 
     subject: Mapped[str] = mapped_column(String(255), default="")
-    # Full message body as actually sent, so a resend starts from the text
-    # that went out rather than regenerating the default template.
+    # The body as sent, so Resend starts from the same text.
     body: Mapped[str] = mapped_column(Text, default="")
     attachments: Mapped[list] = mapped_column(JSON, default=list)  # attachment keys actually sent
 
@@ -56,9 +40,7 @@ class ReportEmail(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
     )
 
-    # ----------------------------------------------------------------
     # Relationships
-    # ----------------------------------------------------------------
     audit: Mapped["Audit"] = relationship("Audit", back_populates="report_emails")
     user: Mapped["User"] = relationship("User")
 

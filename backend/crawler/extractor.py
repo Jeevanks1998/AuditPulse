@@ -1,14 +1,5 @@
 """
-crawler/extractor.py
-
-Turns a ParsedPage (crawler.parser) plus its resolved Link[] (crawler.links)
-into PageSignals — the flat, JSON-friendly dict of measurements the SEO /
-accessibility scoring in services.audit_service actually reads, rather
-than the random `breakdown` scores the placeholder pipeline generates
-today. Also produces a list of {module, severity, title, description}
-finding dicts in the same shape services.audit_service._generate_
-placeholder_findings already writes, so wiring this in only means
-replacing where those findings come from, not the storage layer.
+Turns a ParsedPage and its links into PageSignals: simple page measurements.
 """
 
 from __future__ import annotations
@@ -86,7 +77,7 @@ def extract_signals(page: ParsedPage, links: List[Link]) -> PageSignals:
 
 
 def _heading_order_ok(headings: Dict[str, List[str]]) -> bool:
-    """True unless a heading level appears while every level above it is empty (e.g. h3 with no h1/h2)."""
+    """False when a heading level appears with no level above it (e.g. h3 without h1/h2)."""
     order = ["h1", "h2", "h3", "h4", "h5", "h6"]
     seen_any = False
     for level in order:
@@ -103,6 +94,5 @@ def _build_findings(s: PageSignals) -> List[Dict[str, Any]]:
     def add(module: str, severity: str, title: str, description: str) -> None:
         findings.append({"module": module, "severity": severity, "title": title, "description": description})
 
-    # Accessibility findings were removed along with the accessibility module.
-    # Page signals are still collected above; no findings are raised here.
+    # No findings here (the accessibility module was removed).
     return findings

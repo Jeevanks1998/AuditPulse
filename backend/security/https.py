@@ -1,14 +1,6 @@
 """
-security/https.py
-
-The entry point for the rest of security/'s live checks: does one GET
-against the audited URL and, when it lands on https, a second GET
-against the plain-http equivalent to confirm the server actually
-redirects there rather than merely happening to be reachable over TLS
-if asked nicely. Every other live check in this package (headers.py,
-hsts.py, csp.py, ssl.py) either reuses the response headers this
-returns or takes the resolved final URL as its own starting point, so
-this module runs first — see security/__init__.py::run_live_checks.
+Fetches the URL once (other checks reuse the headers and final URL), and
+checks that the http:// version redirects to https.
 """
 
 from __future__ import annotations
@@ -29,14 +21,7 @@ REQUEST_TIMEOUT_SECONDS = 15.0
 async def check_https(
     client: httpx.AsyncClient, url: str
 ) -> tuple[List[dict], Optional[httpx.Headers], str]:
-    """
-    Returns (findings, response_headers, final_url). `response_headers`
-    is None only when the request failed outright (network error, not
-    an HTTP error status) — callers should treat that as "no header
-    data available" rather than assuming headers are simply empty.
-    `final_url` is the resolved URL after any redirects, for downstream
-    checks (ssl.py, hsts.py) to key off instead of the original input.
-    """
+    """Returns (findings, response_headers, final_url). Headers are None only if the request failed completely."""
     parsed = urlparse(url)
     findings: List[dict] = []
 
@@ -84,7 +69,7 @@ async def check_https(
 
 
 async def _check_http_redirects_to_https(client: httpx.AsyncClient, https_url: str) -> List[dict]:
-    """Requests the plain-http equivalent of an https URL and checks it redirects to https."""
+    """Checks that the http:// version of the URL redirects to https."""
     parsed = urlparse(https_url)
     http_url = urlunparse(parsed._replace(scheme="http"))
 
@@ -93,8 +78,7 @@ async def _check_http_redirects_to_https(client: httpx.AsyncClient, https_url: s
             http_url, timeout=REQUEST_TIMEOUT_SECONDS, follow_redirects=True
         )
     except httpx.HTTPError as exc:
-        # Plenty of properly-configured sites simply don't listen on :80 at all —
-        # that's not a finding, just means this particular check has nothing to say.
+        # Many sites don't listen on port 80 at all: not a finding.
         logger.debug(f"security.https: HTTP-origin check skipped for {http_url}: {exc}")
         return []
 

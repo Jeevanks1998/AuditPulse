@@ -1,7 +1,4 @@
-/* ==========================================================================
-   loader.js — button loading spinners + skeleton placeholders.
-   Exposed as window.Loader.
-   ========================================================================== */
+/* Button spinners and skeleton placeholders (window.Loader). */
 
 window.Loader = (function () {
 
@@ -21,7 +18,7 @@ window.Loader = (function () {
     document.head.appendChild(style);
   }
 
-  /* ------------------------- button loading ------------------------- */
+  /* Button loading */
 
   function setButtonLoading(btn, isLoading, loadingText) {
     if (!btn) return;
@@ -44,7 +41,7 @@ window.Loader = (function () {
     }
   }
 
-  /* --------------------------- skeletons --------------------------- */
+  /* Skeletons */
 
   function setSkeleton(el, isLoading) {
     if (!el) return;

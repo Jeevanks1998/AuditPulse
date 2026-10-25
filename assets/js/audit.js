@@ -1,7 +1,4 @@
-/* ==========================================================================
-   audit.js — audit.html page logic: form state, module toggles,
-   start-audit progress simulation, redirect to report.html on completion
-   ========================================================================== */
+/* New Audit page: form, module toggles, progress, and opening the report when done. */
 
 (function () {
   var U = window.Utils;
@@ -10,7 +7,7 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     var urlInput = document.getElementById('auditUrlInput');
-    if (!urlInput || !window.Api) return; // not on audit.html
+    if (!urlInput || !window.Api) return; // not on the audit page
 
     var urlError = document.getElementById('urlError');
     var urlWrap = urlInput.closest('.url-input-wrap');
@@ -40,12 +37,11 @@
     var progressStatusText = document.getElementById('progressStatusText');
     var etaValue = document.getElementById('etaValue');
 
-    // audit.html runs Analytics + Consent; journey-audit.html (body
-    // data-audit-kind="journey") runs the Journey Map on its own.
+    // audit.html runs Analytics + Consent; journey-audit.html runs the Journey Map only.
     var isJourneyAudit = document.body.getAttribute('data-audit-kind') === 'journey';
     var totalModules = U.qsa('input[data-module]', moduleList).length;
 
-    /* ------------------------- live form state ------------------------- */
+    /* Form state */
 
     function currentModules() {
       return U.qsa('input[data-module]', moduleList).filter(function (cb) { return cb.checked; }).map(function (cb) { return cb.dataset.module; });
@@ -77,7 +73,7 @@
       var isFull = !!(depthFull && depthFull.checked);
       var pages = parseInt(maxPagesInput && maxPagesInput.value, 10) || 1;
       var minutes = isFull ? Math.max(1, Math.round(pages / 60)) : 1;
-      if (currentModules().indexOf('journey') !== -1) minutes += isFull ? 4 : 2;  // live click-through of the journey
+      if (currentModules().indexOf('journey') !== -1) minutes += isFull ? 4 : 2;  // journey click-through takes longer
       if (summaryEta) summaryEta.textContent = '~' + minutes + ' min';
     }
 
@@ -115,9 +111,7 @@
       U.on(cb, 'change', refreshModuleCount);
     });
 
-    // Cookie Scanner runs as part of the Consent check (the live browser
-    // records every cookie before consent / after Reject / after Accept).
-    // Turning it on turns Consent on; turning Consent off turns it off.
+    // The Cookie Scanner is part of the Consent check: turning it on turns Consent on, and the reverse.
     var cookieToggle = moduleList ? moduleList.querySelector('input[data-module="cookies"]') : null;
     var consentToggle = moduleList ? moduleList.querySelector('input[data-module="consent"]') : null;
     if (cookieToggle && consentToggle) {
@@ -134,7 +128,7 @@
     refreshDepthUi();
     refreshModuleCount();
 
-    /* ------------------------------ start audit ------------------------------ */
+    /* Start audit */
 
     U.on(startBtn, 'click', function () {
       var isValidUrl = V.validateUrlField(urlInput, urlError);
@@ -156,7 +150,7 @@
         url: urlInput.value.trim(),
         depth: (depthFull && depthFull.checked) ? 'full' : 'homepage',
         maxPages: parseInt(maxPagesInput.value, 10) || 1,
-        // "cookies" is a UI switch for the Consent check's cookie scan, not a backend module.
+        // "cookies" is a UI switch only, not a backend module.
         modules: modules.filter(function (m) { return m !== 'cookies'; })
       };
       var regionSelect = document.getElementById('targetRegionSelect');
@@ -177,7 +171,7 @@
       if (hostEl) hostEl.textContent = U.hostnameOf(config.url);
       if (progressStatusText) progressStatusText.textContent = 'Starting…';
       resetChecklist();
-      // Only show steps for the modules this audit actually runs.
+      // Only show steps for the modules this audit runs.
       var STEP_MODULE = { checkConsent: 'consent', checkAnalytics: 'analytics', checkJourney: 'journey' };
       Object.keys(STEP_MODULE).forEach(function (id) {
         var row = document.getElementById(id);
@@ -248,17 +242,13 @@
     }
 
     function updateProgressUi(progress, config) {
-      // 100% is reserved for a genuinely finished audit (status 'pass' =
-      // backend status "completed"). Anything else — including an older
-      // backend that still reports 100 while "Generating report" runs —
-      // is capped at 95 so the ring never claims completion early.
+      // 100% only when the audit has really finished; otherwise stop at 95.
       var isComplete = progress.status === 'pass';
       var shownPercent = isComplete ? 100 : Math.min(progress.percent, 95);
 
       U.setRingProgress(progressRingCircle, shownPercent);
       if (progressPercentLabel) progressPercentLabel.textContent = shownPercent;
-      // Steps before the current one have finished: tick them off (the API
-      // only reports the step that is running now).
+      // Steps before the current one are done (the API only reports the current step).
       var ids = CFG.AUDIT_STEPS.map(function (s) { return s.id; });
       var at = ids.indexOf(progress.stepId);
       ids.forEach(function (id, i) {
@@ -280,8 +270,7 @@
       }
 
       var remainingPercent = 100 - shownPercent;
-      // The Journey Map module renders and clicks through pages in a real
-      // browser, so it adds noticeably to the run time.
+      // The Journey Map uses a real browser, so it adds run time.
       var hasJourney = (config.modules || []).indexOf('journey') !== -1;
       var baseSeconds = (config.depth === 'full' ? 90 : 20) + (hasJourney ? (config.depth === 'full' ? 240 : 120) : 0);
       var etaSeconds = Math.max(3, Math.round((remainingPercent / 100) * baseSeconds));

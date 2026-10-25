@@ -1,18 +1,6 @@
-<!-- ==========================================================================
-     components/score-card.html
-     Reusable "vitals ring" score card — the pattern used throughout the app
-     (health overview on dashboard.html, category ring on report.html, etc).
-
-     Static markup below is a filled-in example. To generate these from data
-     instead of hand-editing HTML, use the JS template function:
-
-       window.Components.renderScoreCard({ label: 'Analytics', score: 95 })
-
-     from assets/js/components.js, which returns the same markup as a string
-     with the ring's stroke-dashoffset computed correctly for any score.
-
-     Optional loader: assets/js/include.js → Components.include('score-card')
-     ========================================================================== -->
+<!-- Score ring card (example). To build from data use
+     Components.renderScoreCard({ label: 'Analytics', score: 95 }).
+     Optional loader: Components.include('score-card') -->
 <div class="score-cell" data-score-card data-label="Analytics" data-score="95" role="button" tabindex="0">
   <div class="vring vring--sm" data-band="good">
     <svg width="64" height="64" viewBox="0 0 64 64">

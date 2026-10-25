@@ -1,19 +1,6 @@
 """
-workers/report_worker.py
-
-Celery tasks that build and cache the JSON/HTML/PDF report exports
-(reports/, pdf/pdf_generator.py, reports/report_storage.py) ahead of
-time, so the first click on report.html's "Export PDF" button doesn't
-have to pay for the AI pipeline (reports.generator) and chart/PDF
-rendering synchronously inside a request.
-
-services.report_service.export_report_* already do the "check the
-on-disk cache, rebuild + save if missing" dance for the API request
-path, but they're written against a request-scoped `user` (for the
-404/409 ownership + status checks). These tasks run outside any request,
-so they talk to reports.* / pdf.pdf_generator / reports.report_storage
-directly against the Audit row instead of going through report_service —
-same underlying pipeline, no HTTPException-shaped detour.
+Celery tasks that build and cache report exports ahead of time, so the first
+download is quick. They work on the Audit row directly (no request user).
 """
 
 import asyncio
@@ -32,14 +19,7 @@ from workers.celery_worker import celery_app
     autoretry_for=(Exception,),
 )
 def warm_report_cache_task(self, audit_id: int) -> dict:
-    """Pre-builds and caches JSON + HTML for a just-completed audit.
-
-    PDF is deliberately left out of the automatic warm-up — it's the
-    heaviest of the three (screenshot capture + chart rendering) and
-    plenty of users never download it, so it's built on-demand by
-    generate_report_pdf_task instead (called from api/reports.py's PDF
-    endpoint the same way audits are dispatched to run_audit_task).
-    """
+    """Builds and caches JSON + HTML after an audit. The PDF is built on demand (heaviest, not always needed)."""
     logger.info(f"[report_worker] warming report cache for audit {audit_id}")
     try:
         built = asyncio.run(_warm_report_cache_async(audit_id))
@@ -84,11 +64,7 @@ async def _warm_report_cache_async(audit_id: int) -> dict:
     autoretry_for=(Exception,),
 )
 def generate_report_pdf_task(self, audit_id: int) -> dict:
-    """Builds + caches the PDF export for one audit. Safe to call whether
-    or not a cached copy already exists — it's a no-op cost-wise for the
-    caller either way, since api/reports.py's own endpoint checks the
-    cache first and only enqueues this when it's missing.
-    """
+    """Builds and caches the PDF for one audit."""
     logger.info(f"[report_worker] generating PDF for audit {audit_id}")
     try:
         path = asyncio.run(_generate_report_pdf_async(audit_id))
@@ -128,10 +104,7 @@ async def _generate_report_pdf_async(audit_id: int) -> Optional[str]:
 
 
 async def _module_data(audit_id: int, db) -> dict:
-    """Consent / Analytics / Journey results for the payload — the same
-    helpers the request path (services.report_service) uses, so a
-    pre-warmed cached export is identical to one built on demand instead
-    of a thinner copy without the module sections."""
+    """Module results for the payload, the same as the request path uses."""
     from services.report_service import _get_analytics_dict, _get_consent_dict, _get_journey_dict
 
     return {

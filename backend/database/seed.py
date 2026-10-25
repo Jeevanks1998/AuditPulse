@@ -1,20 +1,11 @@
 """
-database/seed.py
+Sample data for local development: a demo account with audits for every screen.
 
-Idempotent dev-data seed script. Run after `alembic upgrade head` (or,
-for a throwaway local DB, after main.py's own `init_db()` create_all)
-against an empty-ish database to get a demo account with enough data to
-exercise every screen (dashboard.html, audit.html, history.html,
-report.html) without running a real crawl first.
+  python -m database.seed
+  python -m database.seed --reset
+  python -m database.seed --email demo@example.com --password demo1234
 
-Usage:
-    python -m database.seed
-    python -m database.seed --reset      # wipe seeded rows first
-    python -m database.seed --email demo@example.com --password demo1234
-
-Safe to re-run: looks up the demo user by email and skips creating it
-(and its websites) again if it already exists, so this can sit in a
-setup script or CI fixture step without accumulating duplicate rows.
+Safe to run again: existing demo data is skipped.
 """
 
 from __future__ import annotations
@@ -30,14 +21,7 @@ from sqlalchemy import select
 from config.logging import logger, setup_logging
 from database.session import session_scope
 
-# Imports the whole models/ package (not just the four modules used
-# directly below) so every table is registered on Base.metadata and
-# every relationship string (e.g. User.reports -> "Report") resolves
-# once SQLAlchemy configures its mappers -- same reason main.py does
-# `import models` before calling init_db(). Importing only
-# models.audit/history/issue/user/website here would leave
-# models.report/consent/analytics unregistered and break mapper
-# configuration the first time any query runs.
+# Import every model so all tables and relationships are registered.
 import models  # noqa: F401
 from models.audit import Audit
 from models.history import HistoryEventType, log_event
@@ -84,7 +68,7 @@ async def _get_or_create_demo_user(db, email: str, password: str) -> tuple[User,
         api_key=secrets.token_hex(24),
     )
     db.add(user)
-    await db.flush()  # populate user.id for the rows below
+    await db.flush()  # fills in user.id
     return user, True
 
 
@@ -114,12 +98,7 @@ async def _seed_website_and_audits(db, user: User) -> None:
         started_at=now - timedelta(days=2),
         completed_at=now - timedelta(days=2) + timedelta(minutes=4),
     )
-    # `issues` starts empty for a brand-new Audit; setting it explicitly
-    # (rather than leaving the relationship unloaded) means
-    # sync_issues_from_findings's `list(audit.issues)` reads the
-    # already-loaded empty list instead of lazy-loading it — lazy-loads
-    # aren't awaitable mid-coroutine on an AsyncSession and raise
-    # MissingGreenlet.
+    # Set issues explicitly; lazy loading would fail in async code.
     completed_audit.issues = []
     db.add(completed_audit)
     await db.flush()
@@ -157,7 +136,7 @@ async def _seed_website_and_audits(db, user: User) -> None:
 
 
 async def _reset(db, email: str) -> None:
-    """Deletes the demo user (and, via cascade, everything owned by it)."""
+    """Deletes the demo user and everything it owns."""
     user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if user is None:
         return

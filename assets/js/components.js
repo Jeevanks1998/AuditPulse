@@ -1,16 +1,11 @@
-/* ==========================================================================
-   components.js — pure-JS equivalents of a couple of components/*.html
-   templates, returning HTML strings instead of requiring a fetch(). Safe to
-   use from any page, including ones opened directly via file://.
-   Exposed as window.Components (merges with include.js if both are loaded).
-   ========================================================================== */
+/* HTML-string versions of some components/*.html templates (no fetch needed). Exposed as window.Components. */
 
 window.Components = window.Components || {};
 
 (function (Components) {
   var U = window.Utils;
 
-  // Mirrors components/score-card.html. r=26 circle → circumference ≈163.36
+  // Same as components/score-card.html. r=26 -> circumference ~163.36
   function renderScoreCard(data) {
     var score = Math.max(0, Math.min(100, Number(data.score) || 0));
     var label = U.escapeHtml(data.label || '');
@@ -38,16 +33,12 @@ window.Components = window.Components || {};
   var ICON_TRASH = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>';
   var ICON_RESTORE = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>';
 
-  // Mirrors components/audit-table.html's row shape (a <tr> for #auditTableBody).
-  // opts.deleted: row in the "Deleted audits" list (Restore instead of Delete).
+  // One audit table row. opts.deleted: show Restore instead of Delete.
   function renderAuditRow(audit, opts) {
     opts = opts || {};
     var host = U.hostnameOf(audit.url);
 
-    // audit.overallScore (not .score — the API returns overall_score,
-    // camelCased by api.js's toCamel) is only meaningful once the audit has
-    // actually finished. A running/failed/queued audit has no score: show a
-    // neutral dash (or Failed / Running…) instead.
+    // Only finished audits have a score; others show a dash, Failed or Running.
     var isCompleted = audit.status === 'completed';
     var hasScore = isCompleted && audit.overallScore !== null && audit.overallScore !== undefined
       && !isNaN(Number(audit.overallScore));
@@ -90,8 +81,7 @@ window.Components = window.Components || {};
     );
   }
 
-  /* Delete an audit (soft delete) with an "Undo" in the toast; onChange()
-     runs after the delete and again after an undo so the caller re-renders. */
+  /* Deletes an audit (soft) with Undo in the toast; onChange() runs after delete and undo. */
   function deleteAudit(auditId, host, onChange) {
     if (window.Modal && window.Modal.confirm) {
       return new Promise(function (resolve, reject) {

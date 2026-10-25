@@ -1,39 +1,14 @@
-/* ==========================================================================
-   app.js — shared "app shell" chrome logic, loaded on every authenticated
-   page (dashboard, audit, scheduler, history, settings, report,
-   email-reports) plus internal-login.html.
-
-   RECONSTRUCTED FILE — this previously contained a near-duplicate of
-   report.js's code instead of the shared chrome logic documented in
-   assets/components/header.html ("Wired up by app.js: initSidebar,
-   initThemeToggle, initProfileMenu, initNotificationBell"). Because of
-   that, none of those four things actually did anything on any page:
-     - The mobile sidebar toggle / backdrop never opened or closed.
-     - The light/dark theme buttons never applied [data-theme="dark"]
-       (which every other stylesheet already has rules for — see
-       variables.css, HEALTH_OVERVIEW_PHASE4.css, ANALYTICS_CONSENT_PHASE5.css).
-     - The profile chip in the topbar stayed stuck on the placeholder
-       avatar "?" / name "…" and did nothing when clicked.
-     - The sidebar's "Logout" link was a bare <a href="internal-login.html">.
-       It navigated, but never called Api.auth.logout(), so the session
-       was never cleared — and internal-login.html's own logic
-       (assets/js/internal-auth.js) immediately bounces anyone with a
-       live session straight back to dashboard.html, so "logging out"
-       silently did nothing.
-
-   Every function below is defensive about missing elements (pages differ
-   in which pieces of the shell they include), so this file is safe to
-   drop into any page unmodified.
-   ========================================================================== */
+/*
+ * Shared app-shell behaviour on every signed-in page (and the login page):
+ * mobile sidebar, theme toggle, profile menu with logout, notification bell.
+ * Safe on any page: missing elements are skipped.
+ */
 
 (function () {
   var U = window.Utils;
   var CFG = window.APP_CONFIG || {};
 
-  /* ------------------------------ sidebar (mobile) ------------------------------
-     Hamburger button (#menuToggle) + backdrop (#sidebarBackdrop) toggle the
-     .sidebar.is-open / .sidebar-backdrop.is-open classes responsive.css
-     already defines transitions for. */
+  /* Mobile sidebar: menu button and backdrop open/close it. */
   function initSidebar() {
     var toggle = document.getElementById('menuToggle');
     var sidebar = document.getElementById('sidebar');
@@ -60,17 +35,13 @@
       if (e.key === 'Escape') close();
     });
 
-    // A nav link click on mobile should close the drawer instead of
-    // leaving it open over the page it just navigated to.
+    // Close the drawer after a nav link is clicked.
     U.qsa('.sidebar__link', sidebar).forEach(function (link) {
       U.on(link, 'click', close);
     });
   }
 
-  /* ------------------------------ theme toggle ------------------------------
-     Persists to APP_CONFIG.STORAGE_KEYS.THEME (localStorage) and sets
-     [data-theme="dark"] on <html>, which every stylesheet's dark-mode rules
-     already key off. Falls back to the OS preference on first visit. */
+  /* Theme toggle: saved in localStorage, sets [data-theme] on <html>; first visit follows the OS. */
   function initThemeToggle() {
     var toggle = document.querySelector('.theme-toggle');
     if (!toggle) return;
@@ -102,12 +73,7 @@
     U.on(darkBtn, 'click', function () { setTheme('dark'); });
   }
 
-  /* ------------------------------ profile menu ------------------------------
-     Fills in the topbar's .profile-chip from the logged-in user
-     (Api.auth.getUser()) and turns it into a dropdown with a working
-     Logout item. Also wires up any other "Logout" links in the page
-     (the sidebar footer link) so they clear the session properly instead
-     of just navigating while still authenticated. */
+  /* Profile menu: shows the signed-in user and a working Logout (also wires other Logout links). */
   function initProfileMenu() {
     var chip = document.querySelector('.profile-chip');
     var user = window.Api && window.Api.auth.getUser();
@@ -184,8 +150,7 @@
       });
     }
 
-    // Belt-and-braces: also wire up any plain "Logout" link elsewhere on
-    // the page (the sidebar footer), in case it isn't inside .profile-chip.
+    // Also wire any other "Logout" link (e.g. the sidebar footer).
     U.qsa('a[href="internal-login.html"]').forEach(function (link) {
       U.on(link, 'click', function (e) {
         e.preventDefault();
@@ -197,28 +162,105 @@
   function performLogout(triggerEl) {
     if (triggerEl) triggerEl.setAttribute('disabled', 'disabled');
     if (window.Api && window.Api.auth && window.Api.auth.logout) {
-      // Api.auth.logout() clears the local session (even if the /auth/logout
-      // request itself fails) and redirects to internal-login.html once done.
+      // Clears the session (even if the server call fails) and goes to login.
       window.Api.auth.logout();
     } else {
       window.location.href = 'internal-login.html';
     }
   }
 
-  /* ------------------------------ notification bell ------------------------------
-     Minimal: clears the unread dot once the person has looked at it. There's
-     no notifications list/endpoint wired up yet, so this intentionally
-     doesn't fabricate a dropdown full of content. */
+  /* Notification bell: lists your recently finished audits (completed or failed).
+     The red dot shows when one finished since you last opened the list. */
   function initNotificationBell() {
     var actions = document.querySelector('.topbar__actions');
     if (!actions) return;
     var bell = actions.querySelector('.icon-btn[aria-label="Notifications"]');
-    if (!bell) return;
+    var user = window.Api && window.Api.auth && window.Api.auth.getUser && window.Api.auth.getUser();
+    if (!bell || !user || !window.Api.history) return;
 
-    U.on(bell, 'click', function () {
-      var dot = bell.querySelector('.dot');
+    var seenKey = 'auditpulse:notif-seen:' + (user.id || user.email || 'me');
+    var dot = bell.querySelector('.dot');
+    var items = [];
+
+    var wrap = document.createElement('div');
+    wrap.className = 'notif-wrap';
+    bell.parentNode.insertBefore(wrap, bell);
+    wrap.appendChild(bell);
+    bell.setAttribute('aria-haspopup', 'true');
+    bell.setAttribute('aria-expanded', 'false');
+
+    var panel = document.createElement('div');
+    panel.className = 'notif-panel';
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-label', 'Notifications');
+    wrap.appendChild(panel);
+
+    function finishedAt(a) { return new Date(a.completedAt || a.createdAt).getTime() || 0; }
+    function lastSeen() { return Number(U.storageGet(seenKey, 0)) || 0; }
+
+    function updateDot() {
+      var seen = lastSeen();
+      var unread = items.some(function (a) { return finishedAt(a) > seen; });
+      if (dot) dot.style.display = unread ? '' : 'none';
+    }
+
+    function render() {
+      var seen = lastSeen();
+      var html = '<div class="notif-panel__head">Notifications</div>';
+      if (!items.length) {
+        html += '<div class="notif-panel__empty">No finished audits yet. You\'ll see them here when they complete.</div>';
+      } else {
+        html += items.map(function (a) {
+          var ok = a.status === 'completed';
+          var site = U.escapeHtml(U.hostnameOf(a.url) || a.url);
+          var text = ok
+            ? 'Audit complete: <strong>' + site + '</strong>' +
+              (a.overallScore != null ? ' scored <strong>' + a.overallScore + '/100</strong>' : '')
+            : 'Audit failed: <strong>' + site + '</strong>';
+          var href = ok ? 'report.html?id=' + encodeURIComponent(a.id) : 'history.html';
+          return '<a class="notif-item' + (finishedAt(a) > seen ? ' is-unread' : '') + '" href="' + href + '">' +
+            '<span class="notif-item__icon notif-item__icon--' + (ok ? 'ok' : 'fail') + '" aria-hidden="true"></span>' +
+            '<span class="notif-item__body"><span class="notif-item__text">' + text + '</span>' +
+            '<span class="notif-item__time">' + U.escapeHtml(U.formatRelativeTime(a.completedAt || a.createdAt)) + '</span></span>' +
+          '</a>';
+        }).join('');
+      }
+      html += '<a class="notif-panel__foot" href="history.html">View all audits</a>';
+      panel.innerHTML = html;
+    }
+
+    function load() {
+      return window.Api.history.list({ page: 1, pageSize: 20 }).then(function (res) {
+        items = ((res && res.items) || []).filter(function (a) {
+          return a.status === 'completed' || a.status === 'failed';
+        }).slice(0, 8);
+        updateDot();
+      }).catch(function () { /* keep the bell quiet if the list can't load */ });
+    }
+
+    function close() {
+      wrap.classList.remove('is-open');
+      bell.setAttribute('aria-expanded', 'false');
+    }
+
+    U.on(bell, 'click', function (e) {
+      e.stopPropagation();
+      if (wrap.classList.contains('is-open')) { close(); return; }
+      render();
+      wrap.classList.add('is-open');
+      bell.setAttribute('aria-expanded', 'true');
+      // Opening marks everything as read (the highlight stays until the panel closes).
+      U.storageSet(seenKey, String(Date.now()));
       if (dot) dot.style.display = 'none';
+      load().then(function () { if (wrap.classList.contains('is-open')) render(); });
     });
+    U.on(document, 'click', function (e) { if (!wrap.contains(e.target)) close(); });
+    U.on(document, 'keydown', function (e) { if (e.key === 'Escape') close(); });
+
+    if (dot) dot.style.display = 'none';
+    load();
+    // Check again every 2 minutes so an audit finishing in another tab shows up.
+    setInterval(function () { if (!document.hidden) load(); }, 120000);
   }
 
   document.addEventListener('DOMContentLoaded', function () {

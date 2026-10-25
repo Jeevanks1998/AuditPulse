@@ -1,21 +1,8 @@
 """
-consent/screenshots.py
-
-Consent evidence screenshots: Initial banner, Preferences, After Reject,
-After Accept — for any CMP, including custom/homegrown ones.
-
-The screenshot is clipped to the banner element that consent.runtime's
-inventory actually *detected* (the container it built the control list
-from, tagged with a data-auditpulse-box attribute), rather than relying
-mainly on a list of predefined CMP selectors. The selector list is only
-a fallback, and a full-viewport capture is the last resort.
-
-Every file name carries the scan's unique `scan_id`, so a new scan never
-overwrites — or gets confused with — an earlier audit's evidence, and the
-browser can't show a cached older image for a new audit.
-
-Same degrade-gracefully contract as crawler/screenshots.py: every entry
-point returns None on failure rather than raising.
+Consent screenshots: banner, settings panel, after Reject, after Accept.
+Cropped to the banner the browser check actually found (known selectors,
+then the full view, as fallbacks). File names include scan_id so old images
+are never reused. Returns None on failure.
 """
 
 from __future__ import annotations
@@ -27,7 +14,7 @@ from consent.buttons import CONSENT_CONTAINER_SELECTORS
 from crawler.screenshots import DEFAULT_VIEWPORT, NAVIGATION_TIMEOUT_MS, _safe_filename, _screenshot_dir
 from config.browser import launch_chromium
 
-# Fallback only — the detected banner element is preferred.
+# Fallback only; the detected banner is preferred.
 _BANNER_SELECTORS = list(CONSENT_CONTAINER_SELECTORS)
 
 
@@ -46,11 +33,7 @@ async def capture_page_or_element(
     scan_id: Optional[str] = None,
     element: Optional[Tuple[object, str]] = None,
 ) -> Optional[str]:
-    """
-    Screenshots `page`. When `element` is (frame, selector) for the detected
-    banner, the shot is clipped to that element (with a little padding so
-    the controls' context is visible). Falls back to the viewport.
-    """
+    """Screenshot, cropped (with padding) to the banner element when given, otherwise the view."""
     out_path = _out_path(url, hint, scan_id)
     try:
         if element is not None:
@@ -59,12 +42,11 @@ async def capture_page_or_element(
                 loc = frame.locator(selector).first
                 if await loc.count() > 0 and await loc.is_visible():
                     if selector == "body" and frame is not page.main_frame:
-                        # Banner is a whole CMP iframe: clip to the iframe element.
+                        # The banner is a whole CMP iframe: crop to the iframe.
                         iframe_el = await frame.frame_element()
                         box = await iframe_el.bounding_box()
                     else:
-                        # bounding_box() is relative to the main frame's viewport,
-                        # also for elements inside iframes.
+                        # bounding_box() is relative to the main page, also inside iframes.
                         box = await loc.bounding_box()
                     if box and box["width"] > 4 and box["height"] > 4:
                         vp = page.viewport_size or DEFAULT_VIEWPORT
@@ -89,18 +71,14 @@ async def capture_page_or_element(
 
 
 async def capture_banner_screenshot(url: str, filename_hint: str, scan_id: Optional[str] = None) -> Optional[str]:
-    """
-    Standalone banner capture (used when the runtime pass is off): fresh
-    browser, load, detect the banner with the same inventory the runtime
-    uses, clip to it; fall back to known selectors, then to the viewport.
-    """
+    """Banner screenshot when the browser check is off: same detection, then the same fallbacks."""
     try:
         from playwright.async_api import async_playwright
     except ImportError:
         logger.info("consent/screenshots.py: playwright not installed — skipping banner screenshot")
         return None
 
-    from consent.runtime import CONTAINER_HANDLE, inventory_banner  # local: avoids an import cycle
+    from consent.runtime import CONTAINER_HANDLE, inventory_banner  # local import avoids a cycle
 
     try:
         async with async_playwright() as pw:
@@ -110,7 +88,7 @@ async def capture_banner_screenshot(url: str, filename_hint: str, scan_id: Optio
                                                     service_workers="block")
                 page = await context.new_page()
                 await page.goto(url, wait_until="load", timeout=NAVIGATION_TIMEOUT_MS)
-                await page.wait_for_timeout(1_500)  # let a client-side-rendered banner appear
+                await page.wait_for_timeout(1_500)  # let a JavaScript banner appear
 
                 inv, handles = await inventory_banner(page)
                 element = handles.get(CONTAINER_HANDLE) if inv.banner_detected else None

@@ -1,11 +1,8 @@
-/* ==========================================================================
-   Cookie Scanner — report page tab.
-   Renders the inventory from GET /audits/{id}/cookies (backend
-   reports/cookie_view.py): summary tiles, filters, the full cookie table
-   (click a row for detail), browser storage, and CSV export.
-   Every value comes from the scan; "Not tested" is an explicit state.
-   Exposes window.CookieRender.
-   ========================================================================== */
+/*
+ * Cookie Scanner tab on the report page (data from GET /audits/{id}/cookies):
+ * tiles, filters, the cookie table with row details, browser storage and CSV
+ * export. Exposes window.CookieRender.
+ */
 (function () {
   'use strict';
 

@@ -1,6 +1,4 @@
-/* ==========================================================================
-   New Audit page
-   ========================================================================== */
+/* New Audit page */
 
 .audit-layout {
   display: grid;
@@ -25,7 +23,7 @@
   padding: 12px 0; font-size: var(--fs-base); font-family: var(--font-mono);
 }
 
-/* Radio "depth" selector as pill cards */
+/* Depth options as cards */
 .depth-select { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
 .depth-option {
   position: relative;
@@ -48,8 +46,7 @@
 .depth-option:has(input:checked) .depth-option__radio::after {
   content: ''; position: absolute; inset: 2px; border-radius: 50%; background: var(--color-primary);
 }
-/* Native radio is visually hidden (opacity:0) so its focus ring is
-   invisible too — restore it on the wrapping card for keyboard users. */
+/* The radio is hidden, so show the keyboard focus ring on its card. */
 .depth-option:has(input:focus-visible) {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
@@ -68,7 +65,7 @@
 }
 .stepper-btn:hover { background: var(--surface-sunken); }
 
-/* Module toggle rows */
+/* Module rows */
 .module-list { display: flex; flex-direction: column; }
 .module-row {
   display: flex; align-items: center; gap: var(--sp-3);
@@ -86,14 +83,14 @@
 .module-row__title { font-weight: 600; font-size: var(--fs-sm); }
 .module-row__desc { font-size: var(--fs-xs); color: var(--text-tertiary); margin-top: 1px; }
 
-/* Summary sidebar card */
+/* Summary card */
 .summary-card { position: sticky; top: calc(var(--header-height) + var(--sp-5)); }
 .summary-list { display: flex; flex-direction: column; gap: var(--sp-2); margin-bottom: var(--sp-5); }
 .summary-list__row { display: flex; align-items: center; justify-content: space-between; font-size: var(--fs-sm); padding: 6px 0; }
 .summary-list__row span:first-child { color: var(--text-secondary); }
 .summary-list__row span:last-child { font-weight: 600; font-family: var(--font-mono); }
 
-/* ---- Progress state ---- */
+/* Progress */
 .progress-hero { text-align: center; padding: var(--sp-6) 0 var(--sp-4); }
 .progress-hero .vring { margin: 0 auto var(--sp-4); }
 .progress-hero h3 { font-size: var(--fs-lg); }

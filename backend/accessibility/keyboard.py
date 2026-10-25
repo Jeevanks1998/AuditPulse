@@ -1,15 +1,6 @@
 """
-accessibility/keyboard.py
-
-Static keyboard-operability checks (WCAG 2.1.1 "Keyboard", 2.4.1
-"Bypass Blocks", 2.4.3 "Focus Order"): positive tabindex values that
-fight the browser's natural DOM-order tab sequence, click handlers on
-non-interactive elements with no keyboard equivalent, duplicate
-accesskey values, and a missing skip-to-content link. All of this is
-visible in static markup, so no rendering/JS execution is needed —
-what we can't see (custom JS keydown handling that does compensate for
-a div-with-onclick, for instance) is exactly what accessibility/axe.py
-and accessibility/pa11y.py's rendered runs catch instead.
+Keyboard checks: positive tabindex, click handlers on non-interactive
+elements, duplicate accesskeys and a missing skip link.
 """
 
 from __future__ import annotations
@@ -121,12 +112,12 @@ def _check_skip_link(page: ParsedPage, soup) -> List[dict]:
 
     anchors = soup.find_all("a", href=True)
     has_skip_link = any(
-        _looks_like_skip_link(a) for a in anchors[:10]  # a real skip link is always near the top
+        _looks_like_skip_link(a) for a in anchors[:10]  # a skip link is always near the top
     )
     if has_skip_link:
         return []
 
-    # Only worth flagging on pages substantial enough for repeated nav to be a real burden.
+    # Only flag pages big enough for repeated navigation to matter.
     nav_landmarks = soup.find_all(["nav"]) + soup.find_all(attrs={"role": "navigation"})
     if not nav_landmarks:
         return []

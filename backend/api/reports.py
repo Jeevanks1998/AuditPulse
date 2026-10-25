@@ -1,9 +1,5 @@
 """
-api/reports.py
-
-Read-only report views for report.html. Parses requests and shapes
-responses only — building the score grid, resolving/minting share
-tokens, and the export placeholder all live in services.report_service.
+Report endpoints: views, exports, share links and email. Logic lives in services.report_service.
 """
 
 from typing import List, Optional
@@ -26,17 +22,11 @@ from services import report_service
 router = APIRouter()
 
 
-# --------------------------------------------------------------------------
-# Email History (§10) — account-wide, backing email-reports.html
-#
-# Declared ahead of the "/{audit_id}..." routes below on purpose. Those
-# capture a path parameter in the first segment, so a literal first segment
-# registered after them is asking for a resolution order this file shouldn't
-# depend on; keeping the literal routes first makes it unambiguous.
-# --------------------------------------------------------------------------
+# Email history (account-wide). These fixed paths are declared before the
+# "/{audit_id}" routes so they are matched first.
 @router.get("/email/attachment-choices")
 async def get_email_attachment_choices(current_user: User = Depends(get_current_user)):
-    """Checkbox options for the "Send to POC" modal's attachment picker (§9.2)."""
+    """Attachment options for the "Send to POC" dialog."""
     return report_service.get_attachment_choices()
 
 
@@ -49,8 +39,7 @@ async def list_email_history(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Every send attempt across all of this account's audits, newest first,
-    plus the unfiltered totals behind the page's four stat cards (§10)."""
+    """Every send for this account, newest first, plus totals for the stat cards."""
     return await report_service.list_email_history(
         db, current_user, q=q, status_filter=status, page=page, page_size=page_size
     )
@@ -62,8 +51,7 @@ async def get_email_record(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """One recorded send in full — what "View" shows and what "Resend" reloads
-    into the composer. 404s for a row belonging to anyone else."""
+    """One sent email in full (for View and Resend). 404 if it isn't yours."""
     return await report_service.get_email_record(email_id, db, current_user)
 
 
@@ -92,7 +80,7 @@ async def export_report_pdf(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Full report export as a single PDF document (see pdf/pdf_generator.py)."""
+    """Full report as a PDF."""
     pdf_bytes = await report_service.export_report_pdf(audit_id, db, current_user, force_refresh=refresh)
     headers = {"Content-Disposition": f'attachment; filename="audit-{audit_id}-report.pdf"'}
     return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
@@ -105,7 +93,7 @@ async def export_report_json(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Full report export (score grid, findings, AI summary/priorities/business-impact/action-plan) as JSON."""
+    """Full report as JSON (scores, findings and AI sections)."""
     data = await report_service.export_report_json(audit_id, db, current_user, force_refresh=refresh)
     return JSONResponse(content=data)
 
@@ -117,7 +105,7 @@ async def export_report_html(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Full report export as a single self-contained HTML document (see reports/html_report.py)."""
+    """Full report as one self-contained HTML file."""
     html = await report_service.export_report_html(audit_id, db, current_user, force_refresh=refresh)
     return HTMLResponse(content=html)
 
@@ -128,7 +116,7 @@ async def export_evidence_zip(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Complete evidence package as a single ZIP download (§5.2) — PDF + screenshots + cookie/network JSON."""
+    """Evidence ZIP: PDF, screenshots and cookie/network JSON."""
     zip_bytes, filename = await report_service.export_evidence_zip(audit_id, db, current_user)
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return Response(content=zip_bytes, media_type="application/zip", headers=headers)
@@ -141,7 +129,7 @@ async def send_report_to_poc(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Sends the report to one or more POC recipients (§9.1) and logs the attempt in Email History (§10)."""
+    """Emails the report to POC recipients and records it in Email History."""
     return await report_service.send_report_to_poc(audit_id, request, db, current_user)
 
 
@@ -151,5 +139,5 @@ async def get_email_history(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Every "Send to POC" attempt for this audit, most recent first (§10)."""
+    """Every "Send to POC" attempt for this audit, newest first."""
     return await report_service.get_email_history(audit_id, db, current_user)

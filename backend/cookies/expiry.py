@@ -1,15 +1,6 @@
 """
-cookies/expiry.py
-
-Turns a cookie's raw Max-Age/Expires attributes into a lifetime
-classification (session vs. short/medium/long-lived persistent) and
-flags retention that's excessive for its category — e.g. a marketing
-cookie set to live for two years is a common GDPR/ePrivacy finding
-("cookies should be kept no longer than necessary for their purpose").
-
-Deliberately independent of cookies.detector.Cookie so it can be unit
-tested against plain (days, category) pairs without constructing a
-full Cookie object first.
+Classifies a cookie's lifetime (session, short, medium, long, excessive) and
+flags lifetimes too long for its category (e.g. a 2-year marketing cookie).
 """
 
 from __future__ import annotations
@@ -25,15 +16,13 @@ MEDIUM = "medium"       # <= 90 days
 LONG = "long"          # <= 365 days
 EXCESSIVE = "excessive"  # > 365 days
 
-# CNIL/ICO guidance benchmarks: 13 months (~395 days) is the commonly
-# cited upper bound for analytics cookies; marketing/ad cookies are
-# routinely flagged well before that. These are heuristics, not law.
+# Guidance (CNIL/ICO): about 13 months for analytics, less for marketing. Rules of thumb, not law.
 _CATEGORY_MAX_DAYS = {
-    ESSENTIAL: None,     # no cap — session lifetime is the vendor's call
+    ESSENTIAL: None,     # no limit
     FUNCTIONAL: 365,
     ANALYTICS: 395,
     MARKETING: 90,
-    # CNIL: a stored consent choice should be re-asked after ~13 months.
+    # CNIL: ask for consent again after about 13 months.
     CONSENT_MANAGEMENT: 395,
 }
 _DEFAULT_MAX_DAYS = 365
@@ -47,10 +36,7 @@ class ExpiryClassification:
 
 
 def classify_expiry(max_age_seconds: Optional[float], category: str) -> ExpiryClassification:
-    """
-    `max_age_seconds` is None for a session cookie (no Max-Age/Expires
-    attribute at all — browser drops it when the session ends).
-    """
+    """`max_age_seconds` is None for a session cookie."""
     if max_age_seconds is None:
         return ExpiryClassification(SESSION, None, exceeds_category_guidance=False)
 
@@ -73,7 +59,7 @@ def _bucket_for(days: float) -> str:
 
 
 def describe_lifetime(classification: ExpiryClassification) -> str:
-    """Human-readable one-liner used in finding descriptions."""
+    """One-line description for findings."""
     if classification.lifetime_bucket == SESSION:
         return "expires when the browser session ends"
     days = classification.lifetime_days or 0

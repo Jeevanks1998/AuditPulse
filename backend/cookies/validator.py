@@ -1,18 +1,6 @@
 """
-cookies/validator.py
-
-Validates the security-relevant attributes of already-parsed cookies
-(cookies.detector.Cookie) — Secure, HttpOnly, SameSite — and turns
-violations into findings in the same {module, category, severity,
-title, description, recommendation} shape every other check package
-in this codebase returns (see analytics/ga4.py, seo/meta.py).
-
-`module` is "consent" here, not "cookies" — cookies/ has no entry of
-its own in config.constants.AUDIT_MODULES; it's a supporting package
-for the "consent" checkbox on audit.html, same relationship
-crawler/parser.py has to seo/ and accessibility/. `category` is
-"cookies" so consent/consent_score.py can weight it independently of
-banner/consent-mode/network findings.
+Checks cookie security flags (Secure, HttpOnly, SameSite) and returns findings
+(module="consent", category="cookies").
 """
 
 from __future__ import annotations
@@ -28,7 +16,7 @@ VALID_SAMESITE_VALUES = {"Strict", "Lax", "None"}
 
 
 def validate_cookie(cookie: Cookie, first_party_hostname: Optional[str] = None) -> List[dict]:
-    """Findings for one cookie's security attributes. A fully-compliant cookie produces none."""
+    """Findings for one cookie's security flags; none if all is fine."""
     findings: List[dict] = []
     third_party = is_third_party(cookie, first_party_hostname)
 
@@ -94,9 +82,7 @@ def validate_cookies(cookies: List[Cookie], first_party_hostname: Optional[str] 
 
 def _looks_like_session_identifier(name: str) -> bool:
     lowered = name.lower()
-    # CSRF/XSRF double-submit tokens (XSRF-TOKEN, csrftoken, _csrf…) are
-    # *meant* to be readable by JavaScript — the client echoes them back in a
-    # header — so a missing HttpOnly there is expected, not a vulnerability.
+    # CSRF tokens are meant to be readable by JavaScript, so no HttpOnly is expected.
     if "csrf" in lowered or "xsrf" in lowered or "requestverificationtoken" in lowered:
         return False
     return any(token in lowered for token in ("session", "sessid", "auth", "token", "login"))

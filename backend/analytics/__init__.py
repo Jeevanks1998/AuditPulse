@@ -1,62 +1,13 @@
 """
-analytics/
+Analytics checks: which tracking tools a page has and whether they work.
 
-A dedicated, granular analytics/tag-detection package — one file per
-tracker — that gives services.audit_service.run_audit_pipeline
-something real to write into models.analytics.Analytics instead of its
-current `_write_analytics_result` placeholder (random score, hardcoded
-"GTM-XXXXXXX" / "G-XXXXXXXXXX" strings). Every check function returns
-findings in the same {module, category, severity, title, description,
-recommendation} shape services.audit_service / models.issue already
-persist, so nothing downstream (Issue sync, report.html, history)
-needs to change to consume them — same contract as seo/ and
-accessibility/.
-
-Every check here is page-level and synchronous: everything a tracker
-needs is either a <script src="...">, an inline <script> body, or a
-<noscript> fallback, all of which are already sitting in
-crawler.parser.ParsedPage.soup with no extra network calls required.
-That's a deliberate difference from seo/ and accessibility/, which
-both also have async site-level or live-render checks.
-
-    ga4, gtm, adobe, piano, clarity, hotjar, meta_pixel, linkedin, tiktok
-        — one detector each, all following the same shape:
-          detect_x(page) -> XDetection (pure data, no findings)
-          check_x(page) -> List[dict] (findings built from detect_x)
-
-    data_layer  — dataLayer init/push activity, independent of which
-                  tag manager (if any) owns it
-
-    duplicate_tags — cross-tracker pass over every detector's result
-                     looking for a loader included twice or more than
-                     one ID configured for the same tracker
-
-    analytics_score — turns any list of these findings into a weighted
-                       0-100 score (score_analytics), and separately
-                       maps the raw detections onto
-                       models.analytics.Analytics's columns
-                       (build_analytics_summary)
-
-    runtime — OPTIONAL, Playwright-based: opens the page in a real
-              browser and validates Page View / Scroll / Click /
-              duplicate-Page-View behaviour per vendor, the Runtime
-              Validation half of the Core Validation Principle that
-              every check above (all page-level/markup detection)
-              can't answer on its own. See analytics/runtime.py.
-
-Usage — wiring this into the real pipeline (crawler.crawler.Crawler
-already produces a ParsedPage per page; this replaces
-_write_analytics_result's random placeholder, it doesn't replace the
-whole crawl):
-
-    from analytics import run_page_checks, analyze_page
-
-    findings = run_page_checks(page)               # just the findings
-    result = analyze_page(page)                     # findings + score + Analytics-ready summary
-    analytics_row = Analytics(audit_id=audit.id, **vars(result.summary))
-
-    # add live Page View/Scroll/Click validation (needs Playwright):
-    runtime_result = await analyze_page_runtime(audit.url, result)
+One detector per tool (ga4, gtm, adobe, piano, clarity, hotjar, meta_pixel,
+linkedin, tiktok), each with detect_x() (what was found) and check_x()
+(findings). Also:
+  data_layer       - dataLayer set-up and pushes
+  duplicate_tags   - the same tag loaded twice or with two IDs
+  analytics_score  - 0-100 score and the summary saved to the database
+  runtime          - optional real-browser check that tags actually fire
 """
 
 from __future__ import annotations
@@ -116,11 +67,7 @@ __all__ = [
 
 
 def run_page_checks(page: ParsedPage) -> List[dict]:
-    """
-    Every check in this package, run once for one already-fetched,
-    already-parsed page. Cheap and synchronous, same as
-    seo.run_page_checks / accessibility.run_page_checks.
-    """
+    """Runs every static check on one parsed page."""
     ga4 = detect_ga4(page)
     gtm = detect_gtm(page)
     adobe = detect_adobe(page)
@@ -151,24 +98,17 @@ def run_page_checks(page: ParsedPage) -> List[dict]:
 
 @dataclass
 class AnalyticsAuditResult:
-    """Lightweight container mirroring accessibility.AccessibilityAuditResult's shape."""
+    """Result container: findings, score and summary."""
     findings: List[dict]
     score: AnalyticsScoreResult
     summary: AnalyticsSummary
-    # True when the server-delivered HTML shows no tracking at all and every
-    # vendor was found only in the browser (tags injected by JavaScript / a
-    # tag manager). Raw-HTML checks of other pages then prove nothing either
-    # way — see services.audit_service._run_analytics_checks_site.
+    # True when the raw HTML has no tracking and every tool was only seen in the
+    # browser (added by JavaScript). Raw-HTML checks of other pages then prove nothing.
     tags_injected_by_js: bool = False
 
 
 def analyze_page(page: ParsedPage) -> AnalyticsAuditResult:
-    """
-    Convenience one-call entry point for a single page: runs every
-    detector once, builds findings + a weighted score + an
-    Analytics-model-ready summary from the same detection pass (so
-    nothing gets scanned for twice).
-    """
+    """Runs every detector once and returns findings, score and summary for one page."""
     ga4 = detect_ga4(page)
     gtm = detect_gtm(page)
     adobe = detect_adobe(page)
@@ -211,16 +151,8 @@ def analyze_page(page: ParsedPage) -> AnalyticsAuditResult:
 
 
 def analyze_page_for_site(page: ParsedPage, url: str) -> PageAnalyticsResult:
-    """
-    Static-only analytics pass for one page of a full-site crawl (Phase
-    2.1/2.2). Deliberately skips the Playwright runtime pass —
-    services.audit_service._run_analytics_checks_site runs that once for
-    the homepage the same way analyze_site already does; running a full
-    browser pass on every crawled page would make a full-site audit's
-    runtime cost scale with page count for very little extra evidence.
-    Returns a PageAnalyticsResult ready to feed into
-    check_cross_page_consistency / score_site_analytics /
-    compute_site_coverage.
+    """Static-only check for one page of a full-site audit. The browser check runs
+    once, on the homepage, to keep full-site audits fast.
     """
     result = analyze_page(page)
     return PageAnalyticsResult(
@@ -233,18 +165,9 @@ def analyze_page_for_site(page: ParsedPage, url: str) -> PageAnalyticsResult:
 
 
 async def analyze_page_runtime(url: str, page: ParsedPage):
-    """
-    Runtime counterpart to analyze_page: opens `url` in a real browser
-    (via analytics.runtime.run_analytics_runtime) and cross-references
-    the result against this page's static detections, so a tracker
-    that's present in markup but never actually fires gets flagged —
-    see analytics.runtime.check_runtime_analytics and the Core
-    Validation Principle this whole package exists to serve.
-
-    Returns (AnalyticsRuntimeResult, findings). Playwright-optional,
-    same degrade contract as the rest of this codebase's live checks:
-    an unavailable runtime pass returns an AnalyticsRuntimeResult with
-    available=False and an empty findings list, never a false pass.
+    """Opens `url` in a real browser and flags tags that are in the page code but
+    never fire. Returns (runtime_result, findings); if the browser can't run,
+    available=False and no findings (never a false pass).
     """
     static_detected = {
         "ga4": detect_ga4(page).detected,
@@ -264,21 +187,11 @@ async def analyze_page_runtime(url: str, page: ParsedPage):
 
 
 async def analyze_site(url: str, page: ParsedPage, enable_runtime_checks: bool = True) -> AnalyticsAuditResult:
+    """Static checks plus (optionally) the live browser check, combined into one
+    score and summary. Used by the audit pipeline.
     """
-    Runtime-aware counterpart to analyze_page: runs every static detector
-    exactly as analyze_page does and, when enable_runtime_checks is True,
-    additionally runs analytics.runtime's live Page View/Scroll/Click
-    validation and folds its findings *and* evidence into the same score
-    and Analytics-ready summary in one pass — analyze_page_runtime alone
-    can't do this because it only has access to findings, not the raw
-    detect_*() results build_analytics_summary needs.
-
-    This is what services.audit_service._run_analytics_checks calls;
-    analyze_page (sync, static-only) is kept as-is for any caller that
-    doesn't want or can't afford a browser pass (e.g. a quick recheck).
-    """
-    # 1. Live browser pass first (when enabled): it also hands back the page
-    #    as the browser rendered it, after accepting the cookie banner.
+    # 1. Browser check first: it also returns the page as rendered after
+    #    accepting the cookie banner.
     runtime_result = None
     rendered_page: Optional[ParsedPage] = None
     if enable_runtime_checks:
@@ -290,11 +203,8 @@ async def analyze_site(url: str, page: ParsedPage, enable_runtime_checks: bool =
             except Exception:  # noqa: BLE001 — fall back to the raw HTML only
                 rendered_page = None
 
-    # 2. Pick the page to run the static detectors on. Sites built with
-    #    JavaScript (Next.js/React, tag managers, consent-gated tags) ship
-    #    raw HTML with no tracking code at all, so the rendered DOM is the
-    #    real evidence there. The raw HTML is kept when it shows as much or
-    #    more (e.g. the browser pass failed or the site blocks headless).
+    # 2. Pick which HTML to scan. JavaScript-built sites have no tracking code in
+    #    the raw HTML, so use the rendered page unless the raw HTML shows as much.
     def _detected_count(pg: ParsedPage) -> int:
         dets = (detect_ga4(pg), detect_gtm(pg), detect_adobe(pg), detect_piano(pg), detect_clarity(pg),
                 detect_hotjar(pg), detect_meta_pixel(pg), detect_linkedin(pg), detect_tiktok(pg),
@@ -317,8 +227,7 @@ async def analyze_site(url: str, page: ParsedPage, enable_runtime_checks: bool =
     tagcommander = detect_tagcommander(page)
     data_layer = detect_data_layer(page)
 
-    # A dataLayer created at runtime by a tag manager never appears in
-    # markup; the browser pass reads window.dataLayer directly.
+    # A dataLayer created at runtime only exists in the browser.
     globals_ = (runtime_result.page_globals or {}) if runtime_result is not None else {}
     _CMP_EVENT = re.compile(r"onetrust|optanon|cookiebot|didomi|usercentrics|axeptio|tc_privacy|consent|cmp", re.I)
     meaningful = globals_.get("dataLayer_meaningful", globals_.get("dataLayer"))
@@ -326,8 +235,7 @@ async def analyze_site(url: str, page: ParsedPage, enable_runtime_checks: bool =
         data_layer.present = True
     elif (data_layer.present and isinstance(meaningful, int) and meaningful == 0
           and all(_CMP_EVENT.search(n or "") for n in data_layer.event_names)):
-        # Only the cookie banner writes to dataLayer (OneTrustLoaded, …):
-        # that is consent bookkeeping, not an analytics data layer.
+        # Only the cookie banner writes to dataLayer: that's consent bookkeeping, not analytics.
         data_layer.present = False
     if not tagcommander.detected and globals_.get("tagcommander"):
         tagcommander.detected = True
@@ -335,11 +243,9 @@ async def analyze_site(url: str, page: ParsedPage, enable_runtime_checks: bool =
     if (runtime_result is not None and getattr(runtime_result, "available", False)
             and globals_.get("tagcommander") is False and not tagcommander.script_tag_count
             and not tagcommander.container_ids):
-        # The browser found no Commanders Act tag container: the window.tC /
-        # tC.* signals came from the TrustCommander cookie banner, not TagCommander.
+        # window.tC came from the TrustCommander banner, not a TagCommander container.
         tagcommander.detected = False
-    # Piano loaded by a tag manager (TagCommander, GTM…) after consent is not
-    # in any markup; the browser saw the SDK object and its configured site.
+    # Piano loaded by a tag manager after consent only shows up in the browser.
     if globals_.get("piano") or globals_.get("piano_site"):
         piano.detected = True
         piano.uses_current_sdk = piano.uses_current_sdk or bool(globals_.get("piano_site"))
@@ -393,9 +299,7 @@ async def analyze_site(url: str, page: ParsedPage, enable_runtime_checks: bool =
         runtime_result=runtime_result,
     )
 
-    # Vendors the browser actually saw sending hits are detected, even when
-    # neither the raw nor the rendered HTML names them (pixels fired from a
-    # tag manager, consent-gated tags).
+    # Tools seen sending hits in the browser count as detected, even if no HTML names them.
     if runtime_result is not None and runtime_result.available:
         from analytics.analytics_score import TRACKER_DISPLAY_NAMES
         for key, vendor in (runtime_result.vendors or {}).items():
@@ -403,9 +307,7 @@ async def analyze_site(url: str, page: ParsedPage, enable_runtime_checks: bool =
                 continue
             summary.trackers_detected.append(TRACKER_DISPLAY_NAMES.get(key, getattr(vendor, "vendor_name", key)))
             summary.vendor_configs[key] = []
-        # IDs seen in the browser (the data each tag sent, and the IDs its
-        # library loaded) complete what the page code showed — e.g. a Meta
-        # Pixel or LinkedIn tag fired by GTM has no ID anywhere in the HTML.
+        # IDs seen in the browser fill in tags fired by a tag manager (no ID in the HTML).
         for key, ids in runtime_vendor_ids(runtime_result).items():
             if key not in summary.vendor_configs:
                 continue
@@ -415,9 +317,7 @@ async def analyze_site(url: str, page: ParsedPage, enable_runtime_checks: bool =
                     merged.append(i)
             summary.vendor_configs[key] = merged
 
-    # Nothing anywhere — page code, the live browser after accepting cookies,
-    # loaded tracking libraries: the site has no analytics. That is the most
-    # important analytics finding there is, never a perfect score.
+    # No analytics anywhere (code, browser, libraries): the most important finding, not a perfect score.
     if not summary.trackers_detected:
         consent_note = ""
         if runtime_result is not None and getattr(runtime_result, "available", False):
@@ -439,10 +339,7 @@ async def analyze_site(url: str, page: ParsedPage, enable_runtime_checks: bool =
                                 tags_injected_by_js=raw_detected == 0 and bool(summary.trackers_detected))
 
 
-# Static (markup-only) warnings that say "we couldn't see X happen". When the
-# live browser pass *observed* X, the warning is simply wrong — e.g. Piano's
-# pa.sendEvent() or a dataLayer push living in an external bundle the HTML
-# scan can't read.
+# Static "couldn't see X happen" warnings that the live browser check can prove wrong.
 _RUNTIME_DISPROVABLE = {
     "Piano Analytics loaded without a detected sendEvent call": ("vendor_pv", "piano"),
     "Adobe Analytics loaded without a detected page-view call": ("vendor_pv", "adobe"),
@@ -465,9 +362,7 @@ _RUNTIME_ID_PATTERNS = {
 
 
 def runtime_vendor_ids(runtime_result) -> dict:
-    """Vendor → IDs observed in the live browser: from the collection
-    requests each vendor actually sent, and from the IDs its library loaded
-    (google_tag_manager keys, fbq pixels, LinkedIn partner ids)."""
+    """Tool -> IDs seen in the browser (from the requests sent and the libraries loaded)."""
     out: dict = {}
     if runtime_result is None or not getattr(runtime_result, "available", False):
         return out

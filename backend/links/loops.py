@@ -1,14 +1,5 @@
 """
-links/loops.py
-
-Detects true redirect cycles (A -> B -> A) and runaway chains that
-never terminate, as opposed to links/redirects.py's job of
-characterizing a normal, terminating chain (length, status codes).
-httpx's own follow_redirects=True raises TooManyRedirects past its
-internal cap without saying whether it was a genuine cycle or just a
-long chain, so this walks hops manually — one un-followed request at a
-time, tracking every URL visited — to tell the two apart and name the
-exact URL where the cycle closes.
+Finds real redirect loops (A -> B -> A) by following one hop at a time, and names where the loop closes.
 """
 
 from __future__ import annotations
@@ -28,7 +19,7 @@ CATEGORY = "loops"
 DEFAULT_MAX_LINKS_CHECKED = 40
 DEFAULT_CONCURRENCY = 8
 REQUEST_TIMEOUT_SECONDS = 8.0
-MAX_HOPS = 15  # generous ceiling; a real chain rarely needs more than a handful
+MAX_HOPS = 15  # real chains rarely need more than a few
 MAX_EXAMPLES = 5
 
 REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
@@ -52,13 +43,7 @@ async def check_redirect_loops(
     timeout: float = REQUEST_TIMEOUT_SECONDS,
     max_hops: int = MAX_HOPS,
 ) -> List[dict]:
-    """
-    Manually walks the redirect chain (one hop at a time, no
-    auto-follow) for a deduped sample of `links`, looking for a URL
-    that reappears — a genuine loop — versus a chain that simply runs
-    past `max_hops` without one. Results are per-URL — a link repeated
-    on the page is only checked once.
-    """
+    """Follows each link's redirects hop by hop to find loops. Each URL is checked once."""
     candidates = _dedupe_checkable(links)
     sample = candidates[:max_links]
     if not sample:
@@ -112,7 +97,7 @@ async def _walk_one(
 
             location = response.headers.get("location")
             if not location:
-                return LoopCheckResult(original_url=start_url, visited=visited)  # malformed redirect, treat as terminal
+                return LoopCheckResult(original_url=start_url, visited=visited)  # bad redirect: stop here
 
             next_url = str(httpx.URL(current).join(location))
             if next_url in visited:

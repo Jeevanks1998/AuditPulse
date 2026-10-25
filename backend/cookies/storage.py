@@ -1,25 +1,8 @@
 """
-cookies/storage.py
-
-Two jobs that both boil down to "what does this site store client-side,
-and is it declared to the visitor":
-
-1. `detect_browser_storage` — static regex scan of a page's <script>
-   tags (same technique as analytics/ga4.py reading ParsedPage.soup)
-   for localStorage/sessionStorage/IndexedDB usage. Cookies aren't the
-   only client-side storage a consent banner is supposed to cover —
-   GDPR's definition of "cookies" for consent purposes (ePrivacy
-   Directive Art. 5(3)) already extends to any client-side storage
-   mechanism, so a site that only audits actual Set-Cookie headers
-   while ignoring a localStorage-based tracker misses real exposure.
-
-2. `build_cookie_summary` — folds a List[Cookie] (cookies.detector)
-   through categorization + expiry into the flat shape
-   models.consent.Consent actually persists: `cookies_detected`
-   ([{name, category, domain, expires}]) and `third_party_trackers`
-   ([vendor/domain names]). Mirrors
-   analytics.analytics_score.build_analytics_summary's role for the
-   Analytics model.
+1. detect_browser_storage: finds localStorage / sessionStorage / IndexedDB use
+   in the page's scripts (consent rules cover these too, not just cookies).
+2. build_cookie_summary: the cookie list and third-party trackers saved
+   with the consent results.
 """
 
 from __future__ import annotations
@@ -54,7 +37,7 @@ class BrowserStorageDetection:
 
 
 def detect_browser_storage(page: ParsedPage) -> BrowserStorageDetection:
-    """Scans inline/attached <script> text for localStorage/sessionStorage/IndexedDB calls."""
+    """Looks for localStorage / sessionStorage / IndexedDB calls in scripts."""
     result = BrowserStorageDetection()
     local_keys: List[str] = []
     session_keys: List[str] = []
@@ -79,13 +62,7 @@ def detect_browser_storage(page: ParsedPage) -> BrowserStorageDetection:
 
 
 def check_browser_storage(page: ParsedPage) -> List[dict]:
-    """
-    A single info-level finding when client-side storage is used, since
-    presence alone isn't a defect — only that it's covered by the
-    banner's disclosure (consent.preferences checks the disclosure
-    itself). Kept separate from the cookie findings so a site with zero
-    cookies but heavy localStorage tracking still surfaces something.
-    """
+    """One info finding when browser storage is used (not a problem by itself)."""
     detection = detect_browser_storage(page)
     if not (detection.local_storage_used or detection.session_storage_used or detection.indexed_db_used):
         return []
@@ -112,7 +89,7 @@ def check_browser_storage(page: ParsedPage) -> List[dict]:
 
 
 def check_retention(cookies: List[Cookie]) -> List[dict]:
-    """Flags cookies whose lifetime exceeds what's reasonable for their category."""
+    """Flags cookies that live too long for their category."""
     findings: List[dict] = []
     for cookie in cookies:
         category = categorize_cookie(cookie.name, cookie.domain)
@@ -136,9 +113,9 @@ def check_retention(cookies: List[Cookie]) -> List[dict]:
 
 @dataclass
 class CookieSummary:
-    """Field-for-field match with the list-valued columns on models.consent.Consent."""
+    """Cookie fields saved with the consent results."""
     cookies_detected: List[dict] = field(default_factory=list)      # [{name, category, domain, expires}]
-    third_party_trackers: List[str] = field(default_factory=list)   # domains, de-duped
+    third_party_trackers: List[str] = field(default_factory=list)   # domains, no duplicates
     counts_by_category: Dict[str, int] = field(default_factory=dict)
 
 
@@ -159,8 +136,7 @@ def build_cookie_summary(cookies: List[Cookie], first_party_hostname: Optional[s
             "expires": classification.lifetime_days if classification.lifetime_days is not None else "session",
         })
 
-        # Only analytics/marketing cookies are trackers. Third-party essential,
-        # consent-management or unrecognized cookies are evidence, not trackers.
+        # Only analytics/marketing cookies count as trackers.
         if is_third_party(cookie, first_party_hostname) and cookie.domain and requires_consent(category):
             trackers.append(cookie.domain)
 
@@ -183,13 +159,8 @@ def run_cookie_checks(
     page: Optional[ParsedPage] = None,
     first_party_hostname: Optional[str] = None,
 ) -> CookieAuditResult:
-    """
-    One-call entry point combining validator + retention + browser
-    storage findings with the persistence-ready summary. `page` is
-    optional so this still works from a context that only has raw
-    Set-Cookie headers and no parsed page (e.g. a unit test).
-    """
-    from cookies.validator import validate_cookies  # local import avoids a cycle with detector-only callers
+    """Runs all cookie checks and builds the summary. `page` is optional."""
+    from cookies.validator import validate_cookies  # local import avoids a cycle
 
     findings = validate_cookies(cookies, first_party_hostname) + check_retention(cookies)
     storage = BrowserStorageDetection()

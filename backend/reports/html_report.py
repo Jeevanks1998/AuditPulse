@@ -1,18 +1,6 @@
 """
-reports/html_report.py
-
-Renders a ReportPayload (§8) into one self-contained HTML document —
-api/reports.py's `/{audit_id}/export.html`, cached to disk via
-reports/report_storage.py's save_html/load_html. Mirrors the section
-order pdf/pdf_generator.py uses (cover -> executive summary -> critical
-findings -> score grid -> business impact -> action plan -> full
-findings appendix), just as plain HTML/CSS instead of ReportLab
-flowables.
-
-Every finding/summary/AI string here can originate from an AI provider or
-a crawled page, so everything user/AI-derived goes through `html.escape`
-before landing in the markup — the same trust boundary pdf/theme.py's
-`esc` helper exists for on the PDF side.
+Renders a ReportPayload as one self-contained HTML file (export.html).
+All crawled or AI text is escaped.
 """
 
 from __future__ import annotations

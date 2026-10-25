@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Runs as Vercel's build command. Writes assets/js/env.js so the static
-# frontend knows where the Railway-hosted backend lives, using the
-# BACKEND_API_URL environment variable set in the Vercel project settings
-# (Project -> Settings -> Environment Variables).
+# Vercel build command: writes assets/js/env.js with the backend address from
+# the BACKEND_API_URL environment variable (Vercel project settings).
 set -euo pipefail
 
 if [ -z "${BACKEND_API_URL:-}" ]; then

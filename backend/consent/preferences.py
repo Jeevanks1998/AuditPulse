@@ -1,24 +1,10 @@
 """
-consent/preferences.py
+Can visitors change their cookie choice later? (GDPR: withdrawing must be as
+easy as giving consent.)
 
-GDPR requires withdrawing consent to be "as easy as giving it" — a
-banner that only ever appears once, with no lasting way to change your
-mind, fails that regardless of how good the banner itself is. This
-checks for a persistent preferences/manage-cookies entry point: a
-footer (or nav) link, or a CMP's known re-open trigger (OneTrust's
-"#ot-sdk-btn" pattern and similar), that's still reachable after the
-banner has been dismissed.
-
-Two layers:
-
-    static detection       — a footer/nav link or a CMP re-open trigger
-                             exists in the markup (detect_preferences_link)
-    + runtime verification — consent.runtime clicked the banner's
-                             Manage/Personalize control: did a preference
-                             panel with category choices actually appear?
-                             (verify_preferences_runtime)
-
-A link merely existing is not proof that preferences can be managed.
+Static: a footer/nav link or a CMP re-open button exists in the HTML.
+Browser: clicking Settings really opened a panel with category choices.
+A link alone doesn't prove preferences can be managed.
 """
 
 from __future__ import annotations
@@ -43,7 +29,7 @@ _LINK_TEXT_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Known CMP re-open trigger ids/classes, kept in sync with consent/banner.py's CMP list.
+# Known CMP re-open buttons (keep in sync with banner.py).
 _CMP_TRIGGER_RE = re.compile(
     r"ot-sdk-btn|onetrust.*(settings|button)|CookiebotWidget|cky-btn-revisit|osano-cm-widget|"
     r"trustarc.*preferences|qc-cmp2-toggle-link|iubenda-cs-preferences-link|"
@@ -58,15 +44,14 @@ class PreferencesDetection:
     trigger_found: bool = False
     link_text: Optional[str] = None
     link_href: Optional[str] = None
-    # Runtime verification (None = not tested): Manage/Personalize was clicked
-    # and a preference panel actually appeared.
+    # Browser check (None = not tested): Settings was clicked and a panel appeared.
     panel_verified: Optional[bool] = None
     panel_toggle_count: Optional[int] = None
     manage_control_label: Optional[str] = None
 
 
 def verify_preferences_runtime(detection: PreferencesDetection, runtime_result=None) -> PreferencesDetection:
-    """Adds consent.runtime's click-through verdict to the static detection (in place)."""
+    """Adds the browser check result to the static detection."""
     if runtime_result is None or not getattr(runtime_result, "available", False):
         return detection
     if getattr(runtime_result, "manage_clicked", False):
@@ -80,8 +65,7 @@ def verify_preferences_runtime(detection: PreferencesDetection, runtime_result=N
 def detect_preferences_link(page: ParsedPage) -> PreferencesDetection:
     result = PreferencesDetection()
 
-    # Links *and* buttons: many sites re-open the consent panel from a footer
-    # <button> ("Personalise Cookies") wired up by JavaScript.
+    # Links and buttons: many sites re-open the panel from a footer <button>.
     from consent.buttons import MANAGE_PREFERENCES, classify_label
     for tag in page.soup.find_all(["a", "button"]) + page.soup.find_all(attrs={"role": "button"}):
         text = tag.get_text(" ", strip=True) or tag.get("aria-label") or ""

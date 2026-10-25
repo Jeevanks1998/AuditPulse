@@ -1,15 +1,5 @@
 """
-images/broken.py
-
-Site-level check that actually requests a sample of a page's <img> src
-URLs and reports which ones are broken (4xx/5xx) or erroring (timeout,
-DNS, connection refused) — the images.py equivalent of
-seo/broken_links.py, but for image sources rather than <a href>
-targets, and also flagging <img> tags with no src at all (an empty or
-missing src is a broken image with zero requests needed to know it).
-Capped and concurrency-limited the same way seo/broken_links.py is, so
-a page with many images doesn't turn one audit into dozens of extra
-outbound requests.
+Finds broken images: <img> without src, and a capped sample of image URLs requested live.
 """
 
 from __future__ import annotations
@@ -42,7 +32,7 @@ class ImageCheckResult:
 
 
 def check_missing_src(page: ParsedPage) -> List[dict]:
-    """Synchronous, zero-request check for <img> tags with no src attribute at all."""
+    """<img> tags without src (no requests needed)."""
     images = page.image_tags or []
     missing = [img for img in images if not (img.get("src") or "").strip()]
     if not missing:
@@ -66,12 +56,7 @@ async def check_broken_images(
     concurrency: int = DEFAULT_CONCURRENCY,
     timeout: float = REQUEST_TIMEOUT_SECONDS,
 ) -> List[dict]:
-    """
-    Live-checks a deduped sample of `page`'s <img> src URLs (resolved
-    to absolute against page.url) and returns findings for anything
-    broken or erroring. Results are per-URL, not per-occurrence — an
-    image reused on the page is only checked once.
-    """
+    """Requests each image URL once and reports broken or failing ones."""
     candidates = _dedupe_checkable(page)
     sample = candidates[:max_images]
     if not sample:

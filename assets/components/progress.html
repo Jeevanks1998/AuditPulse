@@ -1,17 +1,6 @@
-<!-- ==========================================================================
-     components/progress.html
-     The audit-run progress UI (ring + step checklist + ETA) used on
-     audit.html. Extracted here as a reference/reuse template — audit.html
-     ships this inline since assets/js/audit.js queries these ids
-     synchronously on DOMContentLoaded and shouldn't have to wait on a
-     network fetch to find them.
-
-     Step ids/labels come from window.APP_CONFIG.AUDIT_STEPS
-     (assets/js/config.js) — keep this markup's check-item ids in sync with
-     that list if you add/remove/rename a step.
-
-     Optional loader: assets/js/include.js → Components.include('progress')
-     ========================================================================== -->
+<!-- Audit progress (ring, step list, time left), as used inline on audit.html.
+     Keep the step ids in sync with APP_CONFIG.AUDIT_STEPS in config.js.
+     Optional loader: Components.include('progress') -->
 <div class="progress-hero scan-line" id="progressSection" style="display:none;">
   <div class="vring vring--md" data-band="mid" id="progressRing">
     <svg width="96" height="96" viewBox="0 0 96 96">

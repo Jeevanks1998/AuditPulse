@@ -1,8 +1,5 @@
 """
-api/router.py
-
-Aggregates every domain router in api/ into a single APIRouter, which
-main.py mounts once under settings.API_V1_PREFIX.
+Combines every router in api/; main.py mounts it under API_V1_PREFIX.
 """
 
 from fastapi import APIRouter
@@ -12,8 +9,7 @@ from api import access_management, ai, audit, auth, dashboard, history, reports,
 api_router = APIRouter()
 
 api_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
-# Server-to-server only (Access Portal -> AuditPulse), auth'd by a shared
-# key rather than a user JWT — see access_management.verify_portal_key.
+# Access Portal only, authenticated with a shared key (not a user token).
 api_router.include_router(
     access_management.router, prefix="/internal/access", tags=["Access Portal (internal)"]
 )

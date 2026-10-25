@@ -1,24 +1,12 @@
-/* ==========================================================================
-   email-reports.css — email-reports.html only.
+/*
+ * Email Reports page only. The "Send to POC" dialog is styled in report.css
+ * (this page loads it first); the two dialogs here reuse its shell.
+ */
 
-   Scope note: the "Send to POC" dialog itself is NOT styled here. It lives
-   in report.css (.composer-overlay and friends), and email-reports.html
-   links report.css ahead of this file for exactly that reason. The two
-   read-only dialogs this page adds (the sent-email detail view and the
-   audit picker) reuse that same .composer shell, so only their *contents*
-   are styled below.
-
-   Everything else (.card, .btn, .badge, .stat-card, .dtable, .score-chip,
-   .email-empty) is reused as-is from style.css / report.css.
-   ========================================================================== */
-
-/* ---- Utilities this page needs that report.css's block doesn't define.
-        Named to match that block's convention so they read as one set. ---- */
+/* Utilities missing from report.css */
 .u-mt-5 { margin-top: var(--sp-5); }
 
-/* Visually hidden but still announced — used for the actions column's
-   header, which needs a name for screen readers but would be noise on
-   screen above two buttons that already say what they do. */
+/* Hidden but read by screen readers */
 .u-sr-only {
   position: absolute;
   width: 1px; height: 1px;
@@ -29,11 +17,7 @@
   border: 0;
 }
 
-/* ---- Stat cards ----
-   The counters describe the whole account and deliberately ignore the
-   filters below them, so each carries a note saying what it counts —
-   without it, "Total Sent 12" next to a filtered table reading 3 rows
-   looks like a bug rather than a different scope. */
+/* Stat cards (each notes that it counts the whole account, not the filter) */
 .er-stat__note {
   display: block;
   margin-top: 2px;
@@ -41,7 +25,7 @@
   color: var(--text-tertiary);
 }
 
-/* ---- Card head: count + status tabs ---- */
+/* Card header: count + status tabs */
 .er-filters {
   display: flex;
   align-items: center;
@@ -81,10 +65,7 @@
   box-shadow: var(--shadow-sm);
 }
 
-/* ---- History table ----
-   Six content columns plus actions is wide, so the table is given a
-   minimum width and allowed to scroll inside .table-wrap rather than
-   letting the subject column crush down to two characters. */
+/* History table (min width, scrolls sideways) */
 .er-table { min-width: 940px; }
 
 .er-table td { vertical-align: middle; }
@@ -107,8 +88,7 @@
   text-transform: uppercase;
 }
 
-/* Two-line cells: the value, then a quieter qualifier under it
-   (relative time, "+2 more"). */
+/* Two-line cells: value, then a smaller note */
 .er-cell__primary {
   display: block;
   font-size: var(--fs-sm);
@@ -127,8 +107,7 @@
   color: var(--text-tertiary);
 }
 
-/* Subjects run long and are the least important thing to read in full —
-   clamp to two lines rather than letting one row tower over the rest. */
+/* Long subjects: clamp to two lines */
 .er-cell__subject {
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -159,8 +138,7 @@
 .er-file svg { width: 12px; height: 12px; flex-shrink: 0; }
 .er-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Actions. Kept right-aligned and on one line so the two buttons read as a
-   pair belonging to the row rather than as wrapped content. */
+/* Row actions, on one line */
 .er-actions {
   display: flex;
   justify-content: flex-end;
@@ -170,9 +148,9 @@
 
 .er-actions .btn[disabled] { opacity: 0.55; pointer-events: none; }
 
-/* ---- Empty / loading / error placeholder ---- */
+/* Empty / loading / error */
 .er-state {
-  display: none;              /* the JS shows this and hides .table-wrap */
+  display: none;              /* shown by the JS instead of the table */
   padding: var(--sp-8) 0;
   text-align: center;
   color: var(--text-tertiary);
@@ -181,7 +159,7 @@
 
 .er-state p { margin: 0; }
 
-/* ---- Pager ---- */
+/* Pager */
 .er-pager {
   display: flex;
   align-items: center;
@@ -196,12 +174,9 @@
 .er-pager__label { font-size: var(--fs-xs); color: var(--text-tertiary); }
 .er-pager .btn[disabled] { opacity: 0.5; pointer-events: none; }
 
-/* ==========================================================================
-   Dialogs — both reuse report.css's .composer shell (head / body / foot),
-   so only their inner content is defined here.
-   ========================================================================== */
+/* Dialogs (reuse report.css's .composer shell) */
 
-/* ---- Sent-email detail ("View") ---- */
+/* Sent-email detail ("View") */
 .er-detail__head {
   display: flex;
   align-items: flex-start;
@@ -223,8 +198,7 @@
   padding: var(--sp-3) var(--sp-4);
   border: 1px solid var(--color-error);
   border-radius: var(--radius-sm);
-  /* Translucent tint rather than --color-error-soft, which stays pale pink
-     in dark mode — same approach as .composer__alert in report.css. */
+  /* Translucent tint (the soft colour stays pale in dark mode) */
   background: rgba(239, 68, 68, 0.1);
   color: var(--color-error-text);
   font-size: var(--fs-sm);
@@ -268,12 +242,11 @@
 
 .er-detail__files-list { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 
-/* The pills are roomier here than in the table, where they're squeezed
-   into a 220px column. */
+/* Bigger pills than in the table */
 .er-detail__files-list .er-file { padding: 6px 10px; font-size: var(--fs-xs); }
 .er-detail__files-list .er-file svg { width: 14px; height: 14px; }
 
-/* ---- Audit picker ("Send a Report") ---- */
+/* Audit picker ("Send a Report") */
 .er-picker-dialog { max-width: 540px; }
 
 .er-list {
@@ -282,9 +255,7 @@
   gap: var(--sp-2);
 }
 
-/* Each row is a real <button>: the whole row is the action ("email this
-   report"), so it should be one tab stop and one click target, not a strip
-   of text with a small button hiding at the end. */
+/* Each row is one button (one click target). */
 .er-item {
   display: flex;
   align-items: center;
@@ -341,8 +312,7 @@
 
 .er-item__meta { font-size: var(--fs-xs); color: var(--text-tertiary); }
 
-/* The "Send to POC" affordance is a label, not a nested button — the row
-   itself is the control. */
+/* A label, not a nested button: the row is the control */
 .er-item__send {
   display: inline-flex;
   align-items: center;
@@ -358,7 +328,7 @@
 
 .er-item__send svg { width: 14px; height: 14px; }
 
-/* ---- Responsive ---- */
+/* Responsive */
 
 @media (max-width: 900px) {
   .er-filters { width: 100%; justify-content: space-between; }

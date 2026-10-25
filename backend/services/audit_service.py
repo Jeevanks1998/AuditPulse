@@ -1,25 +1,9 @@
 """
-services/audit_service.py
-
-Business logic behind api/audit.py: the create flow, the query helpers
-reused by dashboard_service / history_service / api/settings.py, stats
-aggregation, and `run_audit_pipeline` — which crawls the audited URL once
-and runs the real analytics/, consent/ and journey/ check
-packages against it. It walks the same step sequence the frontend
-already animates through (see config.constants.AUDIT_STEPS and
-assets/js/audit.js) so the API and UI stay in lockstep, then persists
-real scores/findings across every detail table: Issue rows (normalized
-findings), Consent, and Analytics, plus a real AI-module pass via
-services.ai_service.
-
-Also links every audit to a Website row (models/website.py) so the same
-hostname's runs can be grouped/trended, and logs a History event when an
-audit starts and when it finishes or fails.
-
-Nothing in this module imports from api/ or depends on FastAPI request
-objects — routers call in, never the other way around, so this logic is
-reusable from anywhere (api/audit.py, services.scheduler_service, a
-future Celery beat worker, tests, ...).
+Audit logic: create and query audits, stats, and run_audit_pipeline(), which
+fetches the site once and runs the analytics, consent and journey checks on
+it, then saves scores, findings and module results. Each audit is linked to
+a Website row and logged in History. No FastAPI imports, so it can be
+reused anywhere.
 """
 
 from datetime import datetime, timezone
@@ -56,19 +40,14 @@ from reports import report_storage
 from services import ai_service
 from utils.net_guard import guarded_async_client
 
-# Only present in a given audit's real breakdown when the matching module
-# was selected in its modules (see run_audit_pipeline) — kept here at 0
-# purely so the empty/no-completed-audits stats shape from compute_stats()
-# has a stable, predictable key set.
+# Zeros so empty stats always have the same keys.
 EMPTY_BREAKDOWN = {
     "consent": 0,
     "analytics": 0,
 }
 
 
-# --------------------------------------------------------------------------
-# Query helpers (reused by dashboard_service / history_service / api/settings.py)
-# --------------------------------------------------------------------------
+# Queries (used by dashboard, history and settings)
 async def get_recent_audits(db: AsyncSession, user: User, limit: int = 25) -> List[Audit]:
     result = await db.execute(
         select(Audit).where(Audit.user_id == user.id, Audit.deleted_at.is_(None))
@@ -101,7 +80,7 @@ async def compute_stats(db: AsyncSession, user: User) -> AuditStatsOut:
     latest = completed[0]
     scored = [a.overall_score for a in completed if a.overall_score is not None]
     avg_overall = round(sum(scored) / len(scored)) if scored else 0
-    seo_issues = 0  # SEO module removed; retained for API backward compatibility.
+    seo_issues = 0  # SEO module removed; kept for API compatibility.
     critical_issues = sum(
         1 for a in completed for f in (a.findings or []) if f.get("severity") == "critical"
     )
@@ -115,9 +94,7 @@ async def compute_stats(db: AsyncSession, user: User) -> AuditStatsOut:
     )
 
 
-# --------------------------------------------------------------------------
-# Creation
-# --------------------------------------------------------------------------
+# Creating audits
 def new_audit(
     user_id: int,
     website_id: Optional[int],
@@ -127,13 +104,11 @@ def new_audit(
     modules: list,
     target_region: Optional[str] = None,
 ) -> Audit:
-    """Build (but don't add/persist) a queued Audit row."""
-    # Drop modules that no longer exist (e.g. "performance" saved on an
-    # older schedule) instead of failing; never leave an audit with no checks.
+    """Builds a queued Audit (doesn't save it)."""
+    # Drop modules that no longer exist; never leave an audit with no checks.
     modules = [m for m in (modules or []) if m in AUDIT_MODULES]
     if not any(m in CHECK_MODULES for m in modules):
-        # The standard audit is Analytics + Consent; the Journey Map runs only
-        # when asked for (it has its own "Journey Map Audit" page).
+        # Standard audit = Analytics + Consent. The Journey Map only runs when asked for.
         modules = modules + [m for m in ("analytics", "consent") if m not in modules]
     return Audit(
         user_id=user_id,
@@ -150,12 +125,7 @@ def new_audit(
 
 
 async def start_audit(db: AsyncSession, user: User, payload: AuditCreate) -> Audit:
-    """
-    Full create flow for POST /audits/: resolve the Website row, persist
-    the Audit, log an AUDIT_CREATED event, and commit. Does not start the
-    background pipeline — the caller (api/audit.py) owns BackgroundTasks
-    since that's a FastAPI request-scoped concern.
-    """
+    """Creates the audit (website row, Audit, history event). The caller starts the background pipeline."""
     website = await get_or_create_website(db, user.id, payload.url)
     audit = new_audit(
         user.id, website.id, payload.url, payload.depth, payload.max_pages, payload.modules,
@@ -177,27 +147,11 @@ async def start_audit(db: AsyncSession, user: User, payload: AuditCreate) -> Aud
     return audit
 
 
-# --------------------------------------------------------------------------
-# Pipeline — crawls the audited URL once, then runs the real
-# analytics/, and consent/ check packages against it.
-# --------------------------------------------------------------------------
+# Pipeline
 async def run_audit_pipeline(audit_id: int) -> None:
-    """
-    Runs in the background after an audit is created (via BackgroundTasks).
-    Walks AUDIT_STEPS, persisting progress after each real check group
-    completes, then finalizes with real scores across
-    Audit.breakdown/findings plus the normalized Issue, Consent, and
-    Analytics rows. Uses its own DB session since it runs outside request
-    scope — never reuse a request-scoped session here.
-
-    consent/analytics are optional modules (see config.constants.AUDIT_MODULES):
-    when selected, their real check packages (consent/, analytics/) run as
-    part of this same pipeline — sharing the page already crawled for
-    checkCrawl rather than re-fetching — and their scores are folded into
-    Audit.breakdown/overall_score exactly like every other module, not
-    written on the side. Consent/Analytics rows are still persisted
-    separately (they carry much more detail than a breakdown score),
-    via _run_consent_checks/_run_analytics_checks below.
+    """Runs in the background after an audit is created. Fetches the page once,
+    runs each selected module on it, saves progress after each step, and saves
+    the final scores, findings and module rows. Uses its own database session.
     """
     async with AsyncSessionLocal() as db:
         audit = await db.get(Audit, audit_id)
@@ -211,25 +165,20 @@ async def run_audit_pipeline(audit_id: int) -> None:
         await db.commit()
 
         try:
-            # Fresh fetch every run: no HTTP cache is used and intermediaries
-            # are asked not to serve a cached copy either.
+            # Fresh fetch every time, no caches.
             async with guarded_async_client(
                 follow_redirects=True, timeout=20.0,
                 headers={"User-Agent": DEFAULT_USER_AGENT, "Cache-Control": "no-cache", "Pragma": "no-cache"},
             ) as client:
                 await _advance_step(db, audit, "checkCrawl")
-                # Re-checked at run time: DNS can change between scheduling
-                # and running (SSRF protection — utils/net_guard.py).
+                # Check again now: DNS can change between scheduling and running (SSRF protection).
                 from utils.net_guard import BlockedTargetError, check_url
                 try:
                     check_url(audit.url)
                 except BlockedTargetError as exc:
                     raise RuntimeError(str(exc)) from exc
 
-                # Does the site let our browser in at all? Sites behind bot
-                # protection (Imperva, Cloudflare, Akamai…) can answer a cloud
-                # server with a block/challenge page; scoring that page as the
-                # website gave "no banner / no analytics / 0" for axa.ie.
+                # Does the site let our browser in? Bot protection can serve a block page, which must not be scored as the site.
                 site_block = None
                 if settings.CRAWLER_ENABLE_RUNTIME_CHECKS and any(
                         m in (audit.modules or []) for m in ("consent", "analytics", "journey")):
@@ -242,30 +191,21 @@ async def run_audit_pipeline(audit_id: int) -> None:
 
                 response = None if blocked else await client.get(audit.url)
                 if response is not None and response.status_code >= 400:
-                    # Mirrors crawler.crawl_site's per-page status check —
-                    # a non-2xx homepage fetch (site down, bot-blocking WAF,
-                    # 404, 500, ...) must fail the audit outright rather than
-                    # silently scoring whatever error-page body came back.
+                    # A non-2xx homepage fails the audit instead of scoring an error page.
                     raise RuntimeError(
                         f"Failed to fetch {audit.url}: HTTP {response.status_code}"
                     )
                 page = parse_html(audit.url, response.text) if response is not None else None
                 hostname = urlparse(audit.url).hostname or ""
 
-                # consent/analytics/journey/ai are all optional modules
-                # (see config.constants.AUDIT_MODULES / audit.html's
-                # checkboxes) — each real check package is skipped entirely
-                # when deselected.
+                # Each optional module is skipped entirely when not selected.
                 breakdown: dict = {}
                 findings: list = []
                 if blocked:
                     from utils.bot_block import block_finding
                     findings.append(block_finding(audit.url, site_block))
 
-                # consent/analytics reuse the page + response already fetched
-                # above for checkCrawl rather than crawling the site again
-                # (analytics additionally crawls the rest of the site itself,
-                # only for "full" depth audits — see _run_analytics_checks_site).
+                # Consent and analytics reuse the page already fetched (analytics crawls more pages for full-site audits).
                 consent_row = None
                 analytics_row = None
                 consent_runtime_result = None
@@ -302,17 +242,9 @@ async def run_audit_pipeline(audit_id: int) -> None:
 
                 await _advance_step(db, audit, "checkReport")
 
-            # --- Core result: persisted first, in its own commit ---------
-            # Everything the report page needs lives on the Audit row
-            # itself (status, score, breakdown, findings), so commit that
-            # before any secondary bookkeeping. A failure in the extras
-            # below then can no longer roll the audit back to "running"/
-            # "failed" and throw away a finished result.
-            # Status stays "running" (99%) until the module rows below are
-            # saved too. Marking it "completed" here let the report page load
-            # before the Journey/Consent/Analytics rows existed, so it showed
-            # "This audit didn't include the Customer Journey module" for a
-            # journey that had in fact run (the row landed seconds later).
+            # Save the main result first, in its own commit, so a later failure can't lose
+            # it. Status stays "running" (99%) until the module rows are saved too, so the
+            # report never opens before they exist.
             audit.status = "running"
             audit.percent = 99
             audit.current_step = "checkReport"
@@ -323,15 +255,13 @@ async def run_audit_pipeline(audit_id: int) -> None:
             await db.commit()
             logger.info(f"Audit {audit_id} results saved — overall {overall}; saving module details")
 
-            # Plain values only from here on: a rollback() in a secondary
-            # step expires every attribute on `audit`, and touching them
-            # afterwards would trigger an async lazy-load (MissingGreenlet).
+            # Plain values from here on: after a rollback, reading `audit` attributes would fail.
             audit_user_id = audit.user_id
             audit_url = audit.url
             audit_website_id = audit.website_id
             completed_at = audit.completed_at
 
-            # --- Secondary writes: each isolated, best-effort -------------
+            # Secondary writes: each separate and best-effort
             async def _secondary(label: str, work) -> None:
                 try:
                     await work()
@@ -346,8 +276,7 @@ async def run_audit_pipeline(audit_id: int) -> None:
                 await sync_issues_from_findings(db, audit, findings)
 
             async def _consent() -> None:
-                # Never keep a previous Consent result for this audit (e.g. a
-                # re-run / worker retry): replace it with this scan's row.
+                # Replace any earlier Consent row for this audit.
                 existing = await db.execute(select(Consent).where(Consent.audit_id == audit_id))
                 for old_row in existing.scalars().all():
                     await db.delete(old_row)
@@ -358,7 +287,7 @@ async def run_audit_pipeline(audit_id: int) -> None:
                 db.add(analytics_row)
 
             async def _journey() -> None:
-                # A fresh scan replaces any earlier journey result for this audit.
+                # Replace any earlier Journey row for this audit.
                 existing = await db.execute(select(Journey).where(Journey.audit_id == audit_id))
                 for old_row in existing.scalars().all():
                     await db.delete(old_row)
@@ -382,14 +311,11 @@ async def run_audit_pipeline(audit_id: int) -> None:
                 )
 
             async def _report_cache() -> None:
-                # Cached JSON/HTML/PDF exports were built from the previous
-                # results — drop them so downloads reflect this scan.
+                # Drop cached exports built from the previous results.
                 report_storage.invalidate(audit_id)
 
             async def _screenshots() -> None:
-                # Durable copy of this run's evidence screenshots (the
-                # container disk doesn't survive redeploys) — before the
-                # audit is marked completed so the report always has them.
+                # Copy screenshots to the database (the disk doesn't survive redeploys), before marking complete.
                 from utils.screenshot_store import persist_new_screenshots
                 await persist_new_screenshots(db, run_started_at)
 
@@ -406,7 +332,7 @@ async def run_audit_pipeline(audit_id: int) -> None:
                 await _secondary("website", _website)
             await _secondary("history", _history)
 
-            # --- Now the report can be opened: every module row exists ----
+            # Every module row exists: the report can open
             try:
                 await db.execute(
                     sa_update(Audit).where(Audit.id == audit_id).values(status="completed", percent=100)
@@ -417,8 +343,7 @@ async def run_audit_pipeline(audit_id: int) -> None:
                 await db.rollback()
                 logger.exception(f"Audit {audit_id}: could not mark as completed")
 
-            # Scheduled audit with email delivery on: send the chosen reports
-            # to the schedule's recipients. Best-effort, never fails the audit.
+            # Scheduled audit with email delivery: send the report. Never fails the audit.
             from services.scheduled_email import deliver_scheduled_report
 
             await deliver_scheduled_report(audit_id)
@@ -426,24 +351,14 @@ async def run_audit_pipeline(audit_id: int) -> None:
         except Exception as exc:  # noqa: BLE001 — persist failure, don't crash the worker
             logger.exception(f"Audit {audit_id} failed: {exc}")
 
-            # If the failure happened inside/around a db.commit() above, the
-            # session's transaction is now aborted — any further use of it
-            # (including the commit below) raises PendingRollbackError unless
-            # we roll back first. rollback() also expires every attribute on
-            # `audit`, so pull the plain values we still need for logging
-            # *before* touching the session, rather than reading audit.url /
-            # audit.user_id afterwards (that would trigger an async lazy-load
-            # outside a greenlet -> MissingGreenlet).
+            # Roll back a failed transaction first; read the values we need before that.
             audit_url = audit.url
             audit_user_id = audit.user_id
 
             try:
                 await db.rollback()
                 audit.status = "failed"
-                # error_message is String(500) — an unbounded exception message
-                # (Playwright/httpx/AI-provider errors can run long) previously
-                # blew past that limit and made *this* commit fail too, which
-                # left the audit stuck at its last successful step forever.
+                # Cut the message to the column size, or this commit fails too.
                 audit.error_message = str(exc)[:500]
                 await log_event(
                     db,
@@ -454,10 +369,7 @@ async def run_audit_pipeline(audit_id: int) -> None:
                 )
                 await db.commit()
             except Exception:
-                # Last-resort safety net: never let a background task die
-                # without at least trying to mark the audit failed. If even
-                # this fails, roll back and force a bare-minimum status update
-                # so the row can't be left stuck at "running" indefinitely.
+                # Last resort: always try to mark the audit failed so it can't stay "running".
                 logger.exception(f"Audit {audit_id}: failed to persist failure state")
                 try:
                     await db.rollback()
@@ -467,21 +379,18 @@ async def run_audit_pipeline(audit_id: int) -> None:
                 except Exception:
                     logger.exception(f"Audit {audit_id}: could not even persist minimal failure state")
 
+    # Email the owner that the audit finished (Settings > "Audit completed"). Never raises.
+    from services.audit_notify import notify_audit_finished
+
+    await notify_audit_finished(audit_id)
+
 
 def _compute_overall_score(breakdown: dict) -> Optional[int]:
-    """
-    Weighted overall score per requirements §6.1: Analytics and Consent
-    (backed by real runtime/browser evidence, not just markup detection —
-    see §2) carry more weight than the purely-static checks. Only the
-    modules actually present in this run's `breakdown` are weighted and
-    summed, then renormalized against the total weight of just those
-    modules so a partial module selection (e.g. "analytics" unchecked)
-    still produces a proper 0-100 score instead of silently scoring the
-    missing module as 0.
+    """Overall score: weighted average of the modules that ran (weights in
+    config/constants.py MODULE_WEIGHTS), so unselected modules don't count as 0.
     """
     if not breakdown:
-        # Nothing could be scored (e.g. a Journey Map audit where no
-        # interaction could be tested): "not scored", never a fake 0/100.
+        # Nothing scored (e.g. a journey with no testable interactions): "not scored", never 0.
         return None
     total_weight = 0.0
     weighted_sum = 0.0
@@ -495,16 +404,13 @@ def _compute_overall_score(breakdown: dict) -> Optional[int]:
 
 
 async def _advance_step(db: AsyncSession, audit: Audit, step_id: str) -> None:
-    """Marks the given AUDIT_STEPS entry current and persists progress %."""
+    """Sets the current step and saves the progress %."""
     index = next((i for i, step in enumerate(AUDIT_STEPS) if step["id"] == step_id), None)
     if index is not None:
         audit.current_step = step_id
-        # 100% is reserved for status == "completed" (set once, in
-        # run_audit_pipeline, in the same commit as the status flip), so
-        # the last step ("Generating report") tops out at 95%.
+        # 100% only when completed, so the last step stops at 95%.
         audit.percent = min(round(((index + 1) / len(AUDIT_STEPS)) * 100), 95)
         await db.commit()
-
 
 
 _SKIP_EXT = (".pdf", ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".zip", ".doc", ".docx", ".xls",
@@ -512,7 +418,7 @@ _SKIP_EXT = (".pdf", ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".zip", "
 
 
 def _cookie_scan_urls(start_url: str, page, limit: int = 15) -> list:
-    """Same-site pages linked from the homepage, in page order, de-duplicated."""
+    """Same-site pages linked from the homepage, in order, no duplicates."""
     from urllib.parse import urldefrag, urljoin
 
     host = (urlparse(start_url).hostname or "").lower()
@@ -542,38 +448,19 @@ def _cookie_scan_urls(start_url: str, page, limit: int = 15) -> list:
 async def _run_consent_checks(
     audit: Audit, page: ParsedPage, response: httpx.Response, hostname: Optional[str]
 ) -> tuple:
-    """
-    Real consent/cookie-banner scan: runs every check in consent/ against
-    the page + response already fetched for checkCrawl (banner presence,
-    button parity, consent mode, cookies, pre-consent behavior), plus —
-    when Playwright is installed and settings.CRAWLER_ENABLE_RUNTIME_CHECKS
-    is on — the live pre-consent network capture and the full
-    Accept/Reject/Personalize click-through pass (consent.runtime), so
-    behavior's verdict and the report's runtime evidence are backed by
-    what the controls really do, not just what the markup claims.
-
-    Returns (Consent row, findings, consent breakdown score, raw
-    ConsentRuntimeResult|None). The fourth element is the *unserialized*
-    runtime result (not the JSON dict on the row) — Phase 2.5's
-    _run_analytics_checks_site needs the real before/after-consent
-    request lists to correlate against detected analytics vendors, which
-    the serialized dict already flattens into plain data. Degrades
-    gracefully: any failure here yields a minimal "no scan" Consent row
-    rather than raising, so one module failing never takes down the whole
-    audit (same contract this pipeline already follows for AI).
+    """Runs the consent checks on the fetched page, plus the live browser checks
+    when enabled. Returns (Consent row, findings, score, raw browser result).
+    The raw result is used to match analytics tools against consent behaviour.
+    Never raises: on failure returns a minimal "no scan" row.
     """
     try:
         page_cookies = parse_set_cookie_headers(
             response.headers.get_list("set-cookie"), source_url=audit.url
         )
-        # Every consent scan is fresh: new scan id, new browser contexts, new
-        # network capture, banner detection, control inventory, region
-        # detection and screenshots — nothing from a previous scan is reused.
+        # Fresh scan every time: new scan id, browsers and screenshots.
         scan_id = f"a{audit.id}-{consent_module.new_scan_id()}"
         from consent.runtime import BROWSE_BUDGET_S
-        # Cookie Scanner: for a full-site audit, the consent browser (with
-        # Accept clicked) also visits up to 15 of the site's own pages so
-        # cookies set beyond the homepage are captured too.
+        # Cookie Scanner: for full-site audits, also visit up to 15 site pages after Accept.
         cookie_scan_urls = (_cookie_scan_urls(audit.url, page, limit=min(15, int(audit.max_pages or 15)))
                             if (audit.depth or "homepage") == "full" else [])
         result = await asyncio.wait_for(consent_module.analyze_site(
@@ -584,10 +471,7 @@ async def _run_consent_checks(
             enable_live_checks=True,
             capture_screenshot=getattr(settings, "CRAWLER_ENABLE_SCREENSHOTS", False),
             enable_runtime_checks=getattr(settings, "CRAWLER_ENABLE_RUNTIME_CHECKS", True),
-            # Optional override (e.g. "IN", "EU", "US-CA"); unset => region is
-            # detected from site signals, and Unknown => regional compliance
-            # "not assessed" (see consent.region).
-            # Per-audit choice first, then the server-wide default.
+            # Region: the audit's choice, else the server default, else detect.
             target_region=(getattr(audit, "target_region", None)
                            or getattr(settings, "CONSENT_TARGET_REGION", None) or None),
             scan_id=scan_id,
@@ -609,14 +493,9 @@ async def _run_consent_checks(
 
 
 def _backfill_analytics_from_journey(analytics_row, journey_row) -> None:
-    """When the Analytics module's own live browser check could not run
-    (runtime_available False), use what the Customer Journey's browser pass
-    actually observed: it loads every scanned page in a real browser with
-    consent accepted and records each analytics hit with the same vendor
-    classifier. A detected vendor seen there gets Page View = passed; one
-    never seen on any page stays absent (the report shows it as Failed).
-    Scroll / Click stay "not tested" — the journey doesn't run those.
-    Clearly marked source="journey" so the report can say where it came from.
+    """If the analytics browser check couldn't run, use what the Journey Map's browser
+    saw: tools seen there get Page View = passed. Scroll/Click stay "not tested".
+    Marked source="journey".
     """
     try:
         if analytics_row is None or journey_row is None or getattr(analytics_row, "runtime_available", False):
@@ -659,17 +538,8 @@ def _backfill_analytics_from_journey(analytics_row, journey_row) -> None:
 
 
 async def _run_journey_checks(audit: Audit) -> tuple:
-    """
-    Customer Journey scan (journey/): renders the site, discovers every
-    interactive element, classifies it, safely tests the important ones with
-    before / highlighted / after screenshots, validates analytics per
-    interaction, builds the journey map and QA findings. Respects the audit's
-    own depth and max_pages. Fresh browser context every run; nothing from a
-    previous scan is reused.
-
-    Returns (Journey row, findings, journey score or None). Degrades
-    gracefully like the other modules: a failure yields an "unavailable"
-    row, never a failed audit.
+    """Runs the Journey Map (see journey/), within the audit's depth and page limit.
+    Returns (Journey row, findings, score or None). Never fails the audit.
     """
     import journey as journey_module
     from consent.runtime import new_scan_id
@@ -679,14 +549,11 @@ async def _run_journey_checks(audit: Audit) -> tuple:
     scan_id = f"a{audit.id}-{new_scan_id()}"
     hard_timeout = int(getattr(settings, "JOURNEY_HARD_TIMEOUT_S", 480))
     try:
-        # One journey browser at a time on this container: two at once (two
-        # audits started together) ran Chromium out of memory and both scans
-        # came back empty. The time limit starts once this scan has the slot.
+        # One journey browser at a time (two can run out of memory). The time limit starts once this scan has the slot.
         async with journey_slot(max_wait_s=int(getattr(settings, "JOURNEY_LOCK_WAIT_S", 900))) as waited:
             if waited > 1:
                 logger.info(f"_run_journey_checks: waited {waited:.0f}s for another journey scan to finish")
-            # The runner stops itself shortly before the hard limit and keeps
-            # what it found; the outer wait_for is only a last-resort guard.
+            # The runner stops itself just before the limit and keeps its results; wait_for is a last resort.
             soft_deadline = time.monotonic() + hard_timeout - 40
             result = await asyncio.wait_for(
                 journey_module.run_customer_journey(
@@ -709,7 +576,7 @@ async def _run_journey_checks(audit: Audit) -> tuple:
             f"{(result.health.get('counts') or {}).get('interactions_discovered', 0)} interactions, "
             f"{(result.health.get('counts') or {}).get('interactions_tested', 0)} tested, score {result.score}"
         )
-        # Findings feed the shared Issues list (strip the heavy evidence blob).
+        # Findings go to the shared issue list (without the heavy evidence).
         findings = [{k: v for k, v in f.items() if k != "journey"} | {
             "page": (f.get("journey") or {}).get("page"),
             "interaction": (f.get("journey") or {}).get("interaction"),
@@ -728,30 +595,12 @@ async def _run_journey_checks(audit: Audit) -> tuple:
 async def _run_analytics_checks_site(
     client: httpx.AsyncClient, audit: Audit, homepage_page: ParsedPage, consent_runtime_result=None
 ) -> tuple:
-    """
-    Real analytics/tag-detection + runtime-validation scan — the full
-    Phase 1 + Phase 2 pipeline:
-
-      - homepage: full analyze_site pass (every detector + the live
-        Playwright Page View/Scroll/Click runtime pass, same as Phase 1).
-      - "full" depth audits: additionally crawls the rest of the site via
-        crawler.crawl_site (respecting the audit's own max_pages/URL
-        scope/exclusions/duplicate handling — nothing about the crawl
-        itself is reimplemented here) and runs a static-only analytics
-        pass over every other crawled page (analyze_page_for_site) —
-        see analyze_page_for_site's docstring for why runtime validation
-        stays homepage-only.
-      - cross-page consistency + site coverage are computed from those
-        real per-page results, and the site-level score is derived from
-        every page's actual findings, never just the homepage's.
-      - when a consent runtime pass is available, correlates detected
-        analytics vendors against consent's real before/after-consent
-        network capture (Phase 2.5).
-
-    Returns (Analytics row, findings, analytics breakdown score).
-    Degrades gracefully, same contract as _run_consent_checks above —
-    any failure in the extra full-site work falls back to the Phase 1
-    homepage-only result rather than losing the whole module.
+    """Analytics checks: the homepage gets every detector plus the live browser
+    check. Full-site audits also crawl the site and run static checks on each
+    page, then check consistency across pages and site coverage. Matches tools
+    against the consent results when available.
+    Returns (Analytics row, findings, score). On failure in the full-site part,
+    falls back to the homepage result.
     """
     try:
         result = await asyncio.wait_for(
@@ -781,19 +630,9 @@ async def _run_analytics_checks_site(
 
     if audit.depth == "full":
         try:
-            # crawl_site is the single source of truth for *which* pages
-            # belong to this site (crawl depth, max_pages, URL scope,
-            # exclusions, and duplicate-URL handling all already applied
-            # there — none of that is reimplemented here, per Phase 2.1).
-            # Its PageResult only retains the lightweight PageSignals
-            # extracted during the crawl, not the full ParsedPage/soup
-            # each detect_*() needs, so each other page's HTML is fetched
-            # once more here (same client, same pattern as the homepage
-            # fetch above) purely to run the static analytics detectors
-            # against it — the crawl itself is not repeated.
+            # crawl_site decides which pages belong to the site; each page's HTML is fetched again here for the detectors.
             crawl_result = await crawl_site(audit.url, max_pages=audit.max_pages, depth="full")
-            # Fetch the other pages in parallel (one at a time made a
-            # 100-page audit spend minutes here).
+            # Fetch the other pages in parallel.
             fetch_sem = asyncio.Semaphore(8)
 
             async def _fetch_and_analyze(page_url: str):
@@ -812,8 +651,7 @@ async def _run_analytics_checks_site(
             for site_page_result in await asyncio.gather(*(_fetch_and_analyze(u) for u in other_urls)):
                 if site_page_result is None:
                     continue
-                # Homepage tags exist only in the browser (JS / tag manager):
-                # a raw-HTML page showing nothing is unverified, not "missing".
+                # Homepage tags only exist in the browser: a page whose raw HTML shows nothing is "not verified", not missing.
                 if result.tags_injected_by_js and not site_page_result.trackers_detected:
                     site_page_result.not_verified = True
                 page_results.append(site_page_result)
@@ -835,7 +673,7 @@ async def _run_analytics_checks_site(
     else:
         score_val = result.score.overall
     if not any(p.trackers_detected for p in page_results):
-        score_val = 0      # no analytics anywhere on the site: nothing is measured
+        score_val = 0      # no analytics anywhere on the site
 
     site_coverage = analytics_module.compute_site_coverage(page_results, cross_page_findings) if len(page_results) > 1 else {}
 

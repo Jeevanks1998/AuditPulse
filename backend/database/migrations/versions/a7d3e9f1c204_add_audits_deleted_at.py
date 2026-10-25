@@ -4,9 +4,7 @@ Revision ID: a7d3e9f1c204
 Revises: c9e4a2f7d158
 Create Date: 2026-10-20 00:00:00.000000
 
-Deleting an audit from History / Recent Audits now only sets deleted_at:
-the audit and its report stay in the database and can be restored from
-"Deleted audits". NULL = not deleted, so every existing row stays visible.
+Deleting an audit only sets deleted_at, so it can be restored. NULL = not deleted.
 """
 from typing import Sequence, Union
 

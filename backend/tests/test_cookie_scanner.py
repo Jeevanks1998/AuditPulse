@@ -1,7 +1,5 @@
 """
-Cookie Scanner (reports/cookie_view.py): one inventory built only from what
-the audit observed — consent states on the homepage, journey pages, and the
-server's Set-Cookie headers. Old audits without full detail still render.
+Cookie Scanner tests: one inventory from what the audit observed. Older audits still render.
 """
 
 import asyncio

@@ -1,12 +1,5 @@
 """
-api/dashboard.py
-
-Aggregated view for dashboard.html: health-ring score, the four stat
-cards, and the "recent audits" list. dashboard.js loads stats + recent
-together via Promise.all, so `/dashboard/` returns both in one payload;
-the split endpoints are kept too in case the frontend wants to fetch
-them independently later. All the actual aggregation lives in
-services.dashboard_service.
+Dashboard data: overall score, stat cards and recent audits. Logic lives in services.dashboard_service.
 """
 
 from typing import List

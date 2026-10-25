@@ -4,8 +4,7 @@ Revision ID: a4d2e8c6f913
 Revises: e7a3c1f9b246
 Create Date: 2026-10-02 12:00:00.000000
 
-Optional privacy region chosen when starting an audit ("EU" | "UK" |
-"US-CA" | "IN"). NULL keeps automatic detection (consent/region.py).
+Optional region chosen for an audit ("EU" | "UK" | "US-CA" | "IN"). NULL = detect automatically.
 """
 from typing import Sequence, Union
 

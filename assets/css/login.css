@@ -1,6 +1,4 @@
-/* ==========================================================================
-   Login page
-   ========================================================================== */
+/* Login page */
 
 .auth-shell {
   min-height: 100vh;
@@ -9,11 +7,9 @@
   background: var(--bg);
 }
 
-/* ---- Left: brand / signature panel ---- */
+/* Left: brand panel */
 .auth-hero {
-  /* Fixed-dark palette: this panel is always dark regardless of the
-     app's light/dark setting, so it intentionally doesn't use the
-     theme-reactive tokens from variables.css. */
+  /* Always dark, so it doesn't use the theme colours. */
   --auth-bg: #0B1220;
   --auth-text: #fff;
   --auth-text-muted: #94A3B8;
@@ -74,7 +70,7 @@
 .auth-hero__main h1 em { font-style: normal; color: var(--auth-accent); }
 .auth-hero__main p { color: var(--auth-text-muted); font-size: var(--fs-md); line-height: 1.6; }
 
-/* Floating diagnostic card — the signature moment */
+/* Floating card */
 .auth-hero__card {
   position: relative;
   margin-top: var(--sp-8);
@@ -108,7 +104,7 @@
 }
 .auth-hero__stats b { color: var(--auth-text); font-family: var(--font-mono); font-size: var(--fs-lg); display: block; }
 
-/* ---- Right: form panel ---- */
+/* Right: form */
 .auth-form-panel {
   display: flex;
   align-items: center;

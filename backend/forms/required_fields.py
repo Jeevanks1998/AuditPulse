@@ -1,14 +1,5 @@
 """
-forms/required_fields.py
-
-Checks that `required` (and its visual signal, usually an asterisk or
-the word "required" in the label) agree with each other. This is
-distinct from accessibility/labels.py, which checks whether a control
-has *any* accessible name at all — this assumes a label exists and
-asks whether it accurately represents whether the field is mandatory,
-in both directions: a required field a sighted user has no visual cue
-about, and a field visually marked required that isn't actually
-enforced.
+Checks that `required` and the visual "required" marker agree, both ways.
 """
 
 from __future__ import annotations

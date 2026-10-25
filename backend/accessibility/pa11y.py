@@ -1,21 +1,6 @@
 """
-accessibility/pa11y.py
-
-Optional second opinion from pa11y (https://github.com/pa11y/pa11y), a
-Node CLI that runs the HTML CodeSniffer WCAG2AA ruleset against a
-rendered page via headless Chrome. It overlaps with accessibility/axe.py
-(also Chrome-rendered, via PSI/Lighthouse) but uses a different rule
-engine, so the two occasionally disagree — worth surfacing both rather
-than picking one, the same philosophy performance/pagespeed.py uses for
-lab vs field data.
-
-pa11y + Node + a Chrome binary is a heavy, optional dependency (not in
-requirements.txt, mirrors the Playwright note in crawler/screenshots.py
-— `npm install -g pa11y` is a one-time host setup, not a pip package).
-Every entry point here degrades to returning [] rather than raising
-when the `pa11y` binary isn't on PATH, times out, or errors, so a
-missing local install can never take down the rest of the audit
-pipeline.
+Optional second check using the pa11y CLI (HTML CodeSniffer, WCAG2AA).
+Needs `npm install -g pa11y`; returns [] when it isn't installed or fails.
 """
 
 from __future__ import annotations
@@ -33,11 +18,10 @@ CATEGORY = "pa11y"
 PA11Y_BINARY = "pa11y"
 RUN_TIMEOUT_SECONDS = 45.0
 
-# pa11y issue.type -> our severity. "error" is a definite WCAG2AA failure;
-# "warning"/"notice" are lower-confidence or advisory.
+# pa11y issue type -> our severity
 TYPE_SEVERITY = {"error": "critical", "warning": "warning", "notice": "info"}
 
-MAX_FINDINGS_PER_RUN = 20  # a broken template can otherwise repeat the same issue hundreds of times
+MAX_FINDINGS_PER_RUN = 20  # a broken template can repeat the same issue hundreds of times
 
 
 def pa11y_available() -> bool:
@@ -46,12 +30,7 @@ def pa11y_available() -> bool:
 
 
 async def run_pa11y(url: str, timeout: float = RUN_TIMEOUT_SECONDS) -> List[dict]:
-    """
-    Runs `pa11y --reporter json <url>` and returns findings parsed from
-    its issue list. Returns [] (never raises) if pa11y isn't installed,
-    the run times out, or its output isn't parseable JSON — callers
-    should treat that as "unavailable", not "everything passed".
-    """
+    """Runs pa11y on `url`. Returns [] (never raises) if unavailable; [] doesn't mean "all passed"."""
     if not pa11y_available():
         logger.info("accessibility.pa11y: pa11y CLI not found on PATH — skipping (optional, see module docstring)")
         return []
@@ -75,8 +54,7 @@ async def run_pa11y(url: str, timeout: float = RUN_TIMEOUT_SECONDS) -> List[dict
         logger.warning(f"accessibility.pa11y: failed to launch pa11y for {url}: {exc}")
         return []
 
-    # pa11y exits non-zero when it finds errors — that's expected, not a failure.
-    # A genuinely broken run (crash, bad URL, no Chrome) produces no parseable JSON at all.
+    # pa11y exits non-zero when it finds issues; only unparseable output is a real failure.
     try:
         issues = json.loads(stdout.decode("utf-8", errors="ignore") or "[]")
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
@@ -90,7 +68,7 @@ async def run_pa11y(url: str, timeout: float = RUN_TIMEOUT_SECONDS) -> List[dict
 
 
 def check_pa11y_issues(issues: Optional[List[dict]]) -> List[dict]:
-    """Turns pa11y's raw JSON issue list into our finding shape."""
+    """Converts pa11y's JSON issues into findings."""
     if not issues:
         return []
 

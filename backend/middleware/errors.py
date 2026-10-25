@@ -1,16 +1,6 @@
 """
-middleware/errors.py
-
-Exception handlers -> the `{ success, error }` JSON shape
-assets/js/api.js's callers already expect (see main.py's original
-validation/unhandled handlers, moved here unchanged) — plus the one gap
-those two didn't cover: a plain `HTTPException` (`raise HTTPException(...,
-detail="...")`, which is how almost every route in api/ reports a 404/
-401/409/etc.) fell through to FastAPI's default `{"detail": "..."}`
-body instead of the same shape. That's fixed here without touching any
-of the ~40 call sites that raise HTTPException across api/ and
-services/ — they keep using `detail=`, this handler just re-shapes the
-response.
+Turns every error into the {success, error} JSON the frontend expects,
+including plain HTTPException(detail=...) from routes.
 """
 
 from fastapi import FastAPI, HTTPException, Request, status
@@ -24,9 +14,7 @@ from config.logging import logger
 
 
 def _request_id(request: Request) -> str | None:
-    # Set by middleware/logging.py; may be absent if that middleware
-    # hasn't run yet (e.g. an error raised by another middleware ahead
-    # of it in the stack), so this stays optional rather than required.
+    # Set by middleware/logging.py; may be missing if an earlier layer failed.
     return getattr(request.state, "request_id", None)
 
 
@@ -34,16 +22,14 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
         logger.warning(f"Validation error on {request.url.path}: {exc.errors()}")
-        # exc.errors() can carry the raw exception object under "ctx" (any
-        # field_validator that raises ValueError), which JSONResponse can't
-        # serialise — that turned every validation message into a 500.
+        # Drop "ctx" (it can hold an exception object, which can't be turned into JSON).
         details = [
             {k: v for k, v in err.items() if k != "ctx"} | (
                 {"ctx": {ck: str(cv) for ck, cv in err["ctx"].items()}} if isinstance(err.get("ctx"), dict) else {}
             )
             for err in exc.errors()
         ]
-        # Show the person the actual reason, e.g. "Please provide a valid website URL."
+        # Show the actual reason, e.g. "Please provide a valid website URL."
         first = details[0].get("msg", "") if details else ""
         message = first.removeprefix("Value error, ") if first else "Validation failed"
         return JSONResponse(
@@ -59,9 +45,7 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(HTTPException)
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
-        # 4xx from an expected/handled condition (not found, unauthenticated,
-        # conflict, ...) — routes already chose the right status/detail, this
-        # only wraps it in the shape the frontend understands.
+        # Expected 4xx errors: just wrap them in the frontend's format.
         if exc.status_code >= 500:
             logger.error(f"{request.method} {request.url.path} -> {exc.status_code}: {exc.detail}")
         return JSONResponse(

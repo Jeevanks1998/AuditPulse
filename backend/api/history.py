@@ -1,17 +1,6 @@
 """
-api/history.py
-
-Two related but distinct views, both backed by services.history_service:
-
-  * `/history/` etc. — the audit-run history behind history.html: search
-    by hostname/label (mirrors historySearchInput in assets/js/history.js),
-    paginate, fetch or delete a single record.
-
-  * `/history/activity` — a broader account-activity feed (logins, audits
-    started/completed, settings changes, schedule runs, ...). Additive:
-    the frontend doesn't call this yet, but it gives a single place to
-    show "everything that happened on this account" beyond just audit
-    runs.
+Audit history (search, paginate, view, delete) and an account activity feed.
+Logic lives in services.history_service.
 """
 
 from typing import Optional

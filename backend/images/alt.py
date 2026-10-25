@@ -1,15 +1,5 @@
 """
-images/alt.py
-
-Context-appropriateness checks for alt text, distinct from
-seo/alt_text.py's presence/length/filename checks: redundant phrasing
-that screen readers already announce for free ("image of...", "photo
-of..." — screen readers already say "image" or "graphic" before
-reading alt text, so restating it is noise), and a linked image with
-no visible link text where the alt text duplicates the link's own
-destination context rather than describing the image itself. Reads
-crawler.parser.ParsedPage.image_tags, the same <img> tag list
-seo/alt_text.py uses.
+Alt text quality: redundant "image of..." wording, and icons inside links that already have text.
 """
 
 from __future__ import annotations
@@ -65,18 +55,12 @@ def _check_redundant_phrasing(page: ParsedPage, images: list) -> List[dict]:
 
 
 def _check_decorative_icon_in_labeled_link(page: ParsedPage) -> List[dict]:
-    """
-    An <img> inside an <a> that already has other visible text doesn't
-    need its own descriptive alt — the link text already tells a
-    screen reader where the link goes, so a separately-worded alt on
-    the icon is usually redundant with (and can even contradict) the
-    link's own accessible name.
-    """
+    """An image in a link that already has text doesn't need its own descriptive alt."""
     offenders = []
     for link in page.soup.find_all("a"):
         visible_text = link.get_text(strip=True)
         if not visible_text:
-            continue  # icon-only link: the img's alt is the link's only accessible name, leave it
+            continue  # icon-only link: the alt is the link's only name
         for img in link.find_all("img"):
             alt = (img.get("alt") or "").strip()
             if alt and alt.lower() not in visible_text.lower() and len(alt) > 3:

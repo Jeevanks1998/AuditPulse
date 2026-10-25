@@ -1,24 +1,7 @@
 """
-scheduler/reminders.py
-
-The two notification toggles settings.html exposes but nothing in the
-API currently acts on: User.notify_weekly_summary ("Weekly summary" of
-audit activity) and User.notify_critical_issue (alert as soon as an
-audit turns up a critical finding). User.notify_audit_completed is left
-alone here — that one fires per-audit, right when
-services.audit_service.run_audit_pipeline finishes, so it belongs as a
-follow-up next to workers.audit_worker's own completion handling rather
-than a periodic job; see workers/audit_worker.py's docstring for where
-that hook lives.
-
-There's no SMTP/SendGrid/etc. integration anywhere else in this project
-(see config/settings.py — no MAIL_* settings), so `_deliver` below is a
-placeholder the same way services.audit_service's
-`_write_consent_result` / `_write_analytics_result` are: it logs the
-notification and records it on the user's activity feed (models/history)
-so the *behavior* (who gets notified, when, with what content) is fully
-wired up and testable, and swapping the delivery mechanism for a real
-email provider later is a one-function change.
+Weekly summary and critical-issue notifications (settings page toggles).
+_deliver() currently logs the message and adds it to the activity feed;
+plug in real email delivery there.
 """
 
 import asyncio
@@ -32,14 +15,9 @@ WEEKLY_SUMMARY_EVENT = "weekly_summary_sent"
 CRITICAL_ISSUE_EVENT = "critical_issue_alert_sent"
 
 
-# --------------------------------------------------------------------------
-# Delivery placeholder
-# --------------------------------------------------------------------------
+# Delivery
 async def _deliver(db, user, event_type: str, subject: str, body: str, audit_id: Optional[int] = None) -> None:
-    """Stands in for a real email/push send. Logs the notification and
-    appends a History row so it shows up on the account activity feed
-    and is inspectable/testable without a mail server.
-    """
+    """Logs the notification and adds a History row (stand-in for a real send)."""
     from models.history import log_event
 
     logger.info(f"[reminders] -> {user.email}: {subject}")
@@ -48,9 +26,7 @@ async def _deliver(db, user, event_type: str, subject: str, body: str, audit_id:
     await log_event(db, user.id, event_type, description=subject, audit_id=audit_id, meta={"body": body})
 
 
-# --------------------------------------------------------------------------
-# Weekly summary — beat-scheduled (scheduler/cron.py: "send-weekly-summaries")
-# --------------------------------------------------------------------------
+# Weekly summary (timed, see cron.py)
 @celery_app.task(name="scheduler.reminders.send_weekly_summaries_task")
 def send_weekly_summaries_task() -> dict:
     logger.info("[reminders] sending weekly summaries")
@@ -93,10 +69,7 @@ async def _send_weekly_summaries_async() -> dict:
     return {"sent": len(sent_user_ids), "user_ids": sent_user_ids}
 
 
-# --------------------------------------------------------------------------
-# Critical issue alert — triggered right after an audit completes (see
-# workers/audit_worker.py's post-pipeline hook), not on a timer.
-# --------------------------------------------------------------------------
+# Critical issue alert (runs after an audit completes, not on a timer)
 @celery_app.task(name="scheduler.reminders.notify_critical_issues_task")
 def notify_critical_issues_task(audit_id: int) -> dict:
     result = run_async(_notify_critical_issues_async(audit_id))

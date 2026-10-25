@@ -1,24 +1,11 @@
 """
-journey/journey_mapper.py
-
-Builds the Customer Journey Map purely from what journey_scanner discovered
-and journey_interactions tested — no assumed pages, steps or funnels.
-
-Three views of the same data:
-
-  site_tree   pages as discovered (homepage → pages it links to → …), each
-              with its interaction counts, built from the real "found via
-              link X on page Y" relationships
-  graph       nodes (pages + key interactions) and edges (page→page links,
-              page→interaction, interaction→destination page / form)
-  journeys    for every conversion-type interaction: the shortest discovered
-              path from the start page to it, then where it leads, e.g.
-
-                  Homepage → Services → Product → [CTA] Request quote
-                           → Quote → [Form] Quote form → [Form Submit] Send
-
-Every node carries: page, interaction, interaction type, test status,
-tracking status, screenshot, evidence text and issue ids (QA fills those).
+Builds the Journey Map only from what was found and tested:
+  site_tree - pages as discovered, with interaction counts
+  graph     - pages and key interactions, and the links between them
+  journeys  - for each conversion: the shortest found path to it and where it
+              leads, e.g. Homepage -> Product -> [CTA] Request quote -> [Form]
+Each node has the page, interaction, test status, tracking status,
+screenshot, evidence and issue ids.
 """
 
 from __future__ import annotations
@@ -90,7 +77,7 @@ def _interaction_node(it: Interaction) -> dict:
 
 
 def _is_gap(node: Optional[dict]) -> bool:
-    """A tracking gap = the interaction worked when tested, but no analytics event was seen."""
+    """Tracking gap: the interaction worked but no analytics event was seen."""
     return bool(node) and node.get("kind") == "interaction" and node.get("test_status") == "success" \
         and node.get("tracking_status") == "not_tracked"
 
@@ -104,8 +91,7 @@ def build_journey_map(
     page_by_url = {normalize_url(p.url): p for p in pages}
     page_nodes = {f"page:{u}": _page_node(p, page_shots, interactions) for u, p in page_by_url.items()}
 
-    # Key interactions: conversion-type, forms, and anything actually tested
-    # (repeats of the same element on other pages are folded into the first).
+    # Key interactions: conversions, forms and anything tested (repeats merged).
     key_interactions = [i for i in interactions
                         if i.duplicate_of is None and (i.classification in CONVERSION_CLASSES or i.classification == FORM
                                                        or i.tested)]
@@ -141,7 +127,7 @@ def build_journey_map(
         if target:
             edge(nid, f"page:{target}", "leads_to")
 
-    # --- site tree (discovered parent → child) ---------------------------------
+    # Site tree
     children: Dict[Optional[str], List[str]] = {}
     for nid, n in page_nodes.items():
         children.setdefault(n["parent"], []).append(nid)
@@ -159,7 +145,7 @@ def build_journey_map(
     roots = [root_id] if root_id in page_nodes else [k for k in children.get(None, [])]
     site_tree = [tree(r) for r in roots]
 
-    # --- conversion journeys ---------------------------------------------------
+    # Conversion journeys
     def page_chain(url: str) -> List[str]:
         chain, cur, guard = [], page_by_url.get(normalize_url(url)), 0
         while cur is not None and guard < 10:
@@ -200,7 +186,7 @@ def build_journey_map(
             "tested": all(int_nodes.get(s, {}).get("test_status") in ("success", "skipped") for s in steps if s.startswith("int:")),
         })
 
-    # Forms reached directly (not behind a discovered CTA) are journeys too.
+    # Forms reached directly (not via a CTA) are journeys too.
     covered = {s for j in journeys for s in j["steps"]}
     for page_url, forms in forms_by_page.items():
         for f in forms:

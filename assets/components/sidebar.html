@@ -1,17 +1,6 @@
-<!-- ==========================================================================
-     components/sidebar.html
-     Authenticated app-shell left nav. Identical on every logged-in page
-     (dashboard.html, audit.html, report.html, settings.html, history.html) —
-     the "is-active" state is NOT hardcoded here. app.js's highlightActiveNav()
-     adds .is-active automatically by comparing each link's href against the
-     current URL, so this one file is safe to reuse unmodified everywhere.
-
-     Optional loader: assets/js/include.js → Components.include('sidebar')
-     After a fetch-based include, re-run:
-       app.js: highlightActiveNav(), initSidebar()
-     (the six pages currently ship this markup inline instead, precisely to
-     avoid that extra wiring — see components/README.md)
-     ========================================================================== -->
+<!-- App sidebar, the same on every signed-in page. app.js marks the current link
+     as active. After loading with Components.include('sidebar'), call
+     highlightActiveNav() and initSidebar() (pages currently include it inline). -->
 <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 <aside class="sidebar" id="sidebar">
   <div class="sidebar__logo">

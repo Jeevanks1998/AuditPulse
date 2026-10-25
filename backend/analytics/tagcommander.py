@@ -1,15 +1,6 @@
 """
-analytics/tagcommander.py
-
-Detects TagCommander / Commanders Act (now part of Commanders Act's
-"TC" product line). The loader script is served from
-cdn.tagcommander.com (or a client-specific CNAME) as
-`tc_<container>_<version>.js`, and sites typically also expose a
-`tc_vars` object (declared before the loader) and/or a global `tC`
-event API used for manual tag firing.
-
-Reads crawler.parser.ParsedPage.soup directly, same as the other
-analytics/* modules.
+Detects TagCommander / Commanders Act: tc_<container>_<version>.js loaders,
+the tc_vars object and the tC event API.
 """
 
 from __future__ import annotations
@@ -23,8 +14,7 @@ from crawler.parser import ParsedPage
 MODULE = "analytics"
 CATEGORY = "tagcommander"
 
-# e.g. https://cdn.tagcommander.com/1234/tc_MySite_5.js
-# or a client CNAME like tags.client.com/.../tc_MySite_5.js
+# e.g. https://cdn.tagcommander.com/1234/tc_MySite_5.js or a client domain
 TC_SRC_RE = re.compile(
     r"(?:tagcommander\.com|/tc_)[^\"'\s]*?tc_([\w-]+)_(\d+)\.js",
     re.IGNORECASE,
@@ -45,7 +35,7 @@ class TagCommanderDetection:
 
 
 def detect_tagcommander(page: ParsedPage) -> TagCommanderDetection:
-    """Scans this page's <script> tags for TagCommander/Commanders Act signals."""
+    """Looks for TagCommander in the page's scripts."""
     result = TagCommanderDetection()
     container_ids: List[str] = []
     account_ids: List[str] = []
@@ -80,7 +70,7 @@ def detect_tagcommander(page: ParsedPage) -> TagCommanderDetection:
 
 
 def check_tagcommander(page: ParsedPage) -> List[dict]:
-    """Findings for TagCommander configuration issues. Absence is not itself a finding."""
+    """Findings for TagCommander problems. No TagCommander is not a finding."""
     detection = detect_tagcommander(page)
     findings: List[dict] = []
 

@@ -1,13 +1,5 @@
 """
-crawler/screenshots.py
-
-Full-page screenshot capture used by the report/PDF export flow
-(services.report_service) to embed a visual of the audited page.
-Playwright plus its browser binaries is a heavy, optional dependency
-(see the note in requirements.txt) — every entry point here degrades to
-returning None rather than raising when the package isn't installed or
-`playwright install` hasn't been run, so a missing browser binary can
-never take down the rest of the audit pipeline.
+Full-page screenshots for reports. Returns None if the browser isn't available.
 """
 
 from __future__ import annotations
@@ -30,9 +22,9 @@ def _screenshot_dir() -> Path:
 
 
 def _safe_filename(hint: str) -> str:
-    """Collapses a URL/label into a filesystem-safe filename stem."""
+    """Turns a URL/label into a safe file name."""
     stem = _SAFE_NAME_RE.sub("_", hint).strip("_") or "page"
-    return stem[:150]  # keep well under filesystem path-length limits
+    return stem[:150]  # stay under path-length limits
 
 
 async def capture_screenshot(
@@ -41,11 +33,7 @@ async def capture_screenshot(
     full_page: bool = True,
     viewport: Optional[dict] = None,
 ) -> Optional[str]:
-    """
-    Captures a screenshot of `url` and returns the path it was written to,
-    or None if Playwright isn't available or the capture failed for any
-    reason (navigation timeout, DNS failure, crashed page, etc).
-    """
+    """Screenshots `url` and returns the file path, or None on any failure."""
     try:
         from playwright.async_api import async_playwright
     except ImportError:
@@ -72,11 +60,7 @@ async def capture_screenshot(
 
 
 async def capture_screenshots(urls_and_hints: list[tuple[str, str]]) -> dict[str, Optional[str]]:
-    """
-    Convenience batch helper: {url: path_or_None} for a handful of pages
-    (e.g. the homepage plus a couple of key pages in a full-site audit,
-    rather than every crawled page).
-    """
+    """{url: path or None} for a few pages."""
     results: dict[str, Optional[str]] = {}
     for url, hint in urls_and_hints:
         results[url] = await capture_screenshot(url, hint)

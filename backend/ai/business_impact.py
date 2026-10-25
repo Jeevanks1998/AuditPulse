@@ -1,16 +1,8 @@
 """
-ai/business_impact.py
+Turns technical findings into business impact (trust, conversions, legal risk).
 
-Translates technical findings into the language a business stakeholder
-reads a report for: not "missing Referrer-Policy header" but what that
-costs the business (trust, conversions, legal exposure) if left unfixed.
-Feeds reports/generator.py's `business_impact` field, shown alongside the
-raw findings list rather than replacing it — report.html still needs the
-technical detail for whoever actually implements the fix.
-
-Same fallback contract as the rest of ai/: never raises out of
-`generate_business_impact`, falls back to a deterministic template keyed
-off each finding's module when the provider is unavailable or fails.
+Shown next to the findings, not instead of them. If the AI is unavailable,
+a fixed template per module is used, so this never fails an audit.
 """
 
 from __future__ import annotations
@@ -22,7 +14,7 @@ from ai.provider import AIProviderError, call_ai_json
 
 MAX_IMPACT_ITEMS = 5
 
-# Used by the heuristic fallback to phrase impact without an AI call.
+# Fallback wording per module.
 _MODULE_IMPACT_TEMPLATES: Dict[str, str] = {
     "consent": "Non-compliant consent handling carries regulatory (GDPR/CCPA) risk and fines.",
     "analytics": "Gaps in tracking mean decisions get made on incomplete or wrong data.",
@@ -36,11 +28,7 @@ async def generate_business_impact(
     breakdown: Dict[str, int],
     findings: Optional[List[dict]] = None,
 ) -> List[dict]:
-    """
-    Returns up to MAX_IMPACT_ITEMS dicts of shape
-    {title, impact, affected_area, severity} — one per notable finding,
-    written for a business (not technical) reader.
-    """
+    """Returns up to MAX_IMPACT_ITEMS {title, impact, affected_area, severity} items for business readers."""
     findings = findings or []
     try:
         return await _impact_from_ai(url, breakdown, findings)
@@ -49,9 +37,7 @@ async def generate_business_impact(
         return _heuristic_impact(findings)
 
 
-# --------------------------------------------------------------------------
-# AI-backed path
-# --------------------------------------------------------------------------
+# AI path
 async def _impact_from_ai(url: str, breakdown: Dict[str, int], findings: List[dict]) -> List[dict]:
     notable = [f for f in findings if f.get("severity") in ("critical", "warning")][:10]
     if not notable:
@@ -87,9 +73,7 @@ def _impact_item(item: dict) -> dict:
     }
 
 
-# --------------------------------------------------------------------------
-# Heuristic fallback
-# --------------------------------------------------------------------------
+# Fallback
 def _heuristic_impact(findings: List[dict]) -> List[dict]:
     notable = [f for f in findings if f.get("severity") in ("critical", "warning")][:MAX_IMPACT_ITEMS]
     impacts = []

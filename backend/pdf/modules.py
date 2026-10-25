@@ -1,11 +1,7 @@
 """
-pdf/modules.py
-
-One section per audited module — Consent, Analytics, Customer Journey.
-Each opens with a coloured banner (icon, plain-language "what this
-checks", module score), then shows the evidence as short, light tables
-with Pass / Fail labels instead of raw dumps. Long lists are capped here;
-the appendix carries the full detail.
+One section per module (Consent, Analytics, Journey Map, Cookies): a banner
+with what it checks and the score, then short Pass/Fail tables. Long lists
+are capped; the appendix has everything.
 """
 
 from __future__ import annotations
@@ -59,9 +55,7 @@ MAX_ROWS = 12
 
 
 def screenshot_url_to_path(url: Optional[str]) -> Optional[str]:
-    """A "/screenshots/..." URL -> the file on disk. Journey shots live in
-    sub-folders (/screenshots/journey/<scan>/<page>/x.png), so try the full
-    relative path first, then the flat basename layout consent uses."""
+    """"/screenshots/..." URL -> file on disk (journey shots are in sub-folders)."""
     if not url:
         return None
     from pathlib import Path
@@ -150,12 +144,10 @@ def _check_tiles(tiles: List[dict], cols: int = 3) -> Table:
 def _shot(url: Optional[str], caption: str, width: float, crop: Optional[float] = 0.62):
     path = screenshot_url_to_path(url) if url else None
     img = load_image(path, width - 4 * mm, 62 * mm, crop_aspect=crop)
-    return framed_image(img, caption, width, missing_height=34 * mm)  # caption: already-escaped markup
+    return framed_image(img, caption, width, missing_height=34 * mm)  # caption is already escaped
 
 
-# --------------------------------------------------------------------------
 # Consent
-# --------------------------------------------------------------------------
 _NET_VERDICT = {
     "tracking": ("Tracking", ERROR_TEXT, ERROR_SOFT),
     "infrastructure": ("Not tracking", SUCCESS_TEXT, SUCCESS_SOFT),
@@ -263,9 +255,7 @@ def build_consent_section(payload: ReportPayload) -> List[Flowable]:
     return story
 
 
-# --------------------------------------------------------------------------
 # Analytics
-# --------------------------------------------------------------------------
 _CATEGORY_LABELS = {"ANALYTICS": "Analytics", "ADVERTISING": "Advertising", "TAG_MANAGER": "Tag manager",
                     "SOCIAL": "Social", "CMP": "Consent tool"}
 _PHASE_LABELS = {"load": "page load", "scroll": "scroll", "click": "click"}
@@ -362,9 +352,7 @@ def build_analytics_section(payload: ReportPayload) -> List[Flowable]:
     return story
 
 
-# --------------------------------------------------------------------------
-# Customer Journey
-# --------------------------------------------------------------------------
+# Journey Map
 def _rate_rows(rates: dict) -> List[Flowable]:
     items = [("Interaction success", rates.get("success_rate")),
              ("Analytics coverage", rates.get("conversion_tracking_coverage")),
@@ -413,7 +401,7 @@ def build_journey_section(payload: ReportPayload) -> List[Flowable]:
     story.append(_check_tiles(tiles))
     ov = jv.get("overview") or {}
     if ov.get("headline"):
-        # Same plain-language summary as the web report.
+        # Same summary as the web report.
         story.append(Spacer(1, 3 * mm))
         story.append(Paragraph(f"<b>{esc(ov['headline'])}</b>", STYLES["Body"]))
         lines = [f"• {esc(d)}" for d in ov.get("did") or []]
@@ -530,7 +518,7 @@ def _val(jv: dict, key: str) -> int:
     return int(((jv.get("tracking") or {}).get("validation") or {}).get(key) or 0)
 
 
-# The Journey Map's analytics statuses (same words as the web report).
+# Journey Map tracking statuses (same words as the web report).
 _ANALYTICS_PILLS = {
     "analytics_hit": ("Analytics Hit Detected", SUCCESS_TEXT, SUCCESS_SOFT),
     "datalayer": ("DataLayer Event Detected", INFO_TEXT, INFO_SOFT),
@@ -556,7 +544,7 @@ MAX_JOURNEY_PATHS = 8
 
 
 def _journey_paths(jv: dict) -> List[Flowable]:
-    """The discovered journey paths, most critical first (as the web report)."""
+    """Journey paths, most critical first."""
     journeys = ((jv.get("map") or {}).get("journeys")) or []
     nodes = (jv.get("map") or {}).get("nodes") or {}
     out = _h2("Discovered journey paths",
@@ -622,7 +610,7 @@ MAX_INTERACTION_SHOTS = 8
 
 
 def _grid_with_heading(heading: List[Flowable], cells: List[Table]) -> List[Flowable]:
-    """Heading kept on the same page as the first row of screenshots."""
+    """Keep the heading on the same page as the first row of screenshots."""
     out: List[Flowable] = [KeepTogether(heading + [image_grid(cells[:2], W, cols=2)])]
     for i in range(2, len(cells), 2):
         out.append(image_grid(cells[i:i + 2], W, cols=2))
@@ -630,15 +618,9 @@ def _grid_with_heading(heading: List[Flowable], cells: List[Table]) -> List[Flow
 
 
 def _journey_screenshots(jv: dict, broken: List[dict], gaps: List[dict]) -> List[Flowable]:
-    """Screenshots for the Customer Journey section:
-
-    * the pages the scan visited (top of each page), and
-    * the tested buttons / links / forms / downloads with the element
-      outlined — problems first (didn't work, not tracked), then ones
-      that worked and were tracked.
-
-    Only screenshots that are still on disk are shown; if none are, one
-    note explains why instead of a wall of empty boxes."""
+    """Journey screenshots: visited pages, then tested elements (problems first).
+    Only screenshots still on disk are shown; otherwise one note explains why.
+    """
     cw = (W - 4 * mm) / 2
     story: List[Flowable] = []
 
@@ -696,10 +678,7 @@ def _journey_screenshots(jv: dict, broken: List[dict], gaps: List[dict]) -> List
     return story
 
 
-
-# --------------------------------------------------------------------------
 # Cookie Scanner
-# --------------------------------------------------------------------------
 _COOKIE_ROWS = 40
 
 

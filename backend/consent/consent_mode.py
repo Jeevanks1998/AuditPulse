@@ -1,21 +1,8 @@
 """
-consent/consent_mode.py
-
-Detects Google Consent Mode (v2) signals: the `gtag('consent',
-'default', {...})` call that must fire *before* any Google tag (GA4,
-Ads, Floodlight) loads, and the later `gtag('consent', 'update', ...)`
-call a CMP fires once the visitor actually answers the banner. Follows
-the exact same regex-over-<script>-text technique as
-analytics/ga4.py/gtm.py — this package deliberately doesn't duplicate
-analytics/ga4.py's own detection, it only looks at the consent-specific
-calls those files don't check.
-
-Consent Mode v2 (2024+) requires two additional parameters —
-`ad_user_data` and `ad_personalization` — on top of v1's four
-(`ad_storage`, `analytics_storage`, `functionality_storage`,
-`personalization_storage`); sites still missing them are running the
-deprecated v1 shape, which Google has said will lose EEA ad-personalization
-features.
+Detects Google Consent Mode: the gtag('consent', 'default', ...) call that
+must run before Google tags load, and the later 'update' call.
+Version 2 adds ad_user_data and ad_personalization; pages without them are
+on the old version.
 """
 
 from __future__ import annotations
@@ -43,7 +30,7 @@ V2_ONLY_PARAMS = {"ad_user_data", "ad_personalization"}
 class ConsentModeDetection:
     default_call_found: bool = False
     update_call_found: bool = False
-    default_params: Dict[str, str] = field(default_factory=dict)  # param -> "granted"|"denied"
+    default_params: Dict[str, str] = field(default_factory=dict)  # param -> "granted" | "denied"
     is_v2: bool = False
 
 
@@ -69,13 +56,7 @@ def detect_consent_mode(page: ParsedPage) -> ConsentModeDetection:
 
 
 def check_consent_mode(page: ParsedPage, analytics_detected: bool = False) -> List[dict]:
-    """
-    `analytics_detected` — pass analytics.detect_ga4(page).detected /
-    detect_gtm(page).detected from the analytics/ package when
-    available, so the "missing entirely" finding only fires on pages
-    that actually load a Google tag; consent mode is meaningless
-    without one.
-    """
+    """Findings for Consent Mode. Pass analytics_detected so "missing" only fires on pages with a Google tag."""
     detection = detect_consent_mode(page)
     findings: List[dict] = []
 

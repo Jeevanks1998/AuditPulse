@@ -1,15 +1,6 @@
 """
-models/issue.py
-
-Issue normalizes Audit.findings (a denormalized JSON list, kept for fast
-report reads) into real rows so findings can be queried, filtered, and
-tracked across their lifecycle independently of the audit that produced
-them — e.g. "show me every open critical accessibility issue across all
-my sites" or "mark this finding as resolved / ignored".
-
-`sync_issues_from_findings` is the one place that keeps the two
-representations (Audit.findings JSON <-> Issue rows) in agreement; it's
-called by the audit pipeline right after findings are generated.
+One row per finding, so findings can be queried and tracked.
+sync_issues_from_findings() keeps them in line with Audit.findings.
 """
 
 from datetime import datetime, timezone
@@ -58,9 +49,7 @@ class Issue(Base):
     )
     resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    # ----------------------------------------------------------------
     # Relationships
-    # ----------------------------------------------------------------
     audit: Mapped["Audit"] = relationship("Audit", back_populates="issues")
 
     def __repr__(self) -> str:  # pragma: no cover
@@ -68,15 +57,8 @@ class Issue(Base):
 
 
 async def sync_issues_from_findings(db: AsyncSession, audit: "Audit", findings: List[dict]) -> None:
-    """
-    Replace an audit's Issue rows with the current `findings` JSON list.
-    Called once, right after the pipeline finalizes an audit's findings,
-    so the normalized table always matches what report.py / history
-    surface from Audit.findings.
-    """
-    # NOTE: don't touch `audit.issues` here (lazy-loaded relationship) — in
-    # an async engine that triggers implicit IO outside of a greenlet and
-    # raises `sqlalchemy.exc.MissingGreenlet`. Query explicitly instead.
+    """Replaces an audit's Issue rows with its current findings."""
+    # Don't use audit.issues here (lazy loading fails in async code); query instead.
     existing_issues = (
         await db.execute(select(Issue).where(Issue.audit_id == audit.id))
     ).scalars().all()

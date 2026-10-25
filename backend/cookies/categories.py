@@ -1,35 +1,14 @@
 """
-cookies/categories.py
+Classifies a cookie by name (and domain):
+  essential          - sessions, CSRF tokens, load balancing, bot protection
+  functional         - visitor preferences (language, currency, theme)
+  analytics          - measurement
+  marketing          - advertising, retargeting, social pixels
+  consent_management - the consent tool storing the visitor's choice
+  unknown            - not recognised
 
-Central cookie classifier. Classifies a single cookie name (optionally
-with its domain) into one of the buckets a consent banner is supposed to
-let a visitor opt in/out of independently:
-
-    essential           — strictly necessary: sessions, CSRF/XSRF tokens,
-                          load balancing, bot/fraud protection
-    functional          — preferences the visitor asked for (language,
-                          currency, theme)
-    analytics           — measurement / audience statistics
-    marketing           — advertising, retargeting, social pixels
-    consent_management  — the CMP's own storage of the visitor's choice
-                          (OptanonConsent, CookieConsent, euconsent-v2…)
-    unknown             — nothing in the lookup tables recognized it
-
-`consent_management` is deliberately its own bucket rather than being
-folded into "essential": a report should be able to say
-"OptanonConsent — Consent Management" rather than
-"OptanonConsent — Strictly Necessary", and a CMP storing the visitor's
-choice is never evidence of a consent failure.
-
-`unknown` stays `unknown`. An unrecognized cookie is *not* treated as
-non-essential automatically — a wrong guess here (calling a session
-cookie "marketing", or a marketing cookie "essential") is worse than
-admitting we don't know. Callers that need a yes/no answer should use
-`requires_consent()` (True only for analytics/marketing) and report
-unknown cookies separately as "needs review" evidence.
-
-Lookup-table + pattern approach, no inference from cookie *values* —
-same as every other static detector in this codebase.
+Unknown stays unknown (a wrong guess is worse); report it as "needs review".
+requires_consent() is True only for analytics and marketing.
 """
 
 from __future__ import annotations
@@ -47,14 +26,10 @@ UNKNOWN = "unknown"
 
 CATEGORIES = (ESSENTIAL, FUNCTIONAL, ANALYTICS, MARKETING, CONSENT_MANAGEMENT, UNKNOWN)
 
-# Categories whose presence *before consent* is real evidence of a
-# consent failure. Everything else is either allowed pre-consent
-# (essential, consent_management), a judgement call (functional), or not
-# known well enough to accuse anyone of anything (unknown).
+# Categories whose presence before consent is a real consent failure.
 CONSENT_REQUIRED_CATEGORIES = frozenset({ANALYTICS, MARKETING})
 
-# Purposes — a finer-grained "why is this cookie here" label carried as
-# evidence alongside the category (e.g. ESSENTIAL + "security").
+# Purpose: a finer "why is this cookie here" label shown with the category.
 PURPOSE_SESSION = "session"
 PURPOSE_SECURITY = "security"            # CSRF/XSRF tokens
 PURPOSE_LOAD_BALANCING = "load_balancing"
@@ -78,9 +53,7 @@ class CookieClassification:
         return self.category in CONSENT_REQUIRED_CATEGORIES
 
 
-# --------------------------------------------------------------------------
-# Exact names (lower-cased) -> (category, purpose, vendor)
-# --------------------------------------------------------------------------
+# Exact names (lower case) -> (category, purpose, vendor)
 _EXACT_NAME_RULES = {
     # --- essential: sessions ---
     "session": (ESSENTIAL, PURPOSE_SESSION, None),
@@ -126,7 +99,7 @@ _EXACT_NAME_RULES = {
     "_abck": (ESSENTIAL, PURPOSE_BOT_PROTECTION, "Akamai"),
     "datadome": (ESSENTIAL, PURPOSE_BOT_PROTECTION, "DataDome"),
 
-    # --- consent management: the CMP's own storage of the visitor's choice ---
+    # --- consent management: the consent tool's own storage ---
     "optanonconsent": (CONSENT_MANAGEMENT, PURPOSE_CONSENT_STORAGE, "OneTrust"),
     "optanonalertboxclosed": (CONSENT_MANAGEMENT, PURPOSE_CONSENT_STORAGE, "OneTrust"),
     "otgppconsent": (CONSENT_MANAGEMENT, PURPOSE_CONSENT_STORAGE, "OneTrust"),
@@ -214,8 +187,7 @@ _EXACT_NAME_RULES = {
     "_pin_unauth": (MARKETING, PURPOSE_ADVERTISING, "Pinterest"),
 }
 
-# (regex, category, purpose, vendor) for names with variable suffixes —
-# checked in order, first match wins.
+# (regex, category, purpose, vendor) for names with variable parts; first match wins.
 _PATTERN_RULES = [
     # consent management families
     (re.compile(r"^cookieyes-"), CONSENT_MANAGEMENT, PURPOSE_CONSENT_STORAGE, "CookieYes"),
@@ -300,8 +272,7 @@ _PATTERN_RULES = [
     (re.compile(r"^wp-settings"), FUNCTIONAL, PURPOSE_PREFERENCES, "WordPress"),
 ]
 
-# Domains whose cookies are near-certainly one category regardless of
-# the exact cookie name.
+# Domains whose cookies are almost always one category.
 _DOMAIN_HINTS = [
     (re.compile(r"(^|\.)doubleclick\.net$"), MARKETING, PURPOSE_ADVERTISING, "Google DoubleClick"),
     (re.compile(r"(^|\.)googlesyndication\.com$"), MARKETING, PURPOSE_ADVERTISING, "Google AdSense"),
@@ -357,11 +328,7 @@ PURPOSE_DISPLAY_NAMES = {
 
 
 def classify_cookie(name: str, domain: Optional[str] = None) -> CookieClassification:
-    """
-    Full classification of one cookie: category, purpose, vendor and how
-    it was matched. Precedence: exact name, name pattern, domain hint,
-    then UNKNOWN. Case-insensitive on name and domain.
-    """
+    """Category, purpose and vendor for one cookie. Order: exact name, name pattern, domain, then unknown."""
     key = (name or "").strip().lower()
     if not key:
         return CookieClassification(UNKNOWN, PURPOSE_UNKNOWN)
@@ -384,12 +351,12 @@ def classify_cookie(name: str, domain: Optional[str] = None) -> CookieClassifica
 
 
 def categorize_cookie(name: str, domain: Optional[str] = None) -> str:
-    """Category only — kept for every existing caller of this module."""
+    """Category only (older callers)."""
     return classify_cookie(name, domain).category
 
 
 def requires_consent(category: str) -> bool:
-    """True only for categories whose pre-consent presence is real evidence of a failure."""
+    """True only for analytics and marketing."""
     return category in CONSENT_REQUIRED_CATEGORIES
 
 

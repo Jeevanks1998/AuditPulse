@@ -1,13 +1,5 @@
 """
-utils/validators.py
-
-Standalone validation helpers for places that need a plain bool/reason
-check rather than a full Pydantic model — inside services, background
-jobs, or CLI scripts (database/seed.py, scheduler/) where request
-bodies (schemas/*.py, already validated by FastAPI on the way in)
-aren't in play. `is_valid_email` deliberately reuses the same
-`email-validator` package pydantic's `EmailStr` (schemas/user.py) is
-built on, so "valid email" means the same thing in both places.
+Simple validation helpers for code outside request handling (services, jobs, scripts).
 """
 
 from __future__ import annotations
@@ -24,10 +16,7 @@ _API_KEY_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 
 
 def is_valid_email(email: str) -> bool:
-    """True if `email` is a syntactically valid, deliverable-looking
-    address. Uses the same `email-validator` package as
-    `schemas.user.UserRegister.email: EmailStr`, so results agree with
-    what the registration endpoint will ultimately accept."""
+    """True for a valid email address (same rules as the API's EmailStr)."""
     if not email:
         return False
     try:
@@ -40,15 +29,7 @@ def is_valid_email(email: str) -> bool:
 
 
 def is_valid_password(password: str, min_length: int = 6) -> Tuple[bool, Optional[str]]:
-    """
-    Matches `schemas.user.UserRegister.password`'s `min_length=6` floor
-    as the hard requirement, then flags (without failing) the common
-    weak-password patterns — callers that want stricter enforcement
-    than the schema check `ok` AND look at `reason`; callers that just
-    want the schema's own floor only need `ok`.
-
-    Returns (is_valid, reason_if_invalid).
-    """
+    """Checks the minimum length and flags common weak passwords. Returns (ok, reason)."""
     if not password or len(password) < min_length:
         return False, f"Password must be at least {min_length} characters."
     if password.isdigit():
@@ -59,17 +40,14 @@ def is_valid_password(password: str, min_length: int = 6) -> Tuple[bool, Optiona
 
 
 def is_valid_hostname(value: str) -> bool:
-    """True for well-formed DNS hostnames (`example.com`, `sub.example.co.uk`),
-    not raw IPs or URLs — use `utils.urls.is_valid_url` for full URLs."""
+    """True for a host name like example.com (not an IP or URL)."""
     if not value or len(value) > 253:
         return False
     return bool(_HOSTNAME_RE.match(value))
 
 
 def is_valid_api_key(value: str) -> bool:
-    """Shape-check for an AuditPulse API key (models.user.User.api_key,
-    generated with `secrets.token_hex(24)` -> 48 hex chars). Doesn't
-    check it exists in the DB — that's `middleware.auth`'s job."""
+    """Checks an API key's format (not whether it exists)."""
     return bool(value) and bool(_API_KEY_RE.match(value))
 
 
@@ -82,12 +60,7 @@ def is_within_length(value: str, min_length: int = 0, max_length: int = 10_000) 
 
 
 def validate_pagination(page: int, page_size: int) -> Tuple[int, int]:
-    """
-    Clamps user-supplied pagination params to sane bounds instead of
-    raising, mirroring `config.constants.DEFAULT_PAGE_SIZE`/`MAX_PAGE_SIZE`
-    (api/history.py and any future paginated list endpoint can call this
-    on raw query params before building the SQL `LIMIT`/`OFFSET`).
-    """
+    """Keeps page and page size within allowed bounds."""
     safe_page = max(1, page)
     if page_size <= 0:
         safe_size = DEFAULT_PAGE_SIZE

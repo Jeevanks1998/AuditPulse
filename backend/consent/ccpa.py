@@ -1,20 +1,7 @@
 """
-consent/ccpa.py
-
-Technical CCPA/CPRA *signals* only:
-
-  - a "Your Privacy Choices" / California-privacy-rights link
-  - a "Do Not Sell or Share My Personal Information" link
-  - whether the page's own JS reads the Global Privacy Control (GPC)
-    signal (navigator.globalPrivacyControl)
-
-This module never decides whether CCPA applies. The architecture is:
-
-    ccpa.py           →  technical CCPA signals      (detect_ccpa_signals)
-    region.py         →  CCPA applicability          (California candidate?)
-    consent_score.py  →  CCPA assessment             (only when applicable)
-
-All checks are static markup/script reads — no live browser needed.
+US (California) privacy signals only: a "Your Privacy Choices" link, a
+"Do Not Sell or Share" link, and whether the page reads the GPC signal.
+Whether CCPA applies is decided in region.py.
 """
 
 from __future__ import annotations
@@ -35,12 +22,7 @@ _PRIVACY_CHOICES_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Best-effort static signal: the page's own JS references the GPC
-# property at all. This can't confirm the read value actually gates
-# anything (that would need a live pass), same caveat as
-# consent/consent_mode.py's declared-default check — see
-# CCPA_CHECK_LABELS["gpc_honored"] wording, which is deliberately
-# phrased as "handling detected" rather than "honored" for this reason.
+# The page's code mentions GPC. Can't prove it's honoured without a live check.
 _GPC_JS_RE = re.compile(r"globalPrivacyControl", re.IGNORECASE)
 
 
@@ -52,7 +34,7 @@ class CcpaLinkDetection:
 
 
 def detect_privacy_choices_link(page: ParsedPage) -> CcpaLinkDetection:
-    """Finds a "Your Privacy Choices"-style link anywhere on the page (commonly footer nav)."""
+    """Finds a "Your Privacy Choices"-style link (usually in the footer)."""
     for tag in page.anchor_tags:
         text = tag.get_text(strip=True) or ""
         if _PRIVACY_CHOICES_RE.search(text):
@@ -61,7 +43,7 @@ def detect_privacy_choices_link(page: ParsedPage) -> CcpaLinkDetection:
 
 
 def detect_gpc_handling(page: ParsedPage) -> bool:
-    """True when any <script>'s text references navigator.globalPrivacyControl."""
+    """True when a script mentions navigator.globalPrivacyControl."""
     for tag in page.soup.find_all("script"):
         body = tag.string or tag.get_text() or ""
         if body and _GPC_JS_RE.search(body):
@@ -73,7 +55,7 @@ _DO_NOT_SELL_RE = re.compile(r"do not sell (or share )?my (personal )?informatio
 
 
 def detect_do_not_sell_link(page: ParsedPage) -> bool:
-    """A "Do Not Sell (or Share) My Personal Information" link anywhere on the page."""
+    """A "Do Not Sell (or Share) My Personal Information" link."""
     for tag in page.anchor_tags:
         if _DO_NOT_SELL_RE.search(tag.get_text(strip=True) or ""):
             return True
@@ -82,7 +64,7 @@ def detect_do_not_sell_link(page: ParsedPage) -> bool:
 
 @dataclass
 class CcpaSignals:
-    """Every technical CCPA signal for one page. Says nothing about applicability."""
+    """All CCPA signals for one page."""
     privacy_choices: CcpaLinkDetection
     do_not_sell_link: bool = False
     gpc_handling: bool = False

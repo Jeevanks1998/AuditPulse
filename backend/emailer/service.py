@@ -1,19 +1,7 @@
 """
-emailer/service.py
-
-The configurable email service requirements §9.4 asks for: builds a
-multipart MIME message (subject/body from emailer.templates, files from
-emailer.attachments) and sends it over SMTP using settings.SMTP_* —
-credentials read from environment/config only, never hardcoded (§14).
-
-`smtplib` is blocking, so the actual send runs in a worker thread via
-`asyncio.to_thread` (the same pattern security/ssl.py already uses for
-its blocking TLS handshake) rather than stalling the event loop.
-
-Never raises on a delivery failure — `send_report_email` always returns
-an `EmailSendOutcome` so the caller (services.report_service) can record
-both the attempt and its result in Email History (§10) regardless of
-outcome.
+Sends report emails over SMTP (settings.SMTP_*, from the environment only).
+Runs smtplib in a thread so it doesn't block. Never raises: always returns
+an outcome so it can be logged in Email History.
 """
 
 from __future__ import annotations
@@ -56,7 +44,7 @@ async def send_report_email(
     pdf_bytes: Optional[bytes] = None,
     poc_name: str = "there",
 ) -> EmailSendOutcome:
-    """Sends the audit report to a POC over SMTP. Always returns an outcome — never raises."""
+    """Emails the report to a POC. Always returns an outcome, never raises."""
     now = datetime.now(timezone.utc)
 
     if not settings.EMAIL_ENABLED:
@@ -87,9 +75,7 @@ async def send_report_email(
         attachments=resolved_attachments,
     )
 
-    # Bcc recipients get the message via the SMTP envelope (RCPT TO) only —
-    # never added to the message's own headers above, or they'd be visible
-    # to every other recipient and stop being blind.
+    # BCC only goes in the SMTP envelope, never in the headers, so it stays hidden.
     envelope_recipients = to + (cc or []) + (bcc or [])
 
     try:
@@ -101,6 +87,22 @@ async def send_report_email(
         )
 
     return EmailSendOutcome(success=True, status="sent", error_message=None, sent_at=now, attached_keys=attached_keys)
+
+
+async def send_plain_email(*, to: List[str], subject: str, body: str) -> EmailSendOutcome:
+    """Short text email with no attachments (e.g. "audit finished"). Never raises."""
+    now = datetime.now(timezone.utc)
+    if not settings.EMAIL_ENABLED:
+        return EmailSendOutcome(False, "failed", "Email sending isn't configured (SMTP_HOST is empty).", now, [])
+    if not to:
+        return EmailSendOutcome(False, "failed", "At least one recipient is required.", now, [])
+    message = _build_mime_message(to=to, cc=[], subject=subject, body=body, attachments=[])
+    try:
+        await asyncio.to_thread(_send_via_smtp, message, to)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"emailer.service: plain email to {', '.join(to)} failed: {exc}")
+        return EmailSendOutcome(False, "failed", str(exc), now, [])
+    return EmailSendOutcome(True, "sent", None, now, [])
 
 
 def _build_mime_message(

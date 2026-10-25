@@ -4,15 +4,8 @@ Revision ID: a1c8e5f42d17
 Revises: f1a9c6d2b834
 Create Date: 2026-09-12 00:00:00.000000
 
-Phase 5 of the AuditPulse Access Portal integration: the portal now
-pushes AuditPulse-specific access (`auditpulse_access`) separately from
-general account status (`is_active`) — see api/access_management.py and
-schemas/access.py's docstrings for why they're two columns instead of
-one. Existing rows backfill to True (mirrors the model's Python-side
-default and today's Phase 3 behaviour, where is_active alone gated
-access) so no currently-working account is locked out the moment this
-migration runs; the very next Access Portal sync will set the real
-per-user value going forward.
+AuditPulse access, separate from is_active. Existing users get True so no
+one is locked out; the next portal sync sets the real value.
 """
 from typing import Sequence, Union
 
@@ -31,10 +24,7 @@ def upgrade() -> None:
         "users",
         sa.Column("auditpulse_access", sa.Boolean(), nullable=False, server_default=sa.true()),
     )
-    # server_default only exists to backfill pre-existing rows; the model
-    # supplies the Python-side default for new rows going forward, same
-    # convention as this codebase's other added columns (see
-    # f1a9c6d2b834_add_users_role_column.py).
+    # server_default only fills existing rows; the model sets the default for new rows.
     with op.batch_alter_table("users") as batch_op:
         batch_op.alter_column("auditpulse_access", server_default=None)
 

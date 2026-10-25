@@ -1,8 +1,4 @@
-/* ==========================================================================
-   modal.js — minimal confirm-dialog utility.
-   Exposed as window.Modal.confirm({ title, body, confirmLabel, cancelLabel,
-   dangerous, onConfirm, onCancel }).
-   ========================================================================== */
+/* Confirm dialog: window.Modal.confirm({ title, body, confirmLabel, cancelLabel, dangerous, onConfirm, onCancel }). */
 
 window.Modal = (function () {
 
@@ -77,11 +73,7 @@ window.Modal = (function () {
     return { close: close };
   }
 
-  // Inject up front, not just on the first confirm(). scheduler.js builds its
-  // own "Schedule an Audit" overlay using these same .modal-overlay /
-  // .modal-dialog classes without ever calling confirm(), so if the styles
-  // only appeared lazily that dialog rendered unstyled at the bottom of the
-  // page until a delete-confirmation had been opened once.
+  // Add the styles up front: scheduler.js uses these classes without calling confirm().
   if (document.head) injectStyles();
   else document.addEventListener('DOMContentLoaded', injectStyles);
 

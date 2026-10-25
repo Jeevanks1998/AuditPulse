@@ -1,21 +1,8 @@
 """
-journey/browser_session.py
-
-A Chromium session for the Customer Journey scan that survives the
-browser being killed part-way through.
-
-Why: on a small container (Railway Trial ≈ 1 GB shared by uvicorn, the
-Celery worker and Chromium) a long multi-page journey can push Chromium
-past the memory limit. The kernel kills it and every later step fails with
-"Target page, context or browser has been closed" — the scan reported
-"25 pages, 0 tested". Instead of giving up, this session:
-
-  * keeps the consent cookies (storage_state) so a relaunch is still in
-    the "consent accepted" state,
-  * relaunches Chromium + the context when it has died (max MAX_RESTARTS),
-  * re-attaches the analytics TrackingCapture to every new context,
-  * blocks audio/video downloads (resource type "media"), which are large
-    and irrelevant to tracking/journey evidence.
+Chromium session for the Journey Map that survives Chromium being killed for
+memory. It keeps the consent cookies, relaunches Chromium (up to
+MAX_RESTARTS), re-attaches the tracking capture, and blocks audio/video
+downloads.
 """
 
 from __future__ import annotations
@@ -49,7 +36,7 @@ async def _block_media(route) -> None:
         if route.request.resource_type == "media":
             await route.abort()
         else:
-            await route.fallback()   # hand over to the network guard (utils/net_guard.py)
+            await route.fallback()   # pass to the network guard (utils/net_guard.py)
     except Exception:  # noqa: BLE001 — page navigated away / context closing
         pass
 
@@ -64,7 +51,7 @@ class JourneyBrowser:
         self._pw = None
         self._state: Optional[dict] = None
 
-    # ------------------------------------------------------------ lifecycle
+    # Lifecycle
     async def __aenter__(self) -> "JourneyBrowser":
         from playwright.async_api import async_playwright
 
@@ -103,7 +90,7 @@ class JourneyBrowser:
         self.context = None
         self.browser = None
 
-    # -------------------------------------------------------------- helpers
+    # Helpers
     def alive(self) -> bool:
         try:
             return self.browser is not None and self.browser.is_connected()
@@ -111,7 +98,7 @@ class JourneyBrowser:
             return False
 
     async def save_state(self) -> None:
-        """Remember cookies/localStorage (consent choice) for a relaunch."""
+        """Saves cookies/localStorage (the consent choice) for a relaunch."""
         if not self.alive():
             return
         try:
@@ -120,7 +107,7 @@ class JourneyBrowser:
             pass
 
     async def restart(self, reason: str = "") -> bool:
-        """Fresh Chromium + context. Returns False once MAX_RESTARTS is used up."""
+        """Fresh Chromium and context. False once MAX_RESTARTS is used up."""
         if self.restarts >= MAX_RESTARTS:
             return False
         self.restarts += 1

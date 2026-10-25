@@ -1,38 +1,22 @@
-# ==============================================================================
-# AuditPulse backend — Dockerfile
-# ==============================================================================
+# AuditPulse backend image
 FROM python:3.11-slim-bookworm AS base
 
-# Prevents Python from writing .pyc files and buffering stdout/stderr
+# No .pyc files, unbuffered logs
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-# Celery's `-A` app-loading only adds the cwd to sys.path while it resolves
-# the app object itself, then removes it again — so any top-of-file import
-# (workers.celery_worker, scheduler.jobs, etc.) works fine at startup, but
-# the deferred/lazy imports inside every task body (models, services,
-# reports, pdf, crawler, ...) fail with ModuleNotFoundError once a task
-# actually runs, because cwd is already gone from sys.path by then.
-# uvicorn doesn't hit this — it inserts cwd itself when resolving
-# "main:app" and keeps it there. Pinning PYTHONPATH here makes /app
-# permanently importable for both processes, regardless of Celery's
-# start-up-only sys.path dance.
+# Keep /app importable for Celery tasks too (Celery drops the working
+# directory from the import path after startup).
 ENV PYTHONPATH=/app
 
-# Fixed, user-independent Playwright browser cache. Without this, `playwright
-# install` (run below as root, HOME=/root) puts Chromium under
-# /root/.cache/ms-playwright, but the app later runs as `appuser`
-# (HOME=/home/appuser) and can't find it there — every live check
-# (banner/accept/reject screenshots, GDPR/CCPA runtime verification,
-# pre-consent network capture) silently fails at runtime as a result.
-# Pinning this env var makes the install path independent of which user is
-# active, for both the build step below and the running container.
+# Install Chromium to a fixed path so the non-root app user can find it.
+# Without this, every browser check fails at runtime.
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-# System dependencies needed to build asyncpg / cryptography wheels
+# Build tools for asyncpg / cryptography
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
@@ -40,22 +24,17 @@ RUN apt-get update \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies first (better layer caching)
+# Python packages first, for better layer caching
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Playwright's own OS-level dependencies (fonts, libnss3, etc.) for headless
-# Chromium — needed for crawler/screenshots.py and consent/screenshots.py.
+# Chromium and its system libraries for the browser checks
 RUN playwright install --with-deps chromium
 
-# Copy application source
+# App source
 COPY . .
 
-# Screenshots are written to settings.SCREENSHOT_DIR ("screenshots" by
-# default, relative to WORKDIR) — create it and hand it to appuser before
-# dropping root, since the app process can't chown it itself. Also hand
-# over the Playwright browser cache (installed as root above) so appuser
-# can actually launch Chromium at runtime.
+# Screenshot folder and Chromium cache must belong to the app user.
 RUN mkdir -p /app/screenshots && useradd -m appuser \
     && chown -R appuser:appuser /app /ms-playwright
 USER appuser

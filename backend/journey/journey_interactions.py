@@ -1,33 +1,13 @@
 """
-journey/journey_interactions.py
+Works out what each discovered element is for, then safely tests the important ones.
 
-Understands what each discovered element does, then safely tests the
-important ones:
+Classification uses several signals, never just the button text: structure
+(tag, role, aria-*), destination (tel:, mailto:, files, same-site or not),
+context (nav, header, form...), styling (looks like a button?) and a small
+multilingual list of action words (sign in, register, book...).
 
-    element → what type?            (classify)
-            → can it be interacted with safely?
-            → where does it go?
-            → what happens after interaction?   (InteractionTester)
-
-Classification is multi-signal — never "if button text == X". Signals:
-  * structure     tag, role, input type, aria-* (aria-haspopup, aria-expanded,
-                  aria-controls, aria-selected), <summary>, data-toggle
-  * destination   URL scheme (tel:, mailto:), file extension, download
-                  attribute, same-site vs external, path segments
-  * context       landmark (nav/header/footer/main/form/search/dialog),
-                  enclosing form + whether the control submits it
-  * presentation  button-like styling (background, padding, weight, radius),
-                  size, cursor
-  * intent words  a small generic multilingual vocabulary describing
-                  *kinds* of actions (sign in, register, checkout, book…),
-                  matched against the destination path and the accessible
-                  name together. It describes action types, not any site's
-                  buttons; every match is reported as a signal.
-
-Production safety: nothing irreversible is ever executed. Form submissions,
-purchases, payments, bookings, sign-out and delete/unsubscribe-type actions
-are discovered, screenshotted and highlighted but never clicked. External
-links are checked with an HTTP request instead of leaving the site.
+Never clicked: form submits, purchases, payments, bookings, sign-out,
+delete/unsubscribe. They are still found and screenshotted.
 """
 
 from __future__ import annotations
@@ -41,7 +21,7 @@ from urllib.parse import urljoin, urlparse
 from config.logging import logger
 from journey.journey_scanner import DISCOVER_JS, DiscoveredElement, DiscoveredForm, normalize_url
 
-# ---- classifications (requirement §3) ---------------------------------------
+# Classifications
 NAVIGATION = "navigation"
 CTA = "cta"
 FORM = "form"
@@ -64,11 +44,11 @@ CLASS_LABELS = {
     PURCHASE: "Purchase", APPOINTMENT: "Appointment", PHONE: "Phone", EMAIL: "Email", OTHER: "Other",
 }
 
-# UI pattern (how it behaves), orthogonal to the classification (what it is for).
+# UI pattern: how it behaves (separate from what it's for).
 PATTERN_LINK, PATTERN_BUTTON, PATTERN_TAB, PATTERN_ACCORDION, PATTERN_MODAL, PATTERN_MENU, PATTERN_FIELD, \
     PATTERN_MEDIA, PATTERN_CAROUSEL = "link", "button", "tab", "accordion", "modal", "menu", "field", "media", "carousel"
 
-# Conversion-type interactions: an untracked one is a high-priority gap.
+# Conversion interactions: an untracked one is a serious gap.
 CONVERSION_CLASSES = frozenset({CTA, FORM_START, FORM_SUBMIT, DOWNLOAD, SIGNUP, PURCHASE, APPOINTMENT,
                                 PHONE, EMAIL, LOGIN})
 UNSAFE_CLASSES = frozenset({PURCHASE, APPOINTMENT, FORM_SUBMIT})
@@ -81,8 +61,7 @@ DOWNLOAD_EXTENSIONS = {
 VIDEO_EXTENSIONS = {"mp4", "webm", "mov", "m4v", "avi"}
 _VIDEO_HOST_RE = re.compile(r"youtube\.com|youtu\.be|vimeo\.com|wistia\.|dailymotion\.|brightcove|jwplayer|vidyard|loom\.com", re.I)
 
-# Generic intent vocabulary (kinds of actions, several languages) — matched as
-# whole words/segments against destination path + accessible name.
+# Action words in several languages, matched against the link path and the element's name.
 _INTENT = [
     (LOGIN, re.compile(r"\b(log ?in|sign ?in|signin|login|my account|anmelden|connexion|se connecter|iniciar sesi[oó]n|accedi)\b", re.I)),
     (SIGNUP, re.compile(r"\b(sign ?up|signup|register|registration|create (an )?account|join|subscribe|newsletter|registrieren|s'inscrire|inscription|registrarse)\b", re.I)),
@@ -91,9 +70,7 @@ _INTENT = [
     (SEARCH, re.compile(r"\b(search|suche|recherche|buscar|cerca)\b", re.I)),
 ]
 _DESTRUCTIVE_RE = re.compile(r"\b(log ?out|sign ?out|logout|signout|delete|remove|unsubscribe|deactivate|cancel (my )?(order|subscription|account))\b", re.I)
-# Slider / carousel controls (previous / next arrows, slide dots): page UI,
-# never a conversion. Recognised by the widget libraries' class names and by
-# generic "slide / next / previous" wording in several languages.
+# Slider controls (arrows, dots) are page UI, never conversions.
 _CAROUSEL_CLASS_RE = re.compile(r"(^|[\s_-])(slick|swiper|carousel|slider|glide|splide|owl|flickity|embla|keen-slider)"
                                 r"([\s_-]|$)", re.I)
 _CAROUSEL_WORDS_RE = re.compile(r"\b(slides?|slide \d|next|previous|prev|successiv[ao]|precedente|weiter|zur[üu]ck|"
@@ -109,7 +86,7 @@ def is_disabled(attrs: Dict[str, str], aria: Dict[str, str]) -> bool:
 
 
 def is_already_active(attrs: Dict[str, str], aria: Dict[str, str]) -> bool:
-    """The tab / option is already the selected one: clicking it shows nothing new."""
+    """Already-selected tab/option: clicking shows nothing new."""
     return ((aria or {}).get("aria-selected") == "true" or (aria or {}).get("aria-current") in ("page", "true", "step")
             or bool(_ACTIVE_CLASS_RE.search((attrs or {}).get("class") or "")))
 
@@ -155,8 +132,8 @@ class Interaction:
     attributes: Dict[str, str]
     form_id: Optional[str] = None
     signature: str = ""
-    consent_control: bool = False         # inside a cookie banner: the Consent module tests these
-    # filled by the tester
+    consent_control: bool = False         # inside a cookie banner: tested by the Consent module
+    # set by the tester
     tested: bool = False
     status: str = "not_tested"            # success | failed | skipped | not_tested | consent_control
     outcome: Optional[str] = None
@@ -208,7 +185,7 @@ def classify(el: DiscoveredElement, forms: Dict[str, DiscoveredForm], host: str)
     path_blob = urlparse(dest).path.replace("-", " ").replace("_", " ").replace("/", " ") if dest else ""
     cls_tokens = (attrs.get("class") or "").lower()
 
-    # --- UI pattern --------------------------------------------------------
+    # UI pattern
     pattern = PATTERN_LINK if tag == "a" else PATTERN_BUTTON
     if role == "tab" or "aria-selected" in aria and role in ("tab", ""):
         if role == "tab":
@@ -246,9 +223,7 @@ def classify(el: DiscoveredElement, forms: Dict[str, DiscoveredForm], host: str)
             c.safe = False
             c.unsafe_reason = {PURCHASE: "purchase/payment action", APPOINTMENT: "booking action",
                                FORM_SUBMIT: "form submission (never submitted on production sites)"}[kind]
-            # A plain link that only *navigates* to a booking page (no query
-            # string that could carry an action) is safe to open. Purchase-type
-            # controls are never clicked (e.g. GET add-to-cart links exist).
+            # A plain link to a booking page is safe to open. Purchase controls are never clicked.
             if kind == APPOINTMENT and tag == "a" and dest and scheme in ("http", "https") \
                     and not urlparse(dest).query and pattern == PATTERN_LINK:
                 c.safe, c.unsafe_reason = True, None
@@ -258,11 +233,11 @@ def classify(el: DiscoveredElement, forms: Dict[str, DiscoveredForm], host: str)
             c.signals.append("destructive wording")
         return c
 
-    # --- page UI that is never a conversion -----------------------------------
+    # Page UI that is never a conversion
     if pattern == PATTERN_CAROUSEL:
         return result(OTHER, "high", 1)
 
-    # --- scheme / file based ---------------------------------------------------
+    # Scheme / file based
     if scheme == "tel":
         signals.append("tel: link")
         return result(PHONE, "high", 3)
@@ -276,7 +251,7 @@ def classify(el: DiscoveredElement, forms: Dict[str, DiscoveredForm], host: str)
         signals.append("download attribute" if "download" in attrs else f".{ext} file")
         return result(DOWNLOAD, "high", 3)
 
-    # --- form context -------------------------------------------------------------
+    # Form context
     form = forms.get(el.form_id) if el.form_id else None
     is_search_form = bool(form and (form.role == "search" or any(
         (f.get("type") == "search" or (f.get("name") or "").lower() in _SEARCH_FIELD_NAMES) for f in form.fields)))
@@ -299,14 +274,14 @@ def classify(el: DiscoveredElement, forms: Dict[str, DiscoveredForm], host: str)
             return result(FORM_START, "medium", 2)
         return result(OTHER, "low", 1)
 
-    # --- intent (generic vocabulary) --------------------------------------------
+    # Action words
     external = bool(dest) and scheme in ("http", "https") and not _same_site(dest, host)
     intents = _intent(f"{text_blob} {path_blob}")
     intent_kind = intents[0][0] if intents else None
     if intents:
         signals.append(f"action wording: “{intents[0][1]}”")
 
-    # --- CTA prominence ------------------------------------------------------------
+    # Call-to-action prominence
     cta_score = 0
     if style.get("has_background") and style.get("padded"):
         cta_score += 2
@@ -347,8 +322,7 @@ def classify(el: DiscoveredElement, forms: Dict[str, DiscoveredForm], host: str)
         return result(NAVIGATION, "high" if in_nav else "medium", 2 if in_nav else 1, external=external)
 
     if tag in ("button", "input") or role in ("button", "link", "switch") or "onclick" in attrs:
-        # A plain <button> in the page body is not a call to action by itself:
-        # it needs to look like one (button styling or a btn/cta class).
+        # A plain <button> is only a CTA if it looks like one (button styling or btn/cta class).
         looks_like_cta = any(sig in signals for sig in ("button-like styling", "button/cta class"))
         if cta_score >= 2 and looks_like_cta and not in_nav:
             signals.append(f"prominence score {cta_score}")
@@ -377,10 +351,10 @@ def build_interactions(elements: List[DiscoveredElement], forms: List[Discovered
             observed=CONSENT_CONTROL_NOTE if el.in_consent else "",
             tracking={"status": "not_applicable", "note": "Cookie-banner control — see the Consent module."} if el.in_consent else {},
         ))
-    # One "Form" interaction per discovered form (focus test, never submitted).
+    # One "Form" interaction per form (focus test only, never submitted).
     for f in forms:
         if not f.visible or not f.fields or f.in_consent:
-            continue                      # consent-banner preference forms belong to the Consent module
+            continue                      # cookie-banner forms belong to the Consent module
         is_search = f.role == "search" or any((x.get("type") == "search" or (x.get("name") or "").lower()
                                                in _SEARCH_FIELD_NAMES) for x in f.fields)
         if is_search:
@@ -409,10 +383,7 @@ def build_interactions(elements: List[DiscoveredElement], forms: List[Discovered
 CONSENT_CONTROL_NOTE = ("Cookie-banner control. Not clicked during the journey (it would change consent "
                         "mid-scan); the Consent module tests the banner's buttons.")
 
-# Test order inside the high-importance group: forms first, then the other
-# conversion actions, then plain CTAs. Previously everything was ordered by
-# position on the page, so forms lower down were the first to be cut off by
-# the per-audit test limit / time budget.
+# Test order among important interactions: forms first, then other conversions, then CTAs.
 _TEST_PRIORITY = {FORM: 0, SIGNUP: 1, FORM_START: 1, PURCHASE: 2, APPOINTMENT: 2, DOWNLOAD: 3}
 
 
@@ -420,30 +391,25 @@ def _worth_testing(it: Interaction) -> bool:
     if it.consent_control:
         return False
     if is_disabled(it.attributes, it.aria):
-        return False                       # disabled control (e.g. the "previous" arrow on the first slide)
+        return False                       # disabled control
     if it.pattern == PATTERN_CAROUSEL:
-        return False                       # slider arrows / dots: page UI, not a journey step
+        return False                       # slider controls
     if it.pattern in (PATTERN_TAB, PATTERN_BUTTON) and it.tag != "a" and is_already_active(it.attributes, it.aria):
-        return False                       # already-selected tab / option
+        return False                       # already selected
     if it.importance < 2 and it.classification == OTHER:
         return False
     if it.pattern == PATTERN_TAB and (it.aria or {}).get("aria-selected") == "true":
-        return False                       # already-selected tab: clicking shows nothing new
+        return False                       # already-selected tab
     if it.pattern == PATTERN_LINK and it.destination and not it.external \
             and normalize_url(urljoin(it.page_url, it.destination)) == normalize_url(it.page_url):
-        return False                       # link to the page we're on
+        return False                       # link to the current page
     return True
 
 
 def select_for_testing(interactions: List[Interaction], max_total: int, max_per_page: int) -> List[Interaction]:
-    """
-    Which interactions get a live test (each reloads its page and captures
-    before / highlighted / after evidence):
-      1. every high-importance (conversion-type) interaction
-      2. one of each remaining kind (classification × UI pattern)
-      3. the rest, top of page first
-    within the per-page and per-audit limits. Repeats of the same element on
-    other pages are tested once.
+    """Which interactions get a live test: every important one, then one of each
+    remaining kind, then the rest from the top of the page, within the per-page
+    and per-audit limits. Repeats are tested once.
     """
     pool = [i for i in interactions if i.duplicate_of is None and i.visible and _worth_testing(i)]
     pool.sort(key=lambda i: (i.external, i.position.get("y", 0)))
@@ -470,9 +436,7 @@ def select_for_testing(interactions: List[Interaction], max_total: int, max_per_
     return picked
 
 
-# =============================================================================
 # Safe interaction testing
-# =============================================================================
 
 _STATE_JS = r"""
 (sel) => {
@@ -497,7 +461,7 @@ _STATE_JS = r"""
 """
 
 SETTLE_AFTER_ACTION_MS = 1_800
-ANALYTICS_EXTRA_WAIT_MS = 3_500   # analytics tools batch events: give a click hit time to leave
+ANALYTICS_EXTRA_WAIT_MS = 3_500   # analytics tools send in batches: give the hit time to leave
 
 _MUTATION_START_JS = r"""
 (sel) => {
@@ -536,8 +500,8 @@ class TestContext:
 
 
 async def _reset_to(tc: TestContext, page_url: str, prefix: str) -> None:
-    """Load the interaction's page fresh and re-tag its elements (deterministic ids)."""
-    # Always reload: every interaction starts from the page's initial state.
+    """Reloads the page and re-tags its elements."""
+    # Always reload so every test starts from the same state.
     from config.browser import goto_page
 
     await goto_page(tc.page, page_url, load_wait_ms=3_000)
@@ -546,21 +510,14 @@ async def _reset_to(tc: TestContext, page_url: str, prefix: str) -> None:
 
 
 def _raw_signature(it: Interaction) -> str:
-    """The element's DOM signature (tag|href / tag|text) without the classification prefix."""
+    """The element's signature (tag + link or tag + text)."""
     return (it.signature or "").split("|", 1)[1] if "|" in (it.signature or "") else ""
 
 
 def relocate_element(it: Interaction, data: dict) -> Optional[str]:
-    """
-    Find the interaction's element again on the freshly reloaded page.
-
-    Element ids are numbered in DOM order, and on real sites that order
-    changes between two loads of the same page (carousels, reviews widgets,
-    personalised blocks, a late cookie banner): on axa.it the order differed
-    from element #274 on. So the id from the scan can point at a different
-    element, or at nothing. Match by what the element is instead — its
-    signature (tag + link target, or tag + text) — picking the occurrence
-    closest to where it was on the page. Returns the new data-journey-id.
+    """Finds the element again after a reload. Element order can change between
+    loads (sliders, personalised blocks, late banners), so match by signature,
+    closest to the original position. Returns the new data-journey-id.
     """
     raw = _raw_signature(it)
     pool = (data.get("forms") or []) if it.tag == "form" else (data.get("elements") or [])
@@ -592,7 +549,7 @@ async def _http_check(tc: TestContext, url: str) -> Tuple[Optional[int], Optiona
 
 
 async def test_interaction(tc: TestContext, it: Interaction, page_prefix: str) -> None:
-    """Runs one safe interaction and records outcome, screenshots and tracking."""
+    """Runs one safe interaction and records the outcome, screenshots and tracking."""
     from journey.journey_tracking import NOT_APPLICABLE, NOT_TESTED, evaluate_interaction
 
     sel = f'[data-journey-id="{it.element_id}"]'
@@ -603,7 +560,7 @@ async def test_interaction(tc: TestContext, it: Interaction, page_prefix: str) -
         if found:
             sel = f'[data-journey-id="{found}"]'
         elif it.selector:
-            # Not in the fresh discovery (e.g. beyond its element cap): try the CSS path.
+            # Not found by id: try the CSS path.
             try:
                 if await page.locator(it.selector).count() == 1:
                     sel = it.selector
@@ -700,7 +657,7 @@ async def test_interaction(tc: TestContext, it: Interaction, page_prefix: str) -
             it.observed = "Video started playing (muted)." if after.get("playing") else "Video did not start playing."
             it.screenshots["after"] = await tc.evidence.viewport(page, it.page_url, it.index, "after")
         else:
-            # Links, CTAs, buttons, tabs, accordions, modal triggers, menus, tel:/mailto:, iframe players.
+            # Links, CTAs, buttons, tabs, accordions, modals, menus, tel:/mailto:, video players.
             response_status = {"value": None, "redirected_from": None}
             popups: list = []
 
@@ -721,20 +678,17 @@ async def test_interaction(tc: TestContext, it: Interaction, page_prefix: str) -
 
             page.on("response", _on_response)
             page.on("popup", _on_popup)
-            # Count DOM changes caused by the click (tab panels, sliders,
-            # filters, show-more…): a reliable "something happened" signal
-            # even when the amount of visible text stays the same.
+            # Count page changes caused by the click: a reliable "something happened" signal.
             baseline = 0
             try:
                 await page.evaluate(_MUTATION_START_JS, sel)
-                # Background churn (auto-rotating sliders, chat widgets) is
-                # measured first so it isn't mistaken for the click's effect.
+                # Measure background changes (sliders, chat widgets) first so they aren't credited to the click.
                 await page.wait_for_timeout(700)
                 baseline = int(await page.evaluate(
                     "() => { const m = window.__apMut || {count: 0}; const b = m.count; m.count = 0; m.self = false; return b; }") or 0)
             except Exception:  # noqa: BLE001
                 pass
-            started = tc.capture.mark()   # analytics attribution starts at the click, not before the baseline
+            started = tc.capture.mark()   # tracking attribution starts at the click
             try:
                 if it.tag == "iframe":
                     await loc.click(timeout=4_000, position={"x": 20, "y": 20})
@@ -769,8 +723,7 @@ async def test_interaction(tc: TestContext, it: Interaction, page_prefix: str) -
             it.http_status = response_status["value"]
             navigated = normalize_url(page.url) != normalize_url(before_state.get("url") or it.page_url)
             if popups and not navigated:
-                # Opened in a new tab (target=_blank): a working link, not a
-                # dead click. Check where the new tab landed, then close it.
+                # Opened in a new tab: a working link. Check where it landed, then close it.
                 pop = popups[0]
                 try:
                     await pop.wait_for_load_state("domcontentloaded", timeout=10_000)
@@ -806,7 +759,7 @@ async def test_interaction(tc: TestContext, it: Interaction, page_prefix: str) -
                 if ok and expected and landed != expected and it.pattern == PATTERN_LINK:
                     redirected_from = response_status.get("redirected_from")
                     if redirected_from and normalize_url(redirected_from) == expected:
-                        # Server redirect from the linked URL to its new address: works as intended.
+                        # Server redirect to the link's new address: works as intended.
                         it.outcome = "redirected"
                         it.observed += f" The link points to {expected}, which redirects here."
                     else:
@@ -848,8 +801,7 @@ async def test_interaction(tc: TestContext, it: Interaction, page_prefix: str) -
                 it.screenshots["after"] = await tc.evidence.viewport(page, it.page_url, it.index, "after")
 
         if it.tested and it.status == "success":
-            # Analytics tools batch events (GA4 sends a click a moment later):
-            # wait a little for a real analytics request before judging.
+            # Analytics may send a moment later: wait briefly for a real request.
             waited = 0
             while waited < ANALYTICS_EXTRA_WAIT_MS and not any(
                     e.source == "network" and not e.is_lifecycle for e in tc.capture.between(started)):

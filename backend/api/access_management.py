@@ -1,54 +1,15 @@
 """
-api/access_management.py
+Endpoints the Access Portal calls to sync users into AuditPulse.
 
-Phase 3 of the AuditPulse Access Portal integration (see
-AuditPulse-Access/README.md). This is the endpoint
-AuditPulse-Access/backend/auditpulse.py's sync_user()/revoke_user() call
-once AUDITPULSE_BASE_URL is set on that side.
+The portal decides who has access and with which role; this mirrors that
+onto the AuditPulse account (found or created by email):
+  name, role, is_active, auditpulse_access, and reset_authenticator
+  (clears the authenticator so the next login shows a new QR code).
+Permissions are worked out from the role, not stored. No passwords: sign-in
+is email + Google Authenticator.
 
-The portal is the source of truth for *who* has access and *what role*
-they hold; this module's only job is to mirror that onto the matching
-AuditPulse account (finding or creating it by email) so the rest of the
-app — login, get_current_user, everything gated behind it — reflects
-that decision without needing its own copy of the portal's users/roles
-tables.
-
-Phase 5 update: what the portal pushes for a user is now six fields
-(see schemas/access.py's docstring for the full rationale) —
-
-  - User.email               lookup/upsert key
-  - User.name                display name
-  - User.is_active            <- payload.active — Access Portal account
-                              status in general, reused as the API-key
-                              auth on/off flag (middleware/auth.py).
-  - User.role                 a free-form label ("Admin"/"Auditor"/
-                              "Reviewer"/"Viewer" today, whatever the
-                              portal's roles.py defines tomorrow) —
-                              AuditPulse doesn't interpret it, just
-                              stores it and derives `permissions` from
-                              it (models.user.User.permissions).
-  - User.auditpulse_access    <- payload.auditpulse_access — whether this
-                              person's role/assignment grants them
-                              AuditPulse specifically, checked separately
-                              from is_active by api/auth.py's login route.
-  - permissions                not stored — computed from `role` on read
-                              (config/permissions.py) and only ever
-                              appears in this endpoint's *response*.
-  - reset_authenticator       <- payload.reset_authenticator — set when an
-                              admin clicks "Reset Authenticator" in the
-                              portal. Clears mfa_secret and sets
-                              mfa_enabled = False, auth_setup_required =
-                              True, so the next login shows a new QR code.
-
-No password is synced any more: sign-in is email -> Google Authenticator
-(see api/auth.py). A newly created account starts with
-auth_setup_required = True and sets up its authenticator on first login.
-
-Auth: every route here requires `Authorization: Bearer
-<ACCESS_PORTAL_API_KEY>` (config/settings.py), a shared secret — *not* a
-user JWT, since the portal isn't a logged-in AuditPulse user. There is
-no open-by-default fallback: if ACCESS_PORTAL_API_KEY isn't set, every
-call is rejected, because this endpoint can grant or remove app access.
+Every route needs `Authorization: Bearer <ACCESS_PORTAL_API_KEY>`. If the key
+isn't set, every call is refused.
 """
 
 import secrets
@@ -80,11 +41,7 @@ router = APIRouter()
 
 
 def verify_portal_key(authorization: Optional[str] = Header(None)) -> None:
-    """Shared-secret check for every route in this module.
-
-    Deliberately fails closed: an unconfigured ACCESS_PORTAL_API_KEY
-    means "integration not set up yet", not "allow anything".
-    """
+    """Checks the shared key. No key configured means refuse, not allow."""
     if not settings.ACCESS_PORTAL_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -105,18 +62,13 @@ def verify_portal_key(authorization: Optional[str] = Header(None)) -> None:
 
 @router.get("/health", response_model=AccessHealthOut)
 def health():
-    """Unauthenticated on purpose: lets the portal's status page tell
-    'AuditPulse unreachable' apart from 'reachable, but key not configured
-    yet / wrong', without needing a valid key just to ask.
-    """
+    """No key needed, so the portal can tell "unreachable" from "wrong key"."""
     return AccessHealthOut(ok=True, configured=bool(settings.ACCESS_PORTAL_API_KEY))
 
 
 @router.post("", response_model=AccessSyncOut, dependencies=[Depends(verify_portal_key)])
 async def sync_access(payload: AccessSyncIn, db: AsyncSession = Depends(get_db)):
-    """Upsert a user's name/role/access by email. Called on every
-    create/update in the portal's users.py.
-    """
+    """Creates or updates a user's name/role/access by email."""
     result = await db.execute(select(User).where(func.lower(User.email) == payload.email.lower()))
     user = result.scalar_one_or_none()
     created = False
@@ -129,8 +81,7 @@ async def sync_access(payload: AccessSyncIn, db: AsyncSession = Depends(get_db))
             role=payload.role,
             is_active=payload.active,
             auditpulse_access=payload.auditpulse_access,
-            # No password: the person sets up Google Authenticator the
-            # first time they sign in (api/auth.py).
+            # No password: the person sets up Google Authenticator at first sign-in.
             hashed_password=None,
             mfa_secret=None,
             mfa_enabled=False,
@@ -195,15 +146,8 @@ async def sync_access(payload: AccessSyncIn, db: AsyncSession = Depends(get_db))
 
 @router.post("/revoke", response_model=AccessRevokeOut, dependencies=[Depends(verify_portal_key)])
 async def revoke_access(payload: AccessRevokeIn, db: AsyncSession = Depends(get_db)):
-    """Turn access off for a user the portal deleted entirely.
-
-    Mirrors sync_access(active=False, auditpulse_access=False) rather than
-    deleting the AuditPulse account outright — the account may own
-    audits/reports/history that should survive even after the person
-    loses access. If the portal never knew this email in the first place
-    (nothing to revoke), this is a no-op that reports found=False rather
-    than an error, since that's a normal outcome, not a failure of the
-    call.
+    """Turns access off for a user deleted in the portal. The account is kept (it
+    may own audits). An unknown email is not an error: found=False.
     """
     result = await db.execute(select(User).where(func.lower(User.email) == payload.email.lower()))
     user = result.scalar_one_or_none()
@@ -224,12 +168,7 @@ async def revoke_access(payload: AccessRevokeIn, db: AsyncSession = Depends(get_
 
 @router.post("/status", response_model=AccessStatusOut, dependencies=[Depends(verify_portal_key)])
 async def access_status(payload: AccessStatusIn, db: AsyncSession = Depends(get_db)):
-    """AuditPulse sign-in status for a list of emails, for the portal's
-    Users page. The portal and AuditPulse keep separate authenticators, so
-    the portal can't know on its own whether someone has finished their
-    AuditPulse Google Authenticator setup. Read-only; POST only so the
-    email addresses are never put in a URL.
-    """
+    """Whether each email has finished AuditPulse authenticator setup (for the portal's Users page). POST keeps emails out of URLs."""
     emails = sorted({e.lower() for e in payload.emails})
     found = {}
     if emails:

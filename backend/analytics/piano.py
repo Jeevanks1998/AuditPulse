@@ -1,14 +1,6 @@
 """
-analytics/piano.py
-
-Detects Piano Analytics — the rebrand of AT Internet's measurement
-suite. Sites migrated at different times, so both the current loader
-domain (tag.aticdn.net serving the "pa" library) and the legacy
-xiti.com collection domain can still turn up in the wild, alongside the
-`pa.sendEvent(...)` call the current SDK uses to send hits.
-
-Reads crawler.parser.ParsedPage.soup directly, same rationale as the
-other analytics/* modules.
+Detects Piano Analytics (formerly AT Internet): the current loader
+(tag.aticdn.net), the old xiti.com domain, and pa.sendEvent() calls.
 """
 
 from __future__ import annotations
@@ -31,14 +23,14 @@ SITE_ID_RE = re.compile(r"site\s*[:=]\s*['\"]?(\d+)['\"]?", re.IGNORECASE)
 @dataclass
 class PianoDetection:
     detected: bool = False
-    uses_current_sdk: bool = False  # tag.aticdn.net / piano-analytics loader
-    uses_legacy_collection: bool = False  # bare xiti.com hits, no current loader
+    uses_current_sdk: bool = False  # current loader
+    uses_legacy_collection: bool = False  # old xiti.com hits only
     send_event_call_found: bool = False
     site_ids: List[str] = field(default_factory=list)
 
 
 def detect_piano(page: ParsedPage) -> PianoDetection:
-    """Scans this page's <script> tags for Piano Analytics / AT Internet signals."""
+    """Looks for Piano / AT Internet in the page's scripts."""
     result = PianoDetection()
     site_ids: List[str] = []
 
@@ -61,7 +53,7 @@ def detect_piano(page: ParsedPage) -> PianoDetection:
 
 
 def check_piano(page: ParsedPage) -> List[dict]:
-    """Findings for Piano Analytics configuration issues. Absence of Piano tagging is not itself a finding."""
+    """Findings for Piano problems. No Piano at all is not a finding."""
     detection = detect_piano(page)
     findings: List[dict] = []
 

@@ -1,29 +1,18 @@
 """
-journey/ — Customer Journey Mapping (Phase 1: discovery, journey map,
-evidence, tracking validation and journey QA).
+Journey Map: finds and tests the site's real interactions, with no list of
+buttons or journeys given in advance.
 
-AuditPulse is never told which buttons or journeys exist. It:
+  journey_scanner      - scans the rendered site and finds every interactive element
+  journey_interactions - classifies them and safely tests the important ones
+  journey_screenshots  - before / highlighted / after screenshots
+  journey_tracking     - which analytics each interaction triggered
+  journey_mapper       - builds the journey map
+  journey_qa           - health score and findings
 
-    scans the actual website (rendered, JavaScript executed)   journey_scanner
-      → discovers what exists (every interactive element)
-      → classifies it from multiple signals                    journey_interactions
-      → understands page relationships                         journey_mapper
-      → safely tests the important interactions                journey_interactions
-      → captures before / highlighted / after evidence         journey_screenshots
-      → validates analytics for each interaction               journey_tracking
-      → builds the journey map and QA findings                 journey_mapper / journey_qa
-
-The browser comes from analytics/runtime.py (open_runtime_browser) — the
-same Playwright runtime the analytics module already uses — and the
-consent banner is handled with consent/runtime.py's banner inventory, so no
-second browser or banner implementation exists.
-
-Production safety: forms are never submitted; purchases, payments,
-bookings and sign-out/delete-type actions are never executed; external
-links are checked by HTTP request instead of being followed.
-
-Phase 2 (GA4 historical data, funnels, drop-offs) is intentionally not
-implemented here yet.
+Uses the same browser as analytics/runtime.py and the banner handling from
+consent/runtime.py. Safe on live sites: forms are never submitted; purchases,
+payments, bookings, sign-out and delete actions are never clicked; external
+links are checked with a request instead of being followed.
 """
 
 from __future__ import annotations
@@ -87,13 +76,7 @@ PER_TEST_TIMEOUT_S = 60
 
 
 async def _accept_consent_if_present(page, result: JourneyResult) -> None:
-    """Accept the cookie banner once so interactions are clickable and tags may fire.
-
-    Many CMPs (TrustCommander on axa.it, OneTrust, Usercentrics...) render
-    the banner a few seconds after the page loads, so this waits for a
-    late banner the same way the Consent module does instead of checking
-    only once. After the click it waits until the banner is really gone.
-    """
+    """Accepts the cookie banner once (waiting for late banners) so tags can fire and elements are clickable."""
     try:
         from consent.buttons import ACCEPT_CLICK_ORDER
         from consent.runtime import _click_control, _wait_for_banner, inventory_banner
@@ -109,7 +92,7 @@ async def _accept_consent_if_present(page, result: JourneyResult) -> None:
         ok = await _click_control(page, handles, accept)
         await page.wait_for_timeout(1_200)
         if ok:
-            # Banner still showing (click swallowed by an animation): try once more.
+            # Banner still showing (click lost in an animation): try once more.
             inv2, handles2 = await inventory_banner(page)
             again = inv2.first(ACCEPT_CLICK_ORDER) if inv2.banner_detected else None
             if again is not None:
@@ -130,9 +113,7 @@ async def run_customer_journey(
     test_interactions: Optional[bool] = None,
     deadline: Optional[float] = None,
 ) -> JourneyResult:
-    """`deadline` (time.monotonic()) is a hard stop: when it is reached the
-    browser work is cancelled but everything found so far (pages,
-    interactions, tests already run) is still turned into a result."""
+    """`deadline` (time.monotonic()) is a hard stop; everything found so far is still returned."""
     result = JourneyResult(scan_id=scan_id, start_url=url, started_at=datetime.now(timezone.utc).isoformat())
     max_tested = max_tested if max_tested is not None else int(getattr(settings, "JOURNEY_MAX_TESTED_INTERACTIONS", 30))
     per_page = max_tested_per_page if max_tested_per_page is not None else int(
@@ -157,7 +138,7 @@ async def run_customer_journey(
         async with JourneyBrowser(capture=capture, viewport=DEFAULT_VIEWPORT) as session:
             async def on_first(page, _url):
                 await _accept_consent_if_present(page, result)
-                await session.save_state()  # a relaunch keeps the consent choice
+                await session.save_state()  # a restart keeps the consent choice
 
             async def on_scanned(page, page_scan: PageScan):
                 page_scan.screenshot = await evidence.page_snapshot(page, page_scan.url)
@@ -167,7 +148,7 @@ async def run_customer_journey(
             now = time.monotonic()
             scan_deadline = now + scan_budget
             if deadline is not None:
-                # Leave time for the interaction tests, but never starve the scan.
+                # Leave time for the tests without starving the scan.
                 remaining = max(0.0, deadline - now)
                 scan_deadline = min(scan_deadline, now + max(remaining * 0.45, remaining - test_budget))
             scan = await scan_site(session, url, max_pages, depth, on_page_loaded=on_first,
@@ -180,14 +161,12 @@ async def run_customer_journey(
 
             if do_tests:
                 state["tests_started"] = True
-                # Start the tests in a fresh Chromium: the scan's memory is
-                # released, and the consent cookies carry over. If a fresh
-                # browser can't be launched, keep testing in the current one.
+                # Run the tests in a fresh Chromium (frees memory; consent carries over). If that fails, keep the current one.
                 try:
                     await session.restart("fresh browser for interaction tests")
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(f"journey: fresh browser for tests failed ({exc}); reusing the scan browser")
-                session.restarts = 0  # the planned restart doesn't count against crash recovery
+                session.restarts = 0  # this planned restart doesn't count as a crash
                 page = await session.new_page()
                 tc = TestContext(context=session.context, page=page, capture=capture, evidence=evidence,
                                  host=host, analytics_present=analytics_present)
@@ -216,8 +195,7 @@ async def run_customer_journey(
                                 result.tests_stopped_early = True
                                 return
                         if dead or tc.page.is_closed() or (n + 1) % 6 == 0:
-                            # New tab (and context after a restart); recycle every
-                            # few tests so one tab doesn't accumulate memory.
+                            # New tab every few tests so memory doesn't build up.
                             try:
                                 if not tc.page.is_closed():
                                     await tc.page.close()
@@ -227,7 +205,7 @@ async def run_customer_journey(
                             tc.context = session.context
                         if not (dead and not it.tested and attempt == 0):
                             break
-                        # Chromium died mid-test: run this interaction again once.
+                        # Chromium died mid-test: run this interaction once more.
                         it.status, it.observed, it.outcome = "not_tested", "", None
                         it.screenshots = {}
 
@@ -252,7 +230,7 @@ async def run_customer_journey(
         result.available = True
         if not interactions:
             interactions = build_interactions(scan.elements, scan.forms, host)
-        # Carry the tested result to repeats of the same element on other pages.
+        # Copy the test result to repeats of the same element on other pages.
         by_index = {i.index: i for i in interactions}
         for it in interactions:
             if it.duplicate_of is not None:
@@ -278,7 +256,7 @@ async def run_customer_journey(
     } for p in scan.pages]
     all_forms = [asdict(f) for f in scan.forms]
     forms_by_id = {f["id"]: f for f in all_forms}
-    # The same form on every page (e.g. a header search box) is one form.
+    # The same form on every page (e.g. a header search) counts once.
     forms_dicts, seen_sigs = [], set()
     for f in all_forms:
         key = f["signature"] or f["id"]
@@ -330,7 +308,7 @@ async def run_customer_journey(
     }
     result.findings = build_findings(interactions, pages_meta, bool(analytics_summary["analytics_present"]),
                                      forms_by_id)
-    # Attach issue ids to map nodes.
+    # Link findings to map nodes.
     nodes = result.journey_map.get("nodes", {})
     for n, f in enumerate(result.findings):
         idx = (f.get("journey") or {}).get("interaction_index")

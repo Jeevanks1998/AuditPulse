@@ -1,13 +1,5 @@
 """
-forms/validation.py
-
-Checks whether inputs use a validation-aware `type` and the attributes
-that go with it (pattern, min/max/step) instead of falling back to
-type="text" for everything, which gets a user no built-in keyboard
-hinting, no format checking, and no error messaging from the browser
-at all. Reads crawler.parser.ParsedPage.soup directly for <form>/
-<input> markup, the same declared-markup approach accessibility/
-labels.py uses for the same tags.
+Checks inputs use the right type (email, tel, number...) and min/max/step, not plain text.
 """
 
 from __future__ import annotations
@@ -20,8 +12,7 @@ from crawler.parser import ParsedPage
 MODULE = "forms"
 CATEGORY = "validation"
 
-# name/id/placeholder substrings that strongly suggest a field's intended
-# semantic type even though the markup uses a generic type="text".
+# Name/id/placeholder patterns that suggest the field's real type.
 _TYPE_HINTS = {
     "email": re.compile(r"e-?mail", re.IGNORECASE),
     "tel": re.compile(r"phone|tel(ephone)?|mobile", re.IGNORECASE),

@@ -1,10 +1,5 @@
 """
-reports/json_report.py
-
-Serializes a ReportPayload (§8) into the plain JSON-safe dict returned by
-api/reports.py's `/{audit_id}/export.json` (score grid, findings, AI
-summary/priorities/business-impact/action-plan) and cached to disk via
-reports/report_storage.py's save_json/load_json.
+Turns a ReportPayload into the JSON export (scores, findings, AI sections).
 """
 
 from __future__ import annotations

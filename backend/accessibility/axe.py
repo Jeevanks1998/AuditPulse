@@ -1,24 +1,7 @@
 """
-accessibility/axe.py
-
-Owns the one outbound call this module makes: Google's PageSpeed
-Insights (PSI) API with category=accessibility. This is the same
-endpoint performance/pagespeed.py calls for category=performance — PSI
-happens to expose the exact rendered-DOM rule engine we'd otherwise
-need a headless browser to run ourselves: Lighthouse's "accessibility"
-category audits are, rule-for-rule, axe-core's ruleset (color-contrast,
-image-alt, label, aria-allowed-attr, button-name, link-name,
-heading-order, tabindex, etc — the audit `id` fields below are axe-core
-rule ids, not Lighthouse-invented names). Using PSI gets us a real
-rendered-page axe-core run without bundling a headless Chrome into this
-service ourselves.
-
-Mirrors performance/pagespeed.py's degrade-to-None/[] behavior: a
-missing GOOGLE_PAGESPEED_API_KEY (very likely in local/dev, see .env)
-or any request failure never takes the pipeline down — it just means
-this module contributes no findings, and accessibility_score.py scores
-the remaining page-level modules (contrast/aria/keyboard/labels/
-heading) plus accessibility/pa11y.py (if available) on their own.
+Runs Google PageSpeed (category=accessibility), which uses axe-core rules
+on the rendered page. Returns no findings, never an error, when there is no
+API key or the call fails.
 """
 
 from __future__ import annotations
@@ -35,13 +18,12 @@ MODULE = "accessibility"
 CATEGORY = "axe"
 
 PSI_ENDPOINT = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
-REQUEST_TIMEOUT_SECONDS = 30.0  # PSI's own Lighthouse run can take a while
+REQUEST_TIMEOUT_SECONDS = 30.0  # Lighthouse runs can be slow
 
-# Below this Lighthouse audit score (0-1), the audit is surfaced as a finding.
+# Audits scoring below this (0-1) become findings.
 FAILING_AUDIT_THRESHOLD = 0.9
 
-# axe-core rules that are WCAG Level A/AA failures when they fire — i.e. the
-# ones worth "critical", vs. lower-priority best-practice audits that stay "warning".
+# Rules that are WCAG A/AA failures (critical); others are warnings.
 CRITICAL_AXE_RULES = {
     "color-contrast", "image-alt", "label", "button-name", "link-name",
     "aria-hidden-body", "aria-required-attr", "aria-valid-attr-value",
@@ -53,7 +35,7 @@ CRITICAL_AXE_RULES = {
 @dataclass
 class AxeAuditResult:
     findings: List[dict]
-    category_score: Optional[int]  # Lighthouse's own 0-100 accessibility category score
+    category_score: Optional[int]  # Lighthouse's 0-100 accessibility score
     raw: Optional[dict]
 
 
@@ -63,12 +45,7 @@ async def fetch_axe_audit(
     strategy: str = "mobile",
     timeout: float = REQUEST_TIMEOUT_SECONDS,
 ) -> AxeAuditResult:
-    """
-    Calls PSI for `url` with category=accessibility and returns parsed
-    findings plus Lighthouse's own accessibility category score.
-    Degrades to an empty result (never raises) if no API key is
-    configured or the call fails for any reason.
-    """
+    """Calls PageSpeed for `url` and returns findings plus Lighthouse's score. Never raises."""
     if not settings.GOOGLE_PAGESPEED_API_KEY:
         logger.debug("accessibility.axe: no GOOGLE_PAGESPEED_API_KEY configured, skipping PSI call")
         return AxeAuditResult(findings=[], category_score=None, raw=None)
@@ -99,12 +76,7 @@ async def fetch_axe_audit(
 
 
 def check_axe_audits(raw: Optional[dict]) -> List[dict]:
-    """
-    Findings from every failing audit in PSI's accessibility category.
-    Returns [] if no lighthouseResult / accessibility category is
-    present in the response — callers should treat that as
-    "unavailable", not "everything passed".
-    """
+    """Findings for each failing accessibility audit. [] means unavailable, not "all passed"."""
     lighthouse = (raw or {}).get("lighthouseResult")
     if not lighthouse:
         return []
@@ -128,8 +100,7 @@ def _check_audit(audit_id: Optional[str], audit: Optional[dict]) -> List[dict]:
     if not audit_id or not audit:
         return []
     score = audit.get("score")
-    # Lighthouse uses score=None for "not applicable" (e.g. no images on the page
-    # for image-alt) — that's a pass-by-absence, not a finding.
+    # None means "not applicable" (e.g. no images), which is a pass.
     if score is None or score >= FAILING_AUDIT_THRESHOLD:
         return []
 
@@ -137,7 +108,7 @@ def _check_audit(audit_id: Optional[str], audit: Optional[dict]) -> List[dict]:
     affected = len(items)
     severity = "critical" if audit_id in CRITICAL_AXE_RULES else "warning"
     title = audit.get("title", audit_id)
-    description = (audit.get("description") or "").split(" [Learn")[0]  # trim Lighthouse's markdown link suffix
+    description = (audit.get("description") or "").split(" [Learn")[0]  # drop the "Learn more" link
     affected_note = f" Affects {affected} element(s) on the page." if affected else ""
 
     return [_finding(

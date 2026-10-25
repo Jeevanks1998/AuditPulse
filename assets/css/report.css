@@ -1,11 +1,6 @@
-/* ==========================================================================
-   Report / Audit Results page
-   ========================================================================== */
+/* Report page */
 
-/* ---- Spacing utilities ----
-   The elements these are applied to in report.html also toggle visibility
-   dynamically via JS (element.style.display), so only the static layout
-   spacing moves here — the display:none stays inline as the JS-owned bit. */
+/* Spacing utilities (the JS still controls display) */
 .u-mt-4 { margin-top: var(--sp-4); }
 .u-mb-3 { margin-bottom: var(--sp-3); }
 .u-mb-4 { margin-bottom: var(--sp-4); }
@@ -15,10 +10,7 @@
 .report-banner {
   padding: var(--sp-6);
   margin-bottom: var(--sp-5);
-  /* The "More" menu hangs below this card. Every .animate-in card is its own
-     stacking context (its entrance animation animates transform), so without
-     this the Executive Summary card below paints over the menu and "Send to
-     POC" can't be clicked. */
+  /* Keep the "More" menu above the cards below it (each animated card is its own layer). */
   position: relative;
   z-index: 2;
 }
@@ -57,7 +49,7 @@
 
 .report-banner__actions { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
 
-/* ---- "More" dropdown (Print / Evidence ZIP / Send to POC) ---- */
+/* "More" menu */
 .dropdown { position: relative; }
 .dropdown__toggle svg { width: 14px; height: 14px; transition: transform var(--dur-fast) var(--ease-out); }
 .dropdown.is-open .dropdown__toggle svg { transform: rotate(180deg); }
@@ -82,10 +74,7 @@
 .dropdown__item svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--text-secondary); }
 .dropdown__item:hover { background: var(--surface-sunken); }
 
-/* Category score grid — each cell uses the vitals ring.
-   auto-fit + minmax lets the grid size itself to however many modules an
-   audit actually produced instead of forcing a fixed column count that
-   gets cramped (too many columns) or leaves gaps (too few modules). */
+/* Score grid: as many columns as there are modules */
 .score-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -101,9 +90,7 @@
 .score-cell:hover { border-color: var(--border-strong); }
 .score-cell__label { font-size: var(--fs-xs); font-weight: 600; color: var(--text-secondary); }
 
-/* Score & Module Performance (§3.4) — module scores next to the radar
-   comparison, in one card. Flex + wrap so the chart drops below the
-   scores on narrow viewports instead of squeezing both columns thin. */
+/* Module scores next to the radar chart (wraps on narrow screens) */
 .module-perf {
   display: flex;
   align-items: flex-start;
@@ -117,7 +104,7 @@
   color: var(--text-tertiary); margin-bottom: var(--sp-3);
 }
 
-/* Two-column: charts + issues */
+/* Two columns: charts + issues */
 .report-columns { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-5); margin-bottom: var(--sp-5); }
 
 .issue-list { display: flex; flex-direction: column; }
@@ -155,7 +142,7 @@
 .reco-item__desc { font-size: var(--fs-xs); color: var(--text-tertiary); margin-top: 2px; }
 .reco-item__impact { margin-left: auto; flex-shrink: 0; }
 
-/* Module detail sections (Performance, Analytics, Consent) */
+/* Module sections */
 .module-section {
   scroll-margin-top: calc(var(--header-height) + var(--sp-4));
   margin-bottom: var(--sp-5);
@@ -165,14 +152,7 @@
 }
 .module-section__head h2 { font-size: var(--fs-lg); }
 
-/* ==========================================================================
-   Module Details accordion (Phase 9) — collapses Performance /
-   Analytics / Consent into <details>/<summary> rows so the report
-   doesn't dump all five sections' findings on screen at once. Native <details>
-   drives open/close (and already auto-opens on #hash navigation in modern
-   browsers); report.js only adds cross-links (score-grid clicks) and forces
-   everything open before printing/PDF export.
-   ========================================================================== */
+/* Module details accordion (native <details>; opened for printing) */
 .module-accordion-group {
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
@@ -230,11 +210,7 @@ details.module-accordion[open] .module-accordion__chevron {
 }
 .module-accordion__body .card__pad { padding: 0; }
 
-/* Printing / PDF export must always show every module's findings
-   regardless of what's expanded on screen — report.js's beforeprint
-   handler force-opens every accordion, and this rule makes sure the
-   content is actually visible (not just `open` with 0 height) in
-   engines that are slow to apply the attribute before layout. */
+/* Printing: show every module's content. */
 @media print {
   .module-accordion__summary { cursor: default; }
   .module-accordion:not([open]) > .module-accordion__body { display: block !important; }
@@ -251,9 +227,7 @@ details.module-accordion[open] .module-accordion__chevron {
 
 .check-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--sp-2) var(--sp-6); }
 
-/* Analytics overall status — a single always-visible verdict row that sits
-   above the collapsed sub-sections so the reader gets the headline without
-   opening anything. */
+/* Analytics headline row (always visible) */
 .analytics-overall-status {
   display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
   padding: var(--sp-3) var(--sp-4);
@@ -274,12 +248,7 @@ details.module-accordion[open] .module-accordion__chevron {
 .analytics-overall-status__badge--mid { background: var(--color-warning-soft); color: var(--color-warning); }
 .analytics-overall-status__badge--bad { background: var(--color-error-soft); color: var(--color-error); }
 
-/* Analytics sub-sections — collapsed by default so the seven Analytics
-   data groups (Configuration, Detection & Runtime, Event Validation,
-   Coverage, Page-Level Results, Cross-Page Consistency, Pages With Issues)
-   aren't all visually open at once inside the already-expanded module
-   accordion. Nests the same collapse pattern as .module-accordion but
-   smaller and without its own card chrome. */
+/* Analytics sub-sections (collapsed by default) */
 .analytics-subsection {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -328,11 +297,7 @@ details.module-accordion[open] .module-accordion__chevron {
 }
 .screenshot-strip__item span { font-size: var(--fs-2xs); font-weight: 600; background: var(--surface); padding: 3px 8px; border-radius: var(--radius-pill); border: 1px solid var(--border); }
 
-/* ==========================================================================
-   Ask AI panel — deliberately not a .card. Sunken surface (no color tint)
-   so it reads as a distinct tool sitting on top of the audit result,
-   without breaking the report's restrained, evidence-document palette.
-   ========================================================================== */
+/* Ask AI panel */
 .ai-panel {
   position: relative;
   margin-bottom: var(--sp-6);
@@ -394,10 +359,7 @@ details.module-accordion[open] .module-accordion__chevron {
 .ai-panel__send:disabled { opacity: 0.6; cursor: not-allowed; }
 .ai-panel__disclaimer { font-size: var(--fs-2xs); color: var(--text-tertiary); margin: var(--sp-3) 0 0; }
 
-/* ==========================================================================
-   Executive Summary — metric cards + key areas
-   (mirrors pdf/summary.py's four metric cards + Key Areas list, §3.3)
-   ========================================================================== */
+/* Summary metric cards */
 .metric-card-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -425,11 +387,7 @@ details.module-accordion[open] .module-accordion__chevron {
 }
 .key-areas-list li { line-height: 1.5; }
 
-/* A Finding ID chip (e.g. "A11Y-001") shown inline before a finding/issue
-   title — the same stable ID reports/generator.py's assign_finding_ids
-   assigns and pdf/summary.py + pdf/recommendations.py already print, so a
-   finding can be traced between the on-screen report, the PDF and the
-   appendix (§3.6/§3.12). */
+/* Finding ID chip */
 .finding-id-badge {
   display: inline-block;
   font-family: var(--font-mono); font-size: var(--fs-2xs); font-weight: 700;
@@ -442,9 +400,7 @@ details.module-accordion[open] .module-accordion__chevron {
   letter-spacing: 0.02em;
 }
 
-/* ==========================================================================
-   Finding Severity Distribution (§3.5) — small doughnut + counts table
-   ========================================================================== */
+/* Severity distribution */
 .severity-dist {
   display: flex; align-items: center; gap: var(--sp-6); flex-wrap: wrap;
 }
@@ -465,11 +421,7 @@ details.module-accordion[open] .module-accordion__chevron {
   font-family: var(--font-mono); font-weight: 700; font-size: var(--fs-md);
 }
 
-/* ==========================================================================
-   Critical Findings (§3.6) — stacked, scannable cards. Severity color is
-   used only on the badge; everything else stays neutral so the eye lands
-   on severity + title first.
-   ========================================================================== */
+/* Critical findings */
 .issue-row--finding {
   display: flex; flex-direction: column; gap: 4px;
   padding: var(--sp-4) 0;
@@ -484,11 +436,7 @@ details.module-accordion[open] .module-accordion__chevron {
 }
 .issue-row__link:hover { text-decoration: underline; }
 
-/* ==========================================================================
-   Business Impact (§3.7) — one labeled card per item: "Business Risk"
-   (what/where) above "Potential impact" (the plain-English consequence),
-   so a non-technical reader gets the point without the finding detail.
-   ========================================================================== */
+/* Business impact cards */
 .impact-card {
   border: 1px solid var(--border); border-radius: var(--radius-md);
   background: var(--surface-sunken);
@@ -511,27 +459,21 @@ details.module-accordion[open] .module-accordion__chevron {
   margin-top: 4px;
 }
 
-/* ==========================================================================
-   Email Reports section + Email Composer (Send to POC)
-
-   The composer is built by window.EmailComposer in report.js. It is opened
-   from two pages — report.html's Email Reports card and email-reports.html —
-   so these styles are NOT scoped to either page, and email-reports.html
-   links this stylesheet (ahead of email-reports.css) purely to pick them up.
-   Everything is token-driven, so light/dark theming follows the rest of the
-   app on both pages.
-   ========================================================================== */
+/*
+ * Email Reports card and the "Send to POC" composer.
+ * Used on report.html and email-reports.html, so not page-scoped.
+ */
 
 /* ---- Email Reports section (report.html's card, #email-reports) ---- */
 .email-reports { scroll-margin-top: calc(var(--header-height) + var(--sp-4)); }
 .email-reports .card__head { align-items: flex-start; gap: var(--sp-4); }
 .email-reports__all { color: var(--color-primary); font-weight: 600; white-space: nowrap; }
 .email-reports__all:hover { text-decoration: underline; }
-/* Also used by email-reports.html for its empty/loading placeholders. */
+/* Also used by email-reports.html. */
 .email-empty { font-size: var(--fs-sm); color: var(--text-tertiary); padding: var(--sp-2) 0 0; margin: 0; }
 @media print { .email-reports, .composer-overlay { display: none !important; } }
 
-/* ---- Overlay + dialog shell ---- */
+/* Overlay and dialog */
 .composer-overlay {
   position: fixed; inset: 0; z-index: 300;
   display: flex; align-items: center; justify-content: center;
@@ -575,7 +517,7 @@ details.module-accordion[open] .module-accordion__chevron {
   display: flex; align-items: flex-start; gap: var(--sp-2);
   margin: var(--sp-4) var(--sp-6) 0; padding: var(--sp-3) var(--sp-4);
   border: 1px solid var(--color-error); border-radius: var(--radius-sm);
-  /* translucent tint rather than --color-error-soft, which stays pale pink in dark mode */
+  /* translucent tint (the soft colour stays pale in dark mode) */
   background: rgba(239, 68, 68, 0.1); color: var(--color-error-text);
   font-size: var(--fs-sm); line-height: 1.5;
 }
@@ -596,7 +538,7 @@ details.module-accordion[open] .module-accordion__chevron {
 }
 .composer__foot-main { display: flex; align-items: center; gap: var(--sp-3); margin-left: auto; }
 
-/* ---- Mail header block: To / CC / BCC / Subject as ruled rows ---- */
+/* Mail header: To / CC / BCC / Subject */
 .mailhead {
   border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface);
   transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
@@ -617,9 +559,9 @@ details.module-accordion[open] .module-accordion__chevron {
   width: 100%; padding: 9px 0; border: none; background: transparent;
   font-size: var(--fs-sm); color: var(--text-primary);
 }
-.mailhead input:focus-visible { outline: none; }  /* the block's :focus-within ring takes over */
+.mailhead input:focus-visible { outline: none; }  /* the block's focus ring is used instead */
 
-/* ---- Recipient chips ---- */
+/* Recipient chips */
 .recipients { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 38px; padding: 4px 0; cursor: text; }
 .recipients__input {
   flex: 1 1 160px; min-width: 120px; padding: 5px 0;
@@ -642,7 +584,7 @@ details.module-accordion[open] .module-accordion__chevron {
 .chip__remove svg { width: 12px; height: 12px; }
 .chip--invalid { background: transparent; border-color: var(--color-error); color: var(--color-error-text); }
 
-/* ---- Message ---- */
+/* Message */
 .composer__section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin-bottom: var(--sp-2); }
 .composer__label { font-size: var(--fs-sm); font-weight: 600; color: var(--text-primary); }
 .composer__hint { margin: 0; font-size: var(--fs-xs); color: var(--text-tertiary); line-height: 1.5; }
@@ -656,7 +598,7 @@ details.module-accordion[open] .module-accordion__chevron {
 .composer__textarea.is-invalid { border-color: var(--color-error); }
 .composer__section .field__error { margin-top: var(--sp-2); }
 
-/* ---- Option groups: attachments / PDF options / evidence options ---- */
+/* Attachment and option groups */
 .opt-group { min-width: 0; margin: 0; padding: 0; border: none; }
 .opt-group__legend { padding: 0; margin-bottom: 2px; font-size: var(--fs-sm); font-weight: 600; }
 .opt-group .composer__hint { margin-bottom: var(--sp-3); }
@@ -679,7 +621,7 @@ details.module-accordion[open] .module-accordion__chevron {
 .opt__hint.mono { font-size: var(--fs-2xs); }
 
 
-/* ---- Preview ---- */
+/* Preview */
 .preview { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); overflow: hidden; }
 .preview__head { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--border); background: var(--surface-sunken); }
 .preview__subject { margin: 0; font-size: var(--fs-md); font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
@@ -699,7 +641,7 @@ details.module-accordion[open] .module-accordion__chevron {
 .file-chip span { overflow-wrap: anywhere; }
 .preview__pdf-note { margin-top: var(--sp-3); }
 
-/* ---- Small screens: composer becomes a full-screen sheet ---- */
+/* Small screens: the composer fills the screen */
 @media (max-width: 640px) {
   .composer-overlay { padding: 0; align-items: stretch; }
   .composer { max-width: none; max-height: none; height: 100%; border: none; border-radius: 0; }
@@ -717,12 +659,10 @@ details.module-accordion[open] .module-accordion__chevron {
 }
 
 
-/* ==========================================================================
-   Report status icons + "Why did X fail?" rows
-   Scoped to these classes on purpose — no global svg sizing, so sidebar,
-   header and other icons are untouched. Any status icon rendered outside a
-   .check-item__icon circle must go through statusIcon() in report.js.
-   ========================================================================== */
+/*
+ * Status icons and "Why did X fail?" rows. Sized only inside these classes
+ * (no global svg rule). Status icons outside .check-item__icon use statusIcon() in report.js.
+ */
 .status-icon {
   display: inline-flex; align-items: center; justify-content: center;
   flex: 0 0 auto; width: 16px; height: 16px; line-height: 0; vertical-align: middle;
@@ -736,7 +676,7 @@ details.module-accordion[open] .module-accordion__chevron {
   display: flex; align-items: flex-start; gap: 8px;
   padding-left: 10px; border-left: 2px solid var(--color-error, #dc2626);
 }
-/* Nudge the 16px icon onto the first text line's optical centre */
+/* Align the icon with the first text line */
 .why-fail__item > .status-icon { margin-top: 2px; }
 .why-fail__body { flex: 1; min-width: 0; }
 .why-fail__title { font-size: var(--fs-sm); font-weight: 500; line-height: 1.4; color: var(--text-primary); }
@@ -746,10 +686,7 @@ details.module-accordion[open] .module-accordion__chevron {
 .why-fail__evidence-list { margin: 0; padding-left: 16px; list-style: disc; font-size: var(--fs-sm); color: var(--text-secondary); }
 .why-fail__evidence-list li { margin-bottom: 2px; overflow-wrap: anywhere; }
 
-/* ==========================================================================
-   Report layout v2 — "at a glance" + one issue list + module tabs.
-   Goal: find what's wrong in one screen, open details only when needed.
-   ========================================================================== */
+/* Report layout: at a glance, one issue list, module tabs */
 
 /* Tighter vertical rhythm for the whole page */
 .report-banner { padding: var(--sp-5) var(--sp-6); margin-bottom: var(--sp-4); }
@@ -757,7 +694,7 @@ details.module-accordion[open] .module-accordion__chevron {
 .rp-h2 { font-size: var(--fs-md); font-weight: 700; margin: 0; letter-spacing: -0.01em; }
 .rp-muted { font-size: var(--fs-xs); color: var(--text-tertiary); margin: 2px 0 0; }
 
-/* ---------- At a glance ---------- */
+/* At a glance */
 .rp-glance { padding: var(--sp-5) var(--sp-6); margin-bottom: var(--sp-4); }
 .rp-glance__summary {
   font-size: var(--fs-sm); line-height: 1.6; color: var(--text-secondary);
@@ -810,7 +747,7 @@ button.rp-mod:focus-visible { outline: 2px solid var(--color-primary); outline-o
 .rp-count--info { background: var(--surface-sunken); color: var(--text-secondary); border-color: var(--border); }
 [data-theme="dark"] .rp-count--warning { color: var(--color-warning); }
 
-/* ---------- Issues to fix ---------- */
+/* Issues to fix */
 .rp-issues { padding: var(--sp-5) var(--sp-6); margin-bottom: var(--sp-4); scroll-margin-top: calc(var(--header-height, 64px) + var(--sp-4)); }
 .rp-issues__head {
   display: flex; align-items: flex-end; justify-content: space-between; gap: var(--sp-4);
@@ -888,7 +825,7 @@ button.rp-mod:focus-visible { outline: 2px solid var(--color-primary); outline-o
 }
 .rp-more:hover { background: var(--color-primary-soft); }
 
-/* ---------- Module details as tabs ---------- */
+/* Module tabs */
 #details { scroll-margin-top: calc(var(--header-height, 64px) + var(--sp-4)); margin-bottom: var(--sp-4); }
 .rp-details-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); flex-wrap: wrap; margin-bottom: var(--sp-3); }
 .rp-tabs { display: inline-flex; gap: 2px; padding: 3px; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--radius-pill); }
@@ -909,7 +846,7 @@ button.rp-mod:focus-visible { outline: 2px solid var(--color-primary); outline-o
 .module-accordion-group.is-tabbed > .module-accordion > .module-accordion__summary { display: none; }
 .module-accordion-group.is-tabbed .module-accordion__body { padding: var(--sp-5) var(--sp-6); }
 
-/* Sub-sections inside a module: lighter, less boxed */
+/* Lighter sub-sections */
 .analytics-subsection { margin-bottom: var(--sp-2); }
 .analytics-subsection__summary { padding: 10px var(--sp-4); }
 .analytics-subsection__summary:not(:has(.analytics-subsection__chevron))::after {
@@ -920,11 +857,11 @@ button.rp-mod:focus-visible { outline: 2px solid var(--color-primary); outline-o
 .analytics-subsection[open] > .analytics-subsection__summary:not(:has(.analytics-subsection__chevron))::after { transform: rotate(-135deg) translateY(-2px); }
 .analytics-subsection__body { padding: var(--sp-3) var(--sp-4) var(--sp-4); }
 
-/* ---------- Footer: email + ask AI side by side ---------- */
+/* Footer: email + Ask AI side by side */
 .rp-footer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-4); align-items: start; margin-bottom: var(--sp-6); }
 .rp-footer-grid > .email-reports, .rp-footer-grid > .ai-panel { margin: 0; }
 
-/* ---------- Responsive ---------- */
+/* Responsive */
 @media (max-width: 1100px) {
   .rp-glance__row { grid-template-columns: 1fr; }
   .rp-glance__sev { justify-content: flex-start; }
@@ -942,21 +879,21 @@ button.rp-mod:focus-visible { outline: 2px solid var(--color-primary); outline-o
   .module-accordion-group.is-tabbed .module-accordion__body { padding: var(--sp-4); }
 }
 
-/* ---------- Print: everything expanded, no controls ---------- */
+/* Print: everything open, no controls */
 @media print {
   .rp-issues__tools, .rp-more, .rp-tabs, .rp-link, .rp-footer-grid { display: none !important; }
   .rp-issue__body { display: block !important; }
   .module-accordion-group.is-tabbed > .module-accordion { display: block !important; }
   .module-accordion-group.is-tabbed > .module-accordion > .module-accordion__summary { display: flex !important; }
 }
-/* author display rules beat the [hidden] attribute — keep hidden things hidden */
+/* Keep [hidden] elements hidden */
 .rp-more[hidden], .rp-issue__body[hidden], .rp-glance__summary[hidden], .rp-select[hidden] { display: none !important; }
-/* Dark theme: the *-soft tokens are light pastel; use translucent tints */
+/* Dark theme: translucent tints instead of pale soft colours */
 [data-theme="dark"] .rp-count--critical, [data-theme="dark"] .rp-sev--critical, [data-theme="dark"] .rp-tab__score[data-band="bad"] { background: rgba(239, 68, 68, 0.16); }
 [data-theme="dark"] .rp-count--warning, [data-theme="dark"] .rp-sev--warning, [data-theme="dark"] .rp-tab__score[data-band="mid"] { background: rgba(245, 158, 11, 0.16); color: var(--color-warning); }
 [data-theme="dark"] .rp-tab__score[data-band="good"] { background: rgba(16, 185, 129, 0.16); }
 
-/* Evidence image that no longer exists on the server */
+/* Screenshot no longer on the server */
 .rp-noshot {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
   width: 100%; min-height: 96px; height: 100%; padding: var(--sp-3);
@@ -973,5 +910,5 @@ a.is-missing { cursor: default; }
 }
 [data-theme="dark"] .rp-note { background: rgba(245, 158, 11, 0.14); color: var(--color-warning); }
 
-/* Tabs for modules an audit did not run are hidden (report.js) */
+/* Tabs for modules that didn't run are hidden */
 .rp-tab[hidden] { display: none !important; }

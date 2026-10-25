@@ -1,17 +1,9 @@
-/* ==========================================================================
-   internal-auth.js — internal-login.html page logic.
-
-   Sign-in is email -> Google Authenticator (no password):
-
-     1. Email           POST /auth/login  -> { step, challengeToken, ... }
-     2a. step "setup"   first login, or the admin reset the authenticator:
-                        show the QR code (+ manual key), then the code
-     2b. step "verify"  authenticator already paired: just the code
-     3. Code            POST /auth/verify -> session -> dashboard
-
-   Nothing here creates an account — accounts are provisioned by an
-   administrator in the Access Portal (backend/api/access_management.py).
-   ========================================================================== */
+/*
+ * Login page: email, then Google Authenticator.
+ *   1. POST /auth/login -> step "setup" (show QR code) or "verify"
+ *   2. POST /auth/verify with the 6-digit code -> session -> dashboard
+ * Accounts are only created in the Access Portal.
+ */
 
 (function () {
   var U = window.Utils;
@@ -19,7 +11,7 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     var emailForm = document.getElementById('internalLoginForm');
-    if (!emailForm) return; // not on internal-login.html
+    if (!emailForm) return; // not on the login page
 
     var emailInput = document.getElementById('email');
     var emailError = document.getElementById('emailError');
@@ -39,12 +31,10 @@
     var verifyCodeError = document.getElementById('verifyCodeError');
     var verifyBtn = document.getElementById('verifySubmitBtn');
 
-    // Short-lived token from step 1. Kept in memory only — it is not a
-    // session and is never written to storage.
+    // Step 1 token, kept in memory only (not a session).
     var challengeToken = null;
 
-    // If already signed in (a real session, issued only after a correct
-    // authenticator code), skip straight to the dashboard.
+    // Already signed in: go to the dashboard.
     var existing = window.Api && window.Api.auth.getSession();
     if (existing && existing.token && existing.user) {
       if (location.search.indexOf('stay') === -1) {
@@ -85,7 +75,7 @@
       emailInput.focus();
     }
 
-    // ---------------------------- step 1: email ---------------------------
+    // Step 1: email
     U.on(emailInput, 'blur', function () { V.validateEmailField(emailInput, emailError); });
     U.on(emailInput, 'input', function () { V.clearFieldState(emailInput, emailError); });
 
@@ -120,7 +110,7 @@
         });
     });
 
-    // ------------------------- step 2: 6-digit code ------------------------
+    // Step 2: code
     function submitCode(input, errorEl, btn, isSetup) {
       var code = cleanCode(input);
       if (code.length !== 6) {
@@ -141,7 +131,7 @@
         .catch(function (err) {
           window.Loader.setButtonLoading(btn, false);
           var msg = err.message || 'That code didn’t match. Try again.';
-          // An expired/reset challenge can't be retried — start over.
+          // Expired or reset sign-in: start again.
           if (/enter your email again/i.test(msg)) {
             window.Notifications.error('Please sign in again', msg);
             backToEmail();

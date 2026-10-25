@@ -1,4 +1,5 @@
-"""Unit tests for Phase 1 classifiers — no browser needed."""
+"""Unit tests for the consent classifiers (no browser).
+"""
 
 import pytest
 
@@ -22,7 +23,7 @@ from cookies.detector import parse_set_cookie_headers
 from crawler.parser import parse_html
 
 
-# ---------------------------------------------------------------- buttons ---
+# Buttons
 @pytest.mark.parametrize("label,action", [
     ("Accept all", ACCEPT_ALL), ("Accept All Cookies", ACCEPT_ALL), ("Accept", ACCEPT),
     ("Reject all", REJECT_ALL), ("Reject", REJECT),
@@ -66,7 +67,7 @@ def test_static_no_banner_means_no_controls():
     assert not (det.accept_found or det.reject_found or det.manage_found)
 
 
-# ---------------------------------------------------------------- network ---
+# Network
 def test_gtm_is_observation_not_tracking():
     r = classify_request("https://www.googletagmanager.com/gtm.js?id=GTM-X", "script", "axa.com")
     assert r.category == TAG_MANAGER and not r.is_tracking and r.is_observation
@@ -122,7 +123,7 @@ def test_network_findings_ga_collect():
     assert "Google Analytics" in crit[0]["description"]
 
 
-# ---------------------------------------------------------------- cookies ---
+# Cookies
 @pytest.mark.parametrize("name,cat", [
     ("OptanonConsent", CONSENT_MANAGEMENT), ("OptanonAlertBoxClosed", CONSENT_MANAGEMENT),
     ("CookieConsent", CONSENT_MANAGEMENT), ("euconsent-v2", CONSENT_MANAGEMENT),
@@ -162,7 +163,7 @@ def test_analytics_cookie_in_response_is_flagged():
     assert any(f["severity"] == "critical" for f in check_pre_consent_cookies(cookies))
 
 
-# ----------------------------------------------------------- applicability ---
+# Applicability
 def _page(url, html):
     return parse_html(url, html)
 
@@ -197,7 +198,7 @@ def test_explicit_region_override():
     assert determine_applicability("https://www.axa.com/", None, target_region="EU").frameworks == [FW_GDPR]
 
 
-# ------------------------------------------------------------ region engine ---
+# Region
 def test_region_india_high_confidence_with_evidence():
     page = _page("https://shop.example.in/", '<html lang="en-IN"><body><p>Prices ₹ 499. Grievance Officer: '
                                              'privacy@shop.in. DPDP Act 2023.</p></body></html>')
@@ -243,7 +244,7 @@ def test_refine_region_with_cmp_configuration():
     assert refine_region(explicit, RT()).frameworks == [FW_DPDP]
 
 
-# ------------------------------------------------------------- ccpa signals ---
+# CCPA signals
 def test_ccpa_signals_only_detect():
     page = _page("https://x.com/", '<html><body><a href="/dns">Do Not Sell or Share My Personal Information</a>'
                                    '<script>if (navigator.globalPrivacyControl) {}</script></body></html>')
@@ -252,7 +253,7 @@ def test_ccpa_signals_only_detect():
     assert not hasattr(sig, "applies")  # applicability belongs to consent.region
 
 
-# -------------------------------------------------------------- preferences ---
+# Preferences
 def test_preferences_runtime_verification():
     class RT:
         available = True
@@ -267,7 +268,7 @@ def test_preferences_runtime_verification():
     assert titles == ["Manage preferences did not open a preference panel"]
 
 
-# ------------------------------------------------- Phase 4: report view ---
+# Report view
 def test_consent_view_unknown_region_not_assessed():
     from reports.consent_view import build_consent_view
     view = build_consent_view({

@@ -1,10 +1,5 @@
 """
-config/settings.py
-
-Central, typed application settings loaded from environment variables / .env.
-Every other module should read configuration from `settings` (the singleton
-below) rather than calling os.getenv() directly, so we have one source of
-truth and get validation for free from Pydantic.
+All settings, loaded from environment variables / .env. Read config from `settings`, not os.getenv().
 """
 
 from functools import lru_cache
@@ -29,28 +24,16 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    # --- Access Portal integration (api/access_management.py) ---
-    # Shared secret the AuditPulse Access Portal sends as
-    # `Authorization: Bearer <key>` on its /internal/access/* calls (see
-    # AuditPulse-Access/backend/auditpulse.py's AUDITPULSE_API_KEY). Left
-    # empty by default, which the endpoint treats as "integration not
-    # configured" and rejects every call — there is no open-by-default
-    # fallback, since this endpoint can flip who has access to the app.
+    # --- Access Portal integration ---
+    # Shared key the portal sends as `Authorization: Bearer <key>`.
+    # Empty = integration off (every call refused).
     ACCESS_PORTAL_API_KEY: str = ""
 
     # --- Database ---
     DATABASE_URL: str = "postgresql+asyncpg://auditpulse:auditpulse@localhost:5432/auditpulse"
     DB_ECHO: bool = False
-    # Kept small deliberately: at least two processes (the combined
-    # web+worker+beat service in railway.json and the standalone worker
-    # in railway-worker.json) each create their own engine/pool, and in
-    # production DATABASE_URL points at Supabase's pooler, which caps
-    # total concurrent clients (session-mode pooler: 15 by default on
-    # smaller Supabase tiers). pool_size=10/max_overflow=20 (the old
-    # defaults) let a *single* process alone request up to 30 connections
-    # — well past that cap before a second process even starts. See
-    # config/database.py's engine construction for the accompanying
-    # PgBouncer/transaction-pooler settings.
+    # Small on purpose: several processes each have their own pool, and
+    # Supabase limits total connections.
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 5
 
@@ -60,9 +43,7 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
 
     # --- CORS ---
-    # Stored as a raw comma-separated string (see .env) so pydantic-settings
-    # doesn't try to JSON-decode it as a list; use the `CORS_ORIGINS`
-    # property below to get the parsed List[str].
+    # Comma-separated; use the CORS_ORIGINS property for the list.
     CORS_ORIGINS_RAW: str = "http://localhost:3000"
 
     # --- Third-party APIs ---
@@ -80,58 +61,39 @@ class Settings(BaseSettings):
     CRAWLER_REQUEST_TIMEOUT_SECONDS: float = 15.0
     CRAWLER_ENABLE_SCREENSHOTS: bool = True
     SCREENSHOT_DIR: str = "screenshots"
-    # Durable copy of evidence screenshots in the database (models.screenshot_blob):
-    # the container disk is wiped on every redeploy, so without this the report's
-    # consent / Journey Map screenshots disappear.
+    # Keep screenshots in the database too: the server disk is wiped on every redeploy.
     SCREENSHOT_DB_ENABLED: bool = True
     SCREENSHOT_DB_RETENTION_DAYS: int = 30
     SCREENSHOT_DB_MAX_WIDTH: int = 1280
     SCREENSHOT_DB_MAX_HEIGHT: int = 8000
     SCREENSHOT_DB_JPEG_QUALITY: int = 68
-    # Gates the Playwright-based click-through/runtime validation passes in
-    # consent.runtime and analytics.runtime (separate from the plain
-    # screenshot capture above) — off this, both modules still run their
-    # full static/markup checks, just without live browser verification.
+    # Turns the live browser checks (consent and analytics) on or off. Static checks always run.
     CRAWLER_ENABLE_RUNTIME_CHECKS: bool = True
-    # Optional consent-audit region override ("IN", "EU", "UK", "US-CA").
-    # Unset = detect from site signals; undetectable = regional compliance
-    # "not assessed" (consent.region).
+    # Force a consent region ("IN", "EU", "UK", "US-CA"). Unset = detect from the site.
     CONSENT_TARGET_REGION: Optional[str] = None
-    # SSRF protection (utils/net_guard.py): audits may only contact public
-    # internet addresses. Only enable for local development/tests that serve
-    # fixture websites on 127.0.0.1 — never in production.
+    # SSRF protection: audits only reach public addresses. Enable only for local tests on 127.0.0.1.
     ALLOW_PRIVATE_NETWORK_TARGETS: bool = False
 
-    # Interactive API docs (/docs, /redoc, /openapi.json) list every endpoint
-    # and schema. Off unless explicitly enabled (local development only).
+    # API docs (/docs, /redoc). Local development only.
     ENABLE_API_DOCS: bool = False
 
-    # --- Customer Journey (journey/) ---
-    # Safe interaction tests per audit / per page (each one reloads the page
-    # and captures before / highlighted / after screenshots).
+    # --- Journey Map (journey/) ---
+    # Interaction tests per audit / per page.
     JOURNEY_MAX_TESTED_INTERACTIONS: int = 25
     JOURNEY_MAX_TESTS_PER_PAGE: int = 8
-    # Time budgets (seconds) so a journey never holds the worker for long:
-    # page discovery stops after SCAN budget, interaction tests after TEST
-    # budget (what wasn't reached is reported as "not tested"), and the
-    # whole module is cancelled after HARD_TIMEOUT whatever happens.
+    # Time limits (seconds): page discovery, interaction tests, and the whole module.
     JOURNEY_SCAN_BUDGET_S: int = 180
     JOURNEY_TEST_BUDGET_S: int = 240
     JOURNEY_HARD_TIMEOUT_S: int = 480
     MODULE_HARD_TIMEOUT_S: int = 300   # consent / analytics step safety net
     JOURNEY_ENABLE_INTERACTION_TESTS: bool = True
 
-    # --- Reports (reports/report_storage.py) ---
-    # Where generated report exports (HTML/JSON) are cached on disk, keyed
-    # by audit id, so repeat downloads of the same report don't re-run the
-    # AI pipeline in reports/generator.py.
+    # --- Reports ---
+    # Where report exports are cached on disk.
     REPORTS_DIR: str = "reports_output"
 
-    # --- Email / POC report delivery (emailer/) ---
-    # Credentials come from the environment only (.env), never source
-    # code, per requirements §9.4/§14. SMTP_HOST empty means the email
-    # feature is unconfigured — emailer.service checks this and returns a
-    # clear failure rather than silently pretending to send.
+    # --- Email (emailer/) ---
+    # Credentials only from the environment. Empty SMTP_HOST = email off.
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
     SMTP_USERNAME: str = ""
@@ -139,6 +101,8 @@ class Settings(BaseSettings):
     SMTP_USE_TLS: bool = True
     SMTP_FROM_EMAIL: str = "reports@auditpulse.example.com"
     SMTP_FROM_NAME: str = "AuditPulse"
+    # Frontend address for links in emails. Empty = first https origin in CORS_ORIGINS_RAW.
+    FRONTEND_URL: str = ""
 
     # --- Logging ---
     LOG_LEVEL: str = "INFO"
@@ -149,40 +113,22 @@ class Settings(BaseSettings):
     CORS_ALLOW_CREDENTIALS: bool = True
     CORS_MAX_AGE_SECONDS: int = 600
 
-    # --- Rate limiting (middleware/rate_limit.py) ---
-    # Backed by Redis (same REDIS_URL as Celery) so limits are shared across
-    # every uvicorn worker process; falls back to an in-memory counter if
-    # Redis is unreachable, so a Redis outage degrades to per-process
-    # limiting instead of taking the API down.
+    # --- Rate limiting ---
+    # Uses Redis so limits are shared between processes; falls back to memory if Redis is down.
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_REQUESTS: int = 100
     RATE_LIMIT_WINDOW_SECONDS: int = 60
-    RATE_LIMIT_AUTH_REQUESTS: int = 10  # tighter window for /auth/* (brute-force protection)
+    RATE_LIMIT_AUTH_REQUESTS: int = 10  # stricter limit for /auth/*
     RATE_LIMIT_AUTH_WINDOW_SECONDS: int = 60
     RATE_LIMIT_EXEMPT_PATHS_RAW: str = "/health,/docs,/redoc,/openapi.json"
 
     @field_validator("DATABASE_URL")
     @classmethod
     def _validate_database_url(cls, v: str) -> str:
-        """Fail fast, with a clear message, instead of letting an empty
-        DATABASE_URL travel all the way down into
-        sqlalchemy.engine.url.make_url() and surface as an opaque
-        `ArgumentError: Could not parse SQLAlchemy URL from string ''`.
-
-        This only triggers if the DATABASE_URL env var is present but
-        empty/blank — if it's unset entirely, pydantic-settings falls back
-        to the class default above and never reaches this validator. An
-        empty-but-set var is exactly what happens on Railway when a
-        variable is created with no value, or a reference variable
-        (e.g. ${{Postgres.DATABASE_URL}}) points at a service that
-        doesn't exist in the project.
-        """
+        """Gives a clear error when DATABASE_URL is set but empty."""
         v = v.strip()
         if v:
-            # Supabase's dashboard copies URIs as postgresql://... (or
-            # postgres://...). This app is async and needs the asyncpg
-            # driver, so add it automatically instead of failing with a
-            # confusing "psycopg2 is not async" error.
+            # Supabase gives postgres:// URLs; switch to the async driver automatically.
             if v.startswith("postgres://"):
                 v = "postgresql+asyncpg://" + v[len("postgres://"):]
             elif v.startswith("postgresql://"):
@@ -206,12 +152,12 @@ class Settings(BaseSettings):
 
     @property
     def CORS_ORIGINS(self) -> List[str]:
-        """Parsed list of allowed CORS origins from CORS_ORIGINS_RAW."""
+        """Allowed CORS origins as a list."""
         return [o.strip() for o in self.CORS_ORIGINS_RAW.split(",") if o.strip()]
 
     @property
     def RATE_LIMIT_EXEMPT_PATHS(self) -> List[str]:
-        """Parsed list of path prefixes middleware/rate_limit.py never throttles."""
+        """Path prefixes the rate limiter skips."""
         return [p.strip() for p in self.RATE_LIMIT_EXEMPT_PATHS_RAW.split(",") if p.strip()]
 
     @property
@@ -220,7 +166,7 @@ class Settings(BaseSettings):
 
     @property
     def EMAIL_ENABLED(self) -> bool:
-        """False until SMTP_HOST is configured in the environment — see emailer/service.py."""
+        """False until SMTP_HOST is set."""
         return bool(self.SMTP_HOST.strip())
 
     model_config = SettingsConfigDict(
@@ -233,7 +179,7 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    """Cached settings instance — env is only parsed once per process."""
+    """Settings are read once per process."""
     return Settings()
 
 

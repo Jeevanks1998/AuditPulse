@@ -1,17 +1,6 @@
 """
-models/audit.py
-
-The Audit model — one row per audit run (queued -> running -> completed
-/ failed). Carries the lightweight JSON `breakdown` / `findings` columns
-that the dashboard and report views read for fast, denormalized access,
-plus relationships out to the normalized detail tables: Issue (one row
-per finding), Consent / Analytics (one-to-one module results), and
-Report (share/export metadata).
-
-Business logic (the pipeline, stats aggregation, query helpers) stays in
-api/audit.py — this module only defines the schema and stays free of
-route/session concerns so other models can import it without pulling in
-FastAPI.
+One audit run (queued -> running -> completed / failed), with its scores and
+findings, and links to the detailed results (issues, consent, analytics, report).
 """
 
 from datetime import datetime, timezone
@@ -47,14 +36,10 @@ class Audit(Base):
     depth: Mapped[str] = mapped_column(String(20), default="homepage")  # "homepage" | "full"
     max_pages: Mapped[int] = mapped_column(Integer, default=DEFAULT_MAX_PAGES)
     modules: Mapped[list] = mapped_column(JSON, default=list)
-    # Optional per-audit privacy region ("EU" | "UK" | "US-CA" | "IN").
-    # None = detect it from the site (consent/region.py). Set it for global
-    # .com sites, where automatic detection usually can't tell.
+    # Optional privacy region ("EU" | "UK" | "US-CA" | "IN"). None = detect from the site.
     target_region: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
-    # The recurring schedule that fired this audit (None for one-off audits).
-    # When it completes, services.scheduled_email emails the report to the
-    # schedule's recipients. Plain integer, no FK: deleting a schedule must
-    # never touch audit history.
+    # Schedule that started this audit (None for one-off audits); its recipients
+    # get the report. No foreign key, so deleting a schedule never touches history.
     schedule_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
 
     status: Mapped[str] = mapped_column(String(20), default="queued")  # queued|running|completed|failed
@@ -62,7 +47,7 @@ class Audit(Base):
     percent: Mapped[int] = mapped_column(Integer, default=0)
 
     overall_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    breakdown: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # analytics/consent/journey
+    breakdown: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # scores per module
     findings: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)   # [{module, severity, title, description}]
 
     error_message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
@@ -72,13 +57,10 @@ class Audit(Base):
     )
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    # Soft delete: a deleted audit is hidden from History / Recent Audits /
-    # the dashboard but kept (with its report) so it can be restored.
+    # Soft delete: hidden everywhere but kept, so it can be restored.
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
-    # ----------------------------------------------------------------
     # Relationships
-    # ----------------------------------------------------------------
     user: Mapped["User"] = relationship("User", back_populates="audits")
     website: Mapped[Optional["Website"]] = relationship("Website", back_populates="audits")
 

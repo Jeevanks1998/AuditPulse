@@ -1,26 +1,7 @@
 """
-middleware/auth.py
-
-api/auth.py's `get_current_user` dependency is still what actually
-*enforces* authentication on a route — that stays exactly as it is.
-What's missing is a way for the rest of the app (middleware/logging.py's
-per-request log line, middleware/rate_limit.py's per-user bucket) to
-know who's calling *before* a route's dependencies have even run, and a
-second entry point for the API key every account already has
-(models.user.User.api_key, generated in api/auth.py and shown/rotated on
-settings.html) — right now nothing accepts that key anywhere; the only
-working auth path is the Bearer JWT the frontend's own login flow
-issues.
-
-AuthContextMiddleware fills both gaps: it best-effort resolves either an
-`Authorization: Bearer <jwt>` header or an `X-API-Key: <key>` header to
-a user id and stamps it (plus which method matched) onto
-`request.state`, before the request reaches routing. It never rejects a
-request itself — an invalid/missing credential just leaves
-`request.state.user_id` as None, and routes that require auth still get
-that enforcement from `get_current_user` exactly as before. That split
-keeps this middleware safe to add without touching a single route's
-behavior.
+Works out who is calling (Bearer token or X-API-Key) before routing, and puts
+it on request.state for logging and rate limits. Never rejects a request;
+routes still enforce auth with get_current_user.
 """
 
 from typing import Optional
@@ -58,7 +39,6 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
 
         return await call_next(request)
 
-    # ----------------------------------------------------------------
     async def _resolve_from_bearer(self, request: Request) -> Optional[int]:
         authorization = request.headers.get("Authorization", "")
         if not authorization.lower().startswith("bearer "):
@@ -72,8 +52,7 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
         except JWTError:
             return None
 
-        # Only real sessions count — not the short-lived sign-in challenge
-        # tokens from /auth/login (see api/auth.py).
+        # Only real sessions, not sign-in challenge tokens.
         if payload.get("typ") != "access":
             return None
 
@@ -83,17 +62,14 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
         except (TypeError, ValueError):
             return None
 
-    # ----------------------------------------------------------------
     async def _resolve_from_api_key(self, request: Request) -> Optional[int]:
         api_key = request.headers.get(API_KEY_HEADER)
         if not api_key:
             return None
 
-        # Own short-lived session — middleware runs ahead of any route's
-        # `Depends(get_db)`, so there's no request-scoped session to reuse
-        # yet (see config/database.py's docstring on that rule).
+        # Own short session: middleware runs before any route's get_db.
         try:
-            from models.user import User  # local import avoids a module cycle at app start-up
+            from models.user import User  # local import avoids a cycle at start-up
 
             async with AsyncSessionLocal() as db:
                 result = await db.execute(

@@ -1,10 +1,5 @@
 """
-models/consent.py
-
-Result of the "consent" audit module (see config.constants.AUDIT_MODULES
-and the consent checkbox on audit.html) — cookie banner / privacy-policy
-/ GDPR-CCPA compliance signals for the audited site. One row per audit,
-one-to-one with Audit.
+Consent results for one audit: banner, cookies, GDPR/CCPA checks, region and evidence.
 """
 
 from datetime import datetime, timezone
@@ -31,39 +26,20 @@ class Consent(Base):
     banner_blocks_scripts_pre_consent: Mapped[bool] = mapped_column(Boolean, default=False)
 
     gdpr_compliant: Mapped[bool] = mapped_column(Boolean, default=False)
-    # Per-check breakdown behind gdpr_compliant above: one entry per key in
-    # consent.consent_score.GDPR_CHECK_ORDER, each True/False/None ("not
-    # evaluated"). gdpr_compliant is just consent.consent_score.GdprAssessment
-    # .compliant computed from this dict at write time — this is the field a
-    # report should actually render instead of the single boolean.
+    # GDPR check -> True / False / None (not tested). gdpr_compliant comes from these.
     gdpr_checks: Mapped[dict] = mapped_column(JSON, default=dict)
-    # Structured evidence backing whichever gdpr_checks entries have it (see
-    # consent.consent_score.GdprCheck.evidence) — sparse, keyed the same as
-    # gdpr_checks. Currently only trackers_blocked_pre_consent populates
-    # this, with the actual tracker request count/names from consent's live
-    # pre-consent network capture.
+    # Evidence for the GDPR checks that have it.
     gdpr_check_evidence: Mapped[dict] = mapped_column(JSON, default=dict)
     ccpa_compliant: Mapped[bool] = mapped_column(Boolean, default=False)
-    # Per-check breakdown behind ccpa_compliant above: one entry per key in
-    # consent.consent_score.CCPA_CHECK_ORDER, each True/False/None ("not
-    # evaluated"). ccpa_compliant is just consent.consent_score.CcpaAssessment
-    # .compliant computed from this dict at write time — same relationship
-    # gdpr_checks above has to gdpr_compliant.
+    # CCPA check -> True / False / None (not tested).
     ccpa_checks: Mapped[dict] = mapped_column(JSON, default=dict)
 
-    # Region detection + which frameworks were assessed — see
-    # consent.region. gdpr_checks/ccpa_checks above are only filled
-    # when their framework applies; otherwise that framework is reported
-    # here with status "not_assessed" (never as a failure).
+    # Region and which laws were assessed. A law that doesn't apply is "not_assessed", not failed.
     applicability: Mapped[dict] = mapped_column(JSON, default=dict)
-    # Framework-neutral technical consent scan: rendered banner, control
-    # inventory (label / detected action / evidence), technical checks and
-    # classified pre-consent network + cookie evidence.
+    # Law-neutral scan: rendered banner, buttons, checks and evidence.
     technical_scan: Mapped[dict] = mapped_column(JSON, default=dict)
 
-    # Region engine output (consent.region.RegionResult) as first-class
-    # columns, plus the consent-control inventory
-    # ([{"label": "Accept all", "action": "accept_all", ...}, ...]).
+    # Detected region and the banner's buttons.
     detected_region: Mapped[str] = mapped_column(String(16), default="UNKNOWN")
     region_confidence: Mapped[str] = mapped_column(String(16), default="low")
     region_evidence: Mapped[list] = mapped_column(JSON, default=list)
@@ -79,26 +55,15 @@ class Consent(Base):
 
     consent_score: Mapped[int] = mapped_column(Integer, default=0)
 
-    # Path (relative to SCREENSHOT_DIR, e.g. "screenshots/example_com_banner.png")
-    # written by consent.screenshots.capture_banner_screenshot. None when
-    # Playwright isn't installed, capture was skipped, or the capture failed.
+    # Banner screenshot path. None if no screenshot was taken.
     banner_screenshot_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
-    # The remaining three evidence screenshots from consent.runtime's
-    # click-through pass (Personalize/Manage Preferences, after Reject,
-    # after Accept) — each in its own clean browser context. None when the
-    # runtime pass didn't run, wasn't available, or that particular leg
-    # didn't find a matching button to click.
+    # Settings, after-Reject and after-Accept screenshots. None if that test didn't run.
     preferences_screenshot_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     reject_screenshot_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     accept_screenshot_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
-    # Whether consent.runtime.run_consent_runtime ran at all (browser
-    # launched, page loaded) vs. actually got as far as clicking
-    # Accept/Reject — see consent.consent_score.build_consent_summary for
-    # the exact distinction. runtime_result is the full serialized
-    # ConsentRuntimeResult (before/after cookies+network, click verdicts),
-    # kept for the evidence-package export.
+    # runtime_available: the browser check ran. runtime_tested: it clicked Accept/Reject. runtime_result: full result, for exports.
     runtime_available: Mapped[bool] = mapped_column(Boolean, default=False)
     runtime_tested: Mapped[bool] = mapped_column(Boolean, default=False)
     runtime_result: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
@@ -107,9 +72,7 @@ class Consent(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
-    # ----------------------------------------------------------------
     # Relationships
-    # ----------------------------------------------------------------
     audit: Mapped["Audit"] = relationship("Audit", back_populates="consent_result")
 
     def __repr__(self) -> str:  # pragma: no cover

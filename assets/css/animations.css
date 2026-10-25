@@ -1,6 +1,4 @@
-/* ==========================================================================
-   Motion
-   ========================================================================== */
+/* Motion */
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -43,7 +41,7 @@
   animation: fadeUp var(--dur-slow) var(--ease-out) both;
 }
 
-/* Stagger helper: add on siblings, set --d via inline style or nth-child below */
+/* Staggered entrance for sibling elements */
 .stagger > * { animation: fadeUp var(--dur-slow) var(--ease-out) both; }
 .stagger > *:nth-child(1) { animation-delay: 0ms; }
 .stagger > *:nth-child(2) { animation-delay: 60ms; }
@@ -52,7 +50,7 @@
 .stagger > *:nth-child(5) { animation-delay: 240ms; }
 .stagger > *:nth-child(6) { animation-delay: 300ms; }
 
-/* Scanning sweep used on the audit-progress card to reinforce "crawling" */
+/* Scanning sweep on the audit progress card */
 .scan-line {
   position: relative;
   overflow: hidden;

@@ -1,29 +1,8 @@
 """
-reports/consent_view.py
-
-One presentation model for the Consent module, built from a stored
-ConsentOut dict, so the dashboard, the report page, the PDF, the JSON
-export and the evidence ZIP all show *the same* consent evidence:
-
-    status        banner / region / framework / regional compliance / scan id
-    tiles         headline verdicts (banner, region, tracking before consent,
-                  reject works, accept works, preferences panel)
-    frameworks    one entry per framework: assessed (pass/fail/not tested)
-                  or "Not assessed" — never a fabricated fail
-    controls      the rendered banner's control inventory
-                  (displayed text → detected action → evidence)
-    network       per consent state, every request category with a kind:
-                  tracking / observation / infrastructure / other
-    cookies       cookies before consent, by meaning (consent-required,
-                  consent-management, essential/security, functional, unknown)
-    screenshots   the four evidence slots, each captured or "not captured"
-    pipeline      the 11 scan steps and what each found
-    legs          the runtime click-through log
-
-Pure function over plain dicts — no DB, no browser, safe to call from a
-Pydantic computed field. Audits recorded before the Phase 1–3 consent
-changes (no applicability / technical_scan) still produce a view, marked
-`legacy=True`, so older reports keep rendering.
+One consent view used everywhere (report page, dashboard, PDF, JSON, ZIP), so
+they always show the same evidence: status, headline tiles, laws (assessed or
+not), banner buttons, requests and cookies before consent, screenshots, scan
+steps. Plain dicts in and out. Older audits still render (legacy=True).
 """
 
 from __future__ import annotations
@@ -32,8 +11,7 @@ from typing import Any, Dict, List, Optional
 
 _FRAMEWORKS = (("gdpr", "GDPR + ePrivacy"), ("ccpa", "CCPA / CPRA"), ("dpdp", "India DPDP Act 2023"))
 
-# Required checks per framework (mirrors consent.consent_score's
-# _REQUIRED_FOR_COMPLIANCE sets — the runtime-only check is excluded).
+# Required checks per law (the browser-only check is excluded, as in consent_score).
 _GDPR_REQUIRED = (
     "consent_banner", "accept_control", "reject_control", "reject_parity",
     "trackers_blocked_pre_consent", "cookies_blocked_pre_consent", "consent_is_granular",
@@ -97,8 +75,7 @@ _CMP_HINTS = (
 
 
 def _cmp_from_network(network: Optional[dict]) -> Optional[str]:
-    """The consent tool whose servers the page actually contacted (the live
-    capture's CMP group), most-requested first."""
+    """Consent tool whose servers the page contacted, most requests first."""
     counts: Dict[str, int] = {}
     for state in (network or {}).values():
         cmp_group = (state or {}).get("CMP") or {}
@@ -108,9 +85,7 @@ def _cmp_from_network(network: Optional[dict]) -> Optional[str]:
 
 
 def banner_vendor(banner: dict, network: Optional[dict] = None) -> Optional[str]:
-    """Which consent tool runs the banner, from evidence: the banner's own
-    markup (id/class), then the consent-tool servers the page contacted,
-    then a static-HTML signature. None when nothing identifies it."""
+    """Which consent tool runs the banner: from its markup, then its servers, then the HTML. None if unknown."""
     probe = f"{banner.get('container') or ''} {banner.get('frame') or ''}".lower()
     return (next((n for key, n in _CMP_HINTS if key in probe), None)
             or _cmp_from_network(network)
@@ -118,7 +93,7 @@ def banner_vendor(banner: dict, network: Optional[dict] = None) -> Optional[str]
 
 
 def _banner_description(banner: dict, network: Optional[dict] = None) -> str:
-    """Human description of the detected banner, e.g. 'OneTrust · rendered in page'."""
+    """e.g. 'OneTrust · rendered in page'."""
     if not banner or not banner.get("detected"):
         return ""
     name = banner_vendor(banner, network) or "Custom banner"
@@ -183,12 +158,7 @@ def _network_rows(summary: Optional[dict]) -> List[dict]:
 
 
 def _before_consent_evidence(rows: List[dict]) -> tuple:
-    """
-    The actual requests behind the "Tracking before consent" tile: every
-    data-collection request (vendor + address) and every tag/library that
-    loaded without collecting data yet — never a generic "e.g. tag manager".
-    Returns (one-line summary, detail items).
-    """
+    """The real requests behind "Tracking before consent": collection hits and libraries that loaded. Returns (summary, items)."""
     items: List[dict] = []
     for r in rows:
         if not r.get("tracking_count"):
@@ -238,7 +208,7 @@ def build_consent_view(consent: Optional[dict]) -> Optional[dict]:
     assessed = bool(applicable) if not legacy else None
     scan = ts.get("scan") or {}
 
-    # ---- frameworks -------------------------------------------------------
+    # Laws
     frameworks: List[dict] = []
     fw_entries = {f.get("key"): f for f in (app.get("frameworks") or [])}
     for key, label in _FRAMEWORKS:
@@ -279,7 +249,7 @@ def build_consent_view(consent: Optional[dict]) -> Optional[dict]:
             entry["legacy"] = True
         frameworks.append(entry)
 
-    # ---- controls ---------------------------------------------------------
+    # Buttons
     controls = ts.get("controls") or consent.get("consent_controls") or []
     controls = [{
         "label": c.get("label", ""),
@@ -288,9 +258,7 @@ def build_consent_view(consent: Optional[dict]) -> Optional[dict]:
         "evidence": c.get("evidence", ""),
         "layer": c.get("layer", 1),
     } for c in controls]
-    # Only controls the scan could classify as a consent action are shown;
-    # the rest (close icons, "Back", filters, "More information"…) are just
-    # counted so the table stays about what the banner actually lets you do.
+    # Only show buttons with a consent action; others (close, back...) are just counted.
     unclassified = [c for c in controls if (c["action"] or "unclassified") == "unclassified"]
     seen_controls = set()
     classified = []
@@ -306,7 +274,7 @@ def build_consent_view(consent: Optional[dict]) -> Optional[dict]:
     controls_hidden = {"count": len(unclassified),
                        "examples": list(dict.fromkeys(c["label"] for c in unclassified if c["label"]))[:6]}
 
-    # ---- network ----------------------------------------------------------
+    # Requests
     net = ts.get("network") or {}
     network = {
         state: _network_rows(net.get(state))
@@ -316,12 +284,12 @@ def build_consent_view(consent: Optional[dict]) -> Optional[dict]:
     tracking_before = sum(r["tracking_count"] for r in before_rows)
     before_summary, before_items = _before_consent_evidence(before_rows)
 
-    # ---- cookies ----------------------------------------------------------
+    # Cookies
     ck = ts.get("cookies_before_consent") or {}
     cookies = [{"key": k, "label": label, "tone": tone, "count": len(ck.get(k) or []), "items": ck.get(k) or []}
                for k, label, tone in _COOKIE_GROUPS if ck.get(k)]
 
-    # ---- headline tiles ---------------------------------------------------
+    # Headline tiles
     checks = ts.get("checks") or consent.get("gdpr_checks") or {}
     pref = ts.get("preferences") or {}
     tiles = [

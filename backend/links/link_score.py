@@ -1,17 +1,5 @@
 """
-links/link_score.py
-
-Turns the flat finding lists from links/internal.py, external.py,
-redirects.py, and loops.py into a single weighted 0-100 score with a
-per-category breakdown — same shape as seo/seo_score.py and
-ux/ux_score.py, so it drops into Audit.breakdown / AuditStatsOut.
-breakdown as breakdown["links"] alongside the other module scores.
-
-"loops" is weighted heaviest despite usually producing the fewest
-findings, because a genuine redirect loop is a hard failure (the
-destination is never reachable at all) rather than a degraded
-experience; "internal" is next since a site's own link structure is
-foundational to both navigation and crawlability.
+Turns link findings into a 0-100 score. Redirect loops weigh most (the page can't be reached).
 """
 
 from __future__ import annotations
@@ -44,7 +32,7 @@ class LinkScoreResult:
 
 
 def score_links(findings: List[dict]) -> LinkScoreResult:
-    """Scores a flat list of finding dicts (links/* run_*_checks output) into an overall score."""
+    """Scores a list of link findings."""
     by_category: Dict[str, List[dict]] = {}
     for finding in findings:
         category = finding.get("category") or _OTHER_CATEGORY

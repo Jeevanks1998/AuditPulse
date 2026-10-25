@@ -1,16 +1,7 @@
 """
-analytics/ga4.py
-
-Detects Google Analytics 4 (gtag.js) on a page: the loader script, any
-gtag('config', 'G-XXXXXXXXXX') calls (however many — a page can legally
-send data to more than one property), and — since it shares the same
-gtag.js loader and the same 'config' call shape — legacy Universal
-Analytics ('UA-XXXXXXX-X'), which stopped processing data in July 2023
-and is now just dead weight if it's still on the page.
-
-Reads crawler.parser.ParsedPage.soup directly: script src/inline text
-isn't pulled into ParsedPage's normal fields, same rationale as
-accessibility/contrast.py and accessibility/aria.py reading .soup.
+Detects Google Analytics 4 (gtag.js): the loader and every
+gtag('config', 'G-...') call. Also finds old Universal Analytics IDs (UA-...),
+which stopped working in July 2023.
 """
 
 from __future__ import annotations
@@ -36,13 +27,13 @@ UA_ID_RE = re.compile(r"\bUA-\d{4,}-\d+\b")
 class GA4Detection:
     detected: bool = False
     measurement_ids: List[str] = field(default_factory=list)
-    script_tag_count: int = 0  # how many gtag.js loader <script> tags were found
-    config_call_count: int = 0  # how many gtag('config', ...) calls were found
-    legacy_ua_ids: List[str] = field(default_factory=list)  # Universal Analytics IDs still present
+    script_tag_count: int = 0  # gtag.js loader tags found
+    config_call_count: int = 0  # gtag('config', ...) calls found
+    legacy_ua_ids: List[str] = field(default_factory=list)  # old Universal Analytics IDs still on the page
 
 
 def detect_ga4(page: ParsedPage) -> GA4Detection:
-    """Scans this page's <script> tags (src + inline body) for GA4 and legacy UA signals."""
+    """Looks for GA4 and old UA in the page's scripts."""
     result = GA4Detection()
     scripts = page.soup.find_all("script")
 
@@ -70,7 +61,7 @@ def detect_ga4(page: ParsedPage) -> GA4Detection:
 
         ua_ids += UA_ID_RE.findall(body) + UA_ID_RE.findall(src)
 
-    # de-dupe while preserving first-seen order
+    # remove duplicates, keep order
     result.measurement_ids = list(dict.fromkeys(measurement_ids))
     result.legacy_ua_ids = list(dict.fromkeys(ua_ids))
     result.detected = bool(result.measurement_ids) or result.script_tag_count > 0
@@ -79,7 +70,7 @@ def detect_ga4(page: ParsedPage) -> GA4Detection:
 
 
 def check_ga4(page: ParsedPage) -> List[dict]:
-    """Findings for GA4 configuration issues on this page. Absence of GA4 is not itself a finding."""
+    """Findings for GA4 problems. No GA4 at all is not a finding."""
     detection = detect_ga4(page)
     findings: List[dict] = []
 
@@ -108,7 +99,7 @@ def check_ga4(page: ParsedPage) -> List[dict]:
 
     if detection.script_tag_count > 0 and detection.config_call_count == 0 and detection.measurement_ids \
             and detection.script_tag_count == len(detection.measurement_ids):
-        # loader URL carried the ID but no explicit config() call was ever made
+        # the loader URL has the ID but config() is never called
         findings.append(_finding(
             "info",
             "GA4 loaded without an explicit config() call",

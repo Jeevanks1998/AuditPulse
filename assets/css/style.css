@@ -1,8 +1,6 @@
-/* ==========================================================================
-   Global base + shared components
-   ========================================================================== */
+/* Base styles and shared components */
 
-/* Fonts are loaded once, by theme.css (Source Sans 3 + JetBrains Mono for code). */
+/* Fonts are loaded by theme.css. */
 
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -39,9 +37,7 @@ input, select, textarea {
   background: var(--surface);
 }
 
-/* Shared styled input used by dynamically-built forms (e.g. the "Send to
-   POC" modal in report.js) that don't have a page-specific input style like
-   .field input (login.css) or .url-input-wrap input (audit.css). */
+/* Shared input style for forms built in JavaScript (e.g. the "Send to POC" dialog). */
 .form-control {
   width: 100%;
   padding: 10px 12px;
@@ -66,14 +62,14 @@ img, svg { display: block; max-width: 100%; }
 
 .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
-/* ---- App Shell ---- */
+/* App shell */
 .app-shell {
   display: grid;
   grid-template-columns: var(--sidebar-width) 1fr;
   min-height: 100vh;
 }
 
-/* ---- Sidebar ---- */
+/* Sidebar */
 .sidebar {
   background: var(--sidebar-bg);
   padding: var(--sp-6) var(--sp-4);
@@ -131,8 +127,7 @@ img, svg { display: block; max-width: 100%; }
   padding: 0 var(--sp-3);
   margin-bottom: var(--sp-1);
 }
-/* Every group label after the first (i.e. one that follows a nav list)
-   gets extra breathing room above it. */
+/* Extra space above each group label after the first. */
 .sidebar__nav + .sidebar__group-label { margin-top: var(--sp-5); }
 
 .sidebar__nav { display: flex; flex-direction: column; gap: 2px; }
@@ -162,7 +157,7 @@ img, svg { display: block; max-width: 100%; }
   border-top: 1px solid rgba(255,255,255,0.08);
 }
 
-/* ---- Header (topbar) ---- */
+/* Top bar */
 .topbar {
   height: var(--header-height);
   display: flex;
@@ -253,7 +248,7 @@ img, svg { display: block; max-width: 100%; }
 }
 .profile-chip__name { font-size: var(--fs-sm); font-weight: 600; }
 
-/* ---- Profile dropdown (app.js's initProfileMenu) ---- */
+/* Profile dropdown */
 .profile-menu {
   position: absolute; top: calc(100% + 8px); right: 0; z-index: 30;
   min-width: 200px;
@@ -281,7 +276,40 @@ img, svg { display: block; max-width: 100%; }
 .profile-menu__item--danger:hover { background: var(--color-error-soft); }
 .profile-menu__item[disabled] { opacity: .6; pointer-events: none; }
 
-/* ---- Content area ---- */
+/* Notification bell panel */
+.notif-wrap { position: relative; }
+.notif-panel {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 30;
+  width: 340px; max-width: calc(100vw - 32px);
+  background: var(--surface-raised); border: 1px solid var(--border);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+  padding: var(--sp-2); display: none; flex-direction: column; gap: 2px;
+}
+.notif-wrap.is-open .notif-panel { display: flex; }
+.notif-panel__head { font-weight: 700; font-size: var(--fs-sm); padding: var(--sp-2) var(--sp-3); }
+.notif-panel__empty { font-size: var(--fs-sm); color: var(--text-tertiary); padding: var(--sp-3); }
+.notif-panel__foot {
+  font-size: var(--fs-sm); font-weight: 600; color: var(--color-primary); text-decoration: none;
+  padding: var(--sp-2) var(--sp-3); border-top: 1px solid var(--border); margin-top: var(--sp-1);
+}
+.notif-item {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-sm);
+  color: var(--text-primary); text-decoration: none; font-size: var(--fs-sm);
+}
+.notif-item:hover { background: var(--surface-sunken); }
+.notif-item.is-unread { background: var(--color-primary-soft, var(--surface-sunken)); }
+.notif-item__icon { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+.notif-item__icon--ok { background: var(--color-success); }
+.notif-item__icon--fail { background: var(--color-error); }
+.notif-item__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.notif-item__text { overflow-wrap: anywhere; }
+.notif-item__time { font-size: var(--fs-xs); color: var(--text-tertiary); }
+@media (max-width: 640px) {
+  .notif-panel { position: fixed; top: 64px; left: 16px; right: 16px; width: auto; max-width: none; }
+}
+
+/* Content area */
 .content {
   padding: var(--sp-8);
   max-width: var(--content-max);
@@ -298,7 +326,7 @@ img, svg { display: block; max-width: 100%; }
 .page-head p { margin-top: 6px; }
 .page-head--row { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--sp-4); flex-wrap: wrap; }
 
-/* ---- Buttons ---- */
+/* Buttons */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   border-radius: var(--radius-sm);
@@ -328,7 +356,7 @@ img, svg { display: block; max-width: 100%; }
 .btn--lg { padding: 13px 24px; font-size: var(--fs-base); }
 .btn--sm { padding: 7px 14px; font-size: var(--fs-xs); }
 
-/* ---- Cards ---- */
+/* Cards */
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -343,7 +371,7 @@ img, svg { display: block; max-width: 100%; }
 .card__head h3 { font-size: var(--fs-md); font-weight: 600; }
 .card__head-sub { font-size: var(--fs-xs); color: var(--text-tertiary); margin-top: 2px; }
 
-/* ---- Stat cards grid ---- */
+/* Stat cards */
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -385,10 +413,7 @@ img, svg { display: block; max-width: 100%; }
 }
 .stat-card__label { font-size: var(--fs-sm); font-weight: 600; color: var(--text-secondary); }
 
-/* ---- Vitals Ring (signature component) ----
-   Consistent circular gauge used for every score across the product,
-   echoing PageSpeed/Lighthouse "vitals" language. Color reflects the
-   band the score falls in. */
+/* Score ring: the circular gauge used for every score. Colour follows the score band. */
 .vring {
   position: relative;
   display: inline-flex;
@@ -429,7 +454,7 @@ img, svg { display: block; max-width: 100%; }
 .vring--md .vring__label { font-size: var(--fs-xl); }
 .vring--lg .vring__label { font-size: var(--fs-3xl); }
 
-/* ---- Score chip (compact inline score) ---- */
+/* Score chip */
 .score-chip {
   display: inline-flex; align-items: center; gap: 6px;
   font-family: var(--font-mono); font-weight: 700; font-size: var(--fs-sm);
@@ -442,7 +467,7 @@ img, svg { display: block; max-width: 100%; }
 .score-chip--mid::before { background: var(--color-warning); }
 .score-chip--bad { background: var(--color-error-soft); color: var(--color-error-text); }
 .score-chip--bad::before { background: var(--color-error); }
-/* ---- Status badge ---- */
+/* Status badge */
 .badge {
   display: inline-flex; align-items: center; gap: 6px;
   font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.02em;
@@ -454,7 +479,7 @@ img, svg { display: block; max-width: 100%; }
 .badge--warning { background: var(--color-warning-soft); color: var(--color-warning-text); }
 .badge--error { background: var(--color-error-soft); color: var(--color-error-text); }
 .badge--neutral { background: var(--surface-sunken); color: var(--text-secondary); border: 1px solid var(--border); }
-/* ---- List rows (recent audits, notifications, etc.) ---- */
+/* List rows */
 .row-list { display: flex; flex-direction: column; }
 .row-item {
   display: flex; align-items: center; gap: var(--sp-4);
@@ -473,7 +498,7 @@ img, svg { display: block; max-width: 100%; }
 .row-item__title { font-weight: 600; font-size: var(--fs-sm); }
 .row-item__meta { font-size: var(--fs-xs); color: var(--text-tertiary); margin-top: 2px; }
 
-/* ---- Table ---- */
+/* Table */
 .table-wrap { overflow-x: auto; }
 table.dtable { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
 .dtable thead th {
@@ -491,11 +516,11 @@ table.dtable { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); 
 .dtable tbody tr { transition: background var(--dur-fast) var(--ease-out); }
 .dtable tbody tr:hover { background: var(--surface-sunken); }
 
-/* ---- Progress bar ---- */
+/* Progress bar */
 .pbar { height: 8px; border-radius: var(--radius-pill); background: var(--surface-sunken); border: 1px solid var(--border); overflow: hidden; }
 .pbar__fill { height: 100%; border-radius: var(--radius-pill); background: linear-gradient(90deg, var(--color-primary), #60A5FA); }
 
-/* ---- Checklist ---- */
+/* Checklist */
 .check-list { display: flex; flex-direction: column; gap: var(--sp-3); }
 .check-item { display: flex; align-items: center; gap: var(--sp-3); font-size: var(--fs-sm); }
 .check-item__icon {
@@ -510,7 +535,7 @@ table.dtable { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); 
 .check-item__label { flex: 1; }
 .check-item__time { font-size: var(--fs-2xs); color: var(--text-tertiary); font-family: var(--font-mono); }
 
-/* ---- Toggle switch ---- */
+/* Toggle switch */
 .toggle { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
 .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
 .toggle__track {
@@ -525,19 +550,18 @@ table.dtable { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); 
 }
 .toggle input:checked + .toggle__track { background: var(--color-primary); }
 .toggle input:checked + .toggle__track::after { transform: translateX(18px); }
-/* The real <input> is visually hidden (opacity:0), which also hides its
-   native focus ring — restore visible keyboard focus on the track. */
+/* The real checkbox is hidden, so show keyboard focus on the track. */
 .toggle input:focus-visible + .toggle__track {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 
-/* ---- Empty / divider utilities ---- */
+/* Divider and text utilities */
 .divider { height: 1px; background: var(--border); border: none; margin: var(--sp-5) 0; }
 .text-tertiary { color: var(--text-tertiary); }
 .text-sm { font-size: var(--fs-sm); }
 
-/* ---- Field-level validation errors (login.html, audit.html, settings.html) ---- */
+/* Field validation errors */
 .field__error, .url-error {
   display: none;
   font-size: var(--fs-xs);
@@ -548,12 +572,12 @@ table.dtable { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); 
 .form-field input.is-invalid, .form-field select.is-invalid,
 input.is-invalid { border-color: var(--color-error) !important; }
 
-/* ---- Scrollbar polish ---- */
+/* Scrollbar */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px; border: 3px solid var(--bg); }
 ::-webkit-scrollbar-track { background: transparent; }
 
-/* ---- Audit delete / restore (History + Recent Audits) ---- */
+/* Audit delete / restore */
 .audit-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
 .audit-action { display: inline-flex; align-items: center; gap: 6px; }
 .audit-action--danger { color: var(--text-tertiary); }

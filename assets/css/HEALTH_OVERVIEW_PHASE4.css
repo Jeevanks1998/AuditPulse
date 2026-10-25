@@ -1,13 +1,4 @@
-/* ==========================================================================
-   Phase 4 — Health Overview Redesign (CSS Only)
-   
-   This stylesheet replaces the existing health overview styling from
-   dashboard.css. Simply add this after dashboard.css or replace the
-   relevant sections.
-   
-   All HTML IDs and classes remain compatible with dashboard.js.
-   No JavaScript modifications needed.
-   ========================================================================== */
+/* Dashboard health overview card (ring + score rows). Works with dashboard.js as is. */
 
 /* Main card container */
 .health-overview-card {
@@ -22,9 +13,7 @@
   justify-content: space-between;
 }
 
-/* ============================================================================
-   OVERALL SCORE RING VISUALIZATION
-   ============================================================================ */
+/* Overall score ring */
 
 .health-overview__main {
   display: grid;
@@ -78,7 +67,7 @@
   animation: ringAppear 0.8s var(--ease-out) backwards;
 }
 
-/* Ring color variants - using SVG gradients */
+/* Ring colours (SVG gradients) */
 #healthRing[data-band="good"] #healthRingCircle {
   stroke: url(#gradient-good);
 }
@@ -121,13 +110,7 @@
   letter-spacing: 0.08em;
 }
 
-/* ============================================================================
-   COMPACT SCORE ROWS
-   Replaces the old 5-card grid: one flat list of rows inside the same
-   single health-overview-card container, ring on the left (unchanged
-   above) and rows on the right — icon, category name, a thin progress
-   bar, and the score, all on one line.
-   ============================================================================ */
+/* Score rows: icon, name, thin bar and score on one line */
 
 .health-overview__rows {
   display: flex;
@@ -189,8 +172,7 @@
   height: 13px;
 }
 
-/* Icon color per category — same palette the previous card design used,
-   just applied to a small row icon instead of a card header. */
+/* Icon colour per category */
 .health-row__icon--performance {
   background: rgba(37, 99, 235, 0.1);
   color: var(--color-primary);
@@ -256,9 +238,7 @@
   flex-shrink: 0;
 }
 
-/* ============================================================================
-   RING ANIMATIONS
-   ============================================================================ */
+/* Ring animations */
 
 @keyframes ringAppear {
   from {
@@ -270,7 +250,7 @@
   }
 }
 
-/* Pulse animation for high scores */
+/* Pulse for high scores */
 #healthRing[data-band="good"] .health-overview__ring-svg {
   animation: ringSpin 20s linear infinite;
 }
@@ -287,9 +267,7 @@
   }
 }
 
-/* ============================================================================
-   RESPONSIVE DESIGN
-   ============================================================================ */
+/* Responsive */
 
 @media (max-width: 1024px) {
   .health-overview__main {
@@ -356,15 +334,7 @@
   }
 }
 
-/* ============================================================================
-   DARK MODE SUPPORT
-   Theme is controlled by the app's manual toggle (data-theme attribute on
-   <html>, set in app.js), not the OS preference — so this must match the
-   same [data-theme="dark"] selector every other stylesheet uses, not
-   `@media (prefers-color-scheme: dark)`. Using the media query here meant
-   these cards silently ignored a user's in-app Light/Dark choice whenever
-   it didn't match their OS setting.
-   ============================================================================ */
+/* Dark mode (follows the app's [data-theme] toggle, not the OS setting) */
 
 [data-theme="dark"] .health-overview__ring-container {
   background: linear-gradient(135deg, rgba(37, 99, 235, 0.08) 0%, rgba(16, 185, 129, 0.08) 100%);
@@ -382,9 +352,7 @@
   filter: drop-shadow(0 4px 12px rgba(37, 99, 235, 0.2));
 }
 
-/* ============================================================================
-   LEGACY SUPPORT (maintain compatibility with old class names)
-   ============================================================================ */
+/* Older class names */
 
 /* Old .health-card__body is replaced by .health-overview__main */
 .health-card__body {
@@ -396,7 +364,7 @@
   display: none;
 }
 
-/* Hide old progress bars - they're now in rows */
+/* Old progress bars are replaced by the rows */
 .pbar {
   display: none;
 }

@@ -1,17 +1,7 @@
 """
-services/scheduled_email.py
-
-Automatic report delivery for scheduled audits. A schedule can carry an
-`email_delivery` config (recipients + which reports to attach, set in the
-Schedule an Audit dialog). When an audit fired by that schedule finishes,
-audit_service.run_audit_pipeline calls `deliver_scheduled_report`, which
-sends the report through the same path as the report page's "Send to POC"
-button (services.report_service.send_report_to_poc) — so the send shows
-up on the Email Reports page and in History like any manual send — and
-records the outcome back on the schedule for the Scheduler table.
-
-Never raises: a delivery problem must not turn a finished audit into a
-failed one.
+Emails the report automatically when a scheduled audit finishes, using the
+same path as "Send to POC" (so it appears in Email History), and records the
+result on the schedule. Never raises.
 """
 
 from __future__ import annotations
@@ -28,11 +18,7 @@ def _clean_list(values) -> list:
 
 
 async def deliver_scheduled_report(audit_id: int) -> Optional[str]:
-    """Email the finished audit's report to its schedule's recipients.
-
-    Returns "sent" / "failed", or None when there was nothing to send (not
-    a scheduled audit, delivery switched off, no recipients, audit not
-    completed)."""
+    """Emails the report to the schedule's recipients. Returns "sent" / "failed", or None if there was nothing to send."""
     try:
         return await _deliver(audit_id)
     except Exception:  # noqa: BLE001
@@ -82,8 +68,7 @@ async def _deliver(audit_id: int) -> Optional[str]:
             )
             result_status, error = result.status, result.error_message
 
-    # Record the outcome on the schedule in a fresh session: send_report_to_poc
-    # has already committed (and expired) everything in the one above.
+    # Record the result in a fresh session (the previous one was already committed).
     async with AsyncSessionLocal() as db:
         schedule = await db.get(Schedule, schedule_id)
         if schedule is not None:
@@ -94,7 +79,7 @@ async def _deliver(audit_id: int) -> Optional[str]:
                 last_error=(error or None) and str(error)[:300],
                 last_audit_id=audit_id,
             )
-            schedule.email_delivery = cfg  # reassign: plain JSON columns don't track in-place edits
+            schedule.email_delivery = cfg  # reassign: JSON columns don't track in-place edits
             await db.commit()
 
     if result_status == "sent":

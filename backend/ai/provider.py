@@ -48,6 +48,17 @@ def _model() -> str:
     return override or DEFAULT_MODELS.get(_provider(), "")
 
 
+PROVIDER_NAMES = {"groq": "Groq", "anthropic": "Anthropic Claude"}
+
+
+def provider_label() -> str:
+    """What the Settings page shows, e.g. "Groq · openai/gpt-oss-120b"."""
+    if not is_configured():
+        return "Not configured — reports use built-in text"
+    name = PROVIDER_NAMES.get(_provider(), _provider().title())
+    return f"{name} · {_model()}"
+
+
 def is_configured() -> bool:
     """True when a real provider call can be attempted at all."""
     provider = _provider()

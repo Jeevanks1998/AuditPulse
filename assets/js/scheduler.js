@@ -132,7 +132,7 @@
           '</td>' +
           '<td>' + U.escapeHtml(s.frequency) + '</td>' +
           '<td class="text-tertiary">' + U.escapeHtml(s.timeLabel || '—') + '</td>' +
-          '<td class="text-tertiary">' + shortDate(s.nextRunAt) + '</td>' +
+          '<td class="text-tertiary">' + runTime(s.nextRunAt, (s.schedule || {}).timezone) + '</td>' +
           '<td class="text-tertiary">' + shortDate(s.lastRunAt) + '</td>' +
           '<td>' + emailCell(s.emailDelivery) + '</td>' +
           '<td>' + statusHtml + '</td>' +
@@ -188,6 +188,16 @@
       return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     }
 
+    // Next run as date + time in the schedule's own time zone, e.g. "Oct 27, 9:00 AM".
+    function runTime(iso, tz) {
+      if (!iso) return '—';
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return '—';
+      var opts = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
+      try { return d.toLocaleString(undefined, Object.assign({ timeZone: tz || undefined }, opts)); }
+      catch (e) { return d.toLocaleString(undefined, opts); }
+    }
+
     /* Actions */
 
     function runNow(schedule) {
@@ -237,17 +247,53 @@
     var FREQUENCIES = ['Daily', 'Weekly', 'Monthly', 'Yearly'];
     var WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    // Common time zones.
-    var TIMEZONES = [
-      'UTC', 'Asia/Kolkata', 'Asia/Dubai', 'Asia/Singapore', 'Asia/Tokyo', 'Asia/Shanghai',
-      'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Moscow',
-      'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'America/Sao_Paulo',
-      'Australia/Sydney', 'Pacific/Auckland'
-    ];
+    // Time zones by region (value = IANA name the server uses).
+    var TZ_LABELS = {
+      'Asia/Kolkata': 'India — IST (UTC+5:30)',
+      'UTC': 'UTC (GMT+0)',
+      'Europe/London': 'UK — London (GMT / BST)',
+      'Europe/Paris': 'France — Paris (CET / CEST)',
+      'Europe/Berlin': 'Germany — Berlin (CET / CEST)',
+      'Europe/Madrid': 'Spain — Madrid (CET / CEST)',
+      'Europe/Amsterdam': 'Netherlands — Amsterdam (CET / CEST)',
+      'Europe/Moscow': 'Russia — Moscow (UTC+3)',
+      'Asia/Dubai': 'UAE — Dubai (UTC+4)',
+      'Asia/Riyadh': 'Saudi Arabia — Riyadh (UTC+3)',
+      'Asia/Singapore': 'Singapore (UTC+8)',
+      'Asia/Hong_Kong': 'Hong Kong (UTC+8)',
+      'Asia/Shanghai': 'China — Shanghai (UTC+8)',
+      'Asia/Tokyo': 'Japan — Tokyo (UTC+9)',
+      'Australia/Sydney': 'Australia — Sydney (AEST / AEDT)',
+      'Pacific/Auckland': 'New Zealand — Auckland (NZST / NZDT)',
+      'Africa/Johannesburg': 'South Africa — Johannesburg (UTC+2)',
+      'America/New_York': 'US East — New York (ET)',
+      'America/Toronto': 'Canada — Toronto (ET)',
+      'America/Chicago': 'US Central — Chicago (CT)',
+      'America/Denver': 'US Mountain — Denver (MT)',
+      'America/Los_Angeles': 'US West — Los Angeles (PT)',
+      'America/Sao_Paulo': 'Brazil — São Paulo (UTC−3)'
+    };
+    var TZ_ALIASES = { 'Asia/Calcutta': 'Asia/Kolkata', 'Etc/UTC': 'UTC', 'GMT': 'UTC' };
+    var TIMEZONES = Object.keys(TZ_LABELS);
+
+    function tzLabel(tz) { return TZ_LABELS[tz] || tz; }
+
+    function timezoneOptions(selected) {
+      var list = TIMEZONES.indexOf(selected) === -1 ? [selected].concat(TIMEZONES) : TIMEZONES;
+      return selectOptions(list, selected, tzLabel);
+    }
+
+    function timezoneField(tz) {
+      return '<div class="form-field">' +
+          '<label for="scheduleTimezoneInput">Time zone (region)</label>' +
+          '<select id="scheduleTimezoneInput">' + timezoneOptions(tz) + '</select>' +
+        '</div>';
+    }
 
     function detectTimezone() {
       try {
-        return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+        var tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+        return TZ_ALIASES[tz] || tz;
       } catch (e) {
         return 'Asia/Kolkata';
       }
@@ -303,7 +349,7 @@
       var state = {
         frequency: (existing && existing.frequency) || 'Weekly',
         time: cfg.time || '09:00 AM',
-        timezone: cfg.timezone || detectTimezone(),
+        timezone: TZ_ALIASES[cfg.timezone] || cfg.timezone || detectTimezone(),
         weekday: cfg.weekday || 'Monday',
         monthDay: cfg.monthDay || 15,
         monthDayMode: cfg.monthDayMode || 'specific', // 'specific' | 'last'
@@ -447,12 +493,9 @@
                 '<label for="scheduleTimeInput">Time</label>' +
                 '<input type="text" id="scheduleTimeInput" placeholder="09:00 AM" value="' + U.escapeHtml(state.time) + '">' +
               '</div>' +
-              '<div class="form-field">' +
-                '<label for="scheduleTimezoneInput">Timezone</label>' +
-                '<select id="scheduleTimezoneInput">' + selectOptions(TIMEZONES, state.timezone) + '</select>' +
-              '</div>' +
+              timezoneField(state.timezone) +
             '</div>' +
-            '<div class="form-field__hint schedule-summary">Runs every day at ' + U.escapeHtml(state.time) + ' (' + U.escapeHtml(state.timezone) + ').</div>';
+            '<div class="form-field__hint schedule-summary"></div>';
         } else if (state.frequency === 'Weekly') {
           html =
             '<div class="form-grid">' +
@@ -465,11 +508,8 @@
                 '<input type="text" id="scheduleTimeInput" placeholder="09:00 AM" value="' + U.escapeHtml(state.time) + '">' +
               '</div>' +
             '</div>' +
-            '<div class="form-field">' +
-              '<label for="scheduleTimezoneInput">Timezone</label>' +
-              '<select id="scheduleTimezoneInput">' + selectOptions(TIMEZONES, state.timezone) + '</select>' +
-            '</div>' +
-            '<div class="form-field__hint schedule-summary">Runs every ' + U.escapeHtml(state.weekday) + ' at ' + U.escapeHtml(state.time) + ' (' + U.escapeHtml(state.timezone) + ').</div>';
+            timezoneField(state.timezone) +
+            '<div class="form-field__hint schedule-summary"></div>';
         } else if (state.frequency === 'Monthly') {
           var monthDayOptions = [];
           for (var d = 1; d <= 31; d++) monthDayOptions.push(d);
@@ -488,11 +528,14 @@
                 'Last day of month' +
               '</label>' +
             '</div>' +
-            '<div class="form-field">' +
-              '<label for="scheduleTimeInput">Time</label>' +
-              '<input type="text" id="scheduleTimeInput" placeholder="09:00 AM" value="' + U.escapeHtml(state.time) + '">' +
+            '<div class="form-grid">' +
+              '<div class="form-field">' +
+                '<label for="scheduleTimeInput">Time</label>' +
+                '<input type="text" id="scheduleTimeInput" placeholder="09:00 AM" value="' + U.escapeHtml(state.time) + '">' +
+              '</div>' +
+              timezoneField(state.timezone) +
             '</div>' +
-            '<div class="form-field__hint schedule-summary">Runs on ' + (state.monthDayMode === 'last' ? 'the last day of every month' : 'the ' + ordinal(state.monthDay) + ' of every month') + ' at ' + U.escapeHtml(state.time) + '.</div>';
+            '<div class="form-field__hint schedule-summary"></div>';
         } else { // Yearly
           var yearDayOptions = [];
           for (var y = 1; y <= 31; y++) yearDayOptions.push(y);
@@ -507,14 +550,18 @@
                 '<select id="scheduleYearDayInput">' + selectOptions(yearDayOptions, state.yearDay) + '</select>' +
               '</div>' +
             '</div>' +
-            '<div class="form-field">' +
-              '<label for="scheduleTimeInput">Time</label>' +
-              '<input type="text" id="scheduleTimeInput" placeholder="09:00 AM" value="' + U.escapeHtml(state.time) + '">' +
+            '<div class="form-grid">' +
+              '<div class="form-field">' +
+                '<label for="scheduleTimeInput">Time</label>' +
+                '<input type="text" id="scheduleTimeInput" placeholder="09:00 AM" value="' + U.escapeHtml(state.time) + '">' +
+              '</div>' +
+              timezoneField(state.timezone) +
             '</div>' +
-            '<div class="form-field__hint schedule-summary">Every year on ' + U.escapeHtml(state.yearMonth) + ' ' + U.escapeHtml(String(state.yearDay)) + ' at ' + U.escapeHtml(state.time) + '.</div>';
+            '<div class="form-field__hint schedule-summary"></div>';
         }
         fieldsHost.innerHTML = html;
         bindFrequencyFieldEvents();
+        updateSummary();
       }
 
       function bindFrequencyFieldEvents() {
@@ -549,14 +596,15 @@
       function updateSummary() {
         var summaryEl = fieldsHost.querySelector('.schedule-summary');
         if (!summaryEl) return;
+        var when = state.time + ', ' + tzLabel(state.timezone);
         if (state.frequency === 'Daily') {
-          summaryEl.textContent = 'Runs every day at ' + state.time + ' (' + state.timezone + ').';
+          summaryEl.textContent = 'Runs every day at ' + when + '.';
         } else if (state.frequency === 'Weekly') {
-          summaryEl.textContent = 'Runs every ' + state.weekday + ' at ' + state.time + ' (' + state.timezone + ').';
+          summaryEl.textContent = 'Runs every ' + state.weekday + ' at ' + when + '.';
         } else if (state.frequency === 'Monthly') {
-          summaryEl.textContent = 'Runs on ' + (state.monthDayMode === 'last' ? 'the last day of every month' : 'the ' + ordinal(state.monthDay) + ' of every month') + ' at ' + state.time + '.';
+          summaryEl.textContent = 'Runs on ' + (state.monthDayMode === 'last' ? 'the last day of every month' : 'the ' + ordinal(state.monthDay) + ' of every month' + (state.monthDay > 28 ? ' (or the last day, in shorter months)' : '')) + ' at ' + when + '.';
         } else {
-          summaryEl.textContent = 'Every year on ' + state.yearMonth + ' ' + state.yearDay + ' at ' + state.time + '.';
+          summaryEl.textContent = 'Runs every year on ' + state.yearMonth + ' ' + state.yearDay + ' at ' + when + '.';
         }
       }
 
@@ -761,12 +809,13 @@
     }
 
     function buildTimeLabel(state) {
-      if (state.frequency === 'Daily') return 'Daily, ' + state.time;
-      if (state.frequency === 'Weekly') return state.weekday + 's, ' + state.time;
+      var when = state.time + ' · ' + tzLabel(state.timezone).split(' (')[0];
+      if (state.frequency === 'Daily') return 'Daily, ' + when;
+      if (state.frequency === 'Weekly') return state.weekday + 's, ' + when;
       if (state.frequency === 'Monthly') {
-        return (state.monthDayMode === 'last' ? 'Last day of month' : ordinal(state.monthDay)) + ', ' + state.time;
+        return (state.monthDayMode === 'last' ? 'Last day of month' : ordinal(state.monthDay)) + ', ' + when;
       }
-      return state.yearMonth + ' ' + state.yearDay + ', ' + state.time;
+      return state.yearMonth + ' ' + state.yearDay + ', ' + when;
     }
   });
 })();

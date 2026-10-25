@@ -53,7 +53,7 @@ async def _check_due_schedules_async() -> dict:
             await db.flush()
 
             schedule.last_run_at = now
-            schedule.next_run_at = compute_next_run(schedule.frequency, schedule.last_run_at)
+            schedule.next_run_at = compute_next_run(schedule.frequency, now, schedule.schedule, schedule.schedule_period)
 
             await log_event(
                 db,

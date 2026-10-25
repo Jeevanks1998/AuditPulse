@@ -71,3 +71,13 @@ def test_model_override(monkeypatch):
     monkeypatch.setattr(settings, "AI_MODEL", "qwen/qwen3.8-27b")
     asyncio.run(provider.call_ai("x", max_tokens=100))
     assert seen["json"]["model"] == "qwen/qwen3.8-27b" and seen["json"]["max_completion_tokens"] == 100
+
+
+def test_provider_label(monkeypatch):
+    from ai import provider
+    monkeypatch.setattr(provider.settings, "AI_PROVIDER", "groq")
+    monkeypatch.setattr(provider.settings, "GROQ_API_KEY", "x" * 20)
+    monkeypatch.setattr(provider.settings, "AI_MODEL", "")
+    assert provider.provider_label() == "Groq · openai/gpt-oss-120b"
+    monkeypatch.setattr(provider.settings, "GROQ_API_KEY", "")
+    assert provider.provider_label().startswith("Not configured")

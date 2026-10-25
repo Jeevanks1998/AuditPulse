@@ -116,7 +116,6 @@
           <a href="#ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z"/></svg>AI Provider</a>
           <a href="#notifications"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>Notifications</a>
           <a href="#appearance"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>Appearance</a>
-          <a href="#schedule"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>Default Schedule</a>
           <a href="#api"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 9.2-9.2M17 6l3 3M14 9l2 2"/></svg>API Access</a>
           <a href="#data"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg>Your Data</a>
         </nav>
@@ -151,11 +150,9 @@
               <p class="text-tertiary">Powers executive summaries, priorities, business impact and action plans.</p>
             </div>
             <div class="form-field">
-              <label for="settingsAiProvider">Provider</label>
-              <select id="settingsAiProvider">
-                <option value="Claude (Anthropic)">Claude (Anthropic)</option>
-              </select>
-              <span class="form-field__hint">The provider and API key used server-side are configured in the backend environment.</span>
+              <label for="settingsAiProvider">Provider in use</label>
+              <input type="text" id="settingsAiProvider" readonly value="Loading…">
+              <span class="form-field__hint">Set on the server (AI_PROVIDER in the backend environment). If no provider is set, reports use built-in text instead.</span>
             </div>
           </section>
 
@@ -212,28 +209,6 @@
                 <option value="English">English</option>
               </select>
               <span class="form-field__hint">English is currently the only supported language.</span>
-            </div>
-          </section>
-
-          <section class="settings-section card card__pad" id="schedule">
-            <div class="settings-section__head">
-              <h3 data-icon="clock" data-icon-tone="journey">Default Schedule</h3>
-              <p class="text-tertiary">Pre-filled whenever you set up a recurring audit.</p>
-            </div>
-            <div class="form-grid">
-              <div class="form-field">
-                <label for="settingsScheduleFrequency">Frequency</label>
-                <select id="settingsScheduleFrequency">
-                  <option value="Daily">Daily</option>
-                  <option value="Weekly">Weekly</option>
-                  <option value="Monthly">Monthly</option>
-                  <option value="Yearly">Yearly</option>
-                </select>
-              </div>
-              <div class="form-field">
-                <label for="settingsScheduleTime">Time</label>
-                <input type="text" id="settingsScheduleTime" placeholder="Mondays, 6:00 AM">
-              </div>
             </div>
           </section>
 

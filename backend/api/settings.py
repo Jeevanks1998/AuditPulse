@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_serializer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import User, generate_api_key, get_current_user
@@ -35,6 +35,13 @@ class SettingsOut(BaseModel):
     api_key: str
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer("ai_provider")
+    def _real_provider(self, _value: str) -> str:
+        # Show the provider the server really uses, not the old stored preference.
+        from ai.provider import provider_label
+
+        return provider_label()
 
 
 class SettingsUpdate(BaseModel):

@@ -22,9 +22,7 @@
       notifyAuditCompleted: $('settingsNotifyAuditCompleted'),
       notifyCriticalIssue: $('settingsNotifyCriticalIssue'),
       notifyWeeklySummary: $('settingsNotifyWeeklySummary'),
-      language: $('settingsLanguage'),
-      scheduleFrequency: $('settingsScheduleFrequency'),
-      scheduleTime: $('settingsScheduleTime')
+      language: $('settingsLanguage')
     };
     var swatches = U.qsa('[data-theme-choice]', $('settingsThemeSwatches'));
     var saveBtn = $('settingsSaveBtn');
@@ -117,14 +115,11 @@
         name: els.name.value.trim(),
         // email is read-only (managed in the Access Portal)
         company: els.company.value.trim(),
-        aiProvider: els.aiProvider.value,
         notifyAuditCompleted: els.notifyAuditCompleted.checked,
         notifyCriticalIssue: els.notifyCriticalIssue.checked,
         notifyWeeklySummary: els.notifyWeeklySummary.checked,
         theme: theme,
-        language: els.language.value,
-        scheduleFrequency: els.scheduleFrequency.value,
-        scheduleTime: els.scheduleTime.value.trim()
+        language: els.language.value
       };
     }
 
@@ -132,13 +127,11 @@
       els.name.value = s.name || '';
       els.email.value = s.email || '';
       els.company.value = s.company || '';
-      setSelect(els.aiProvider, s.aiProvider);
+      els.aiProvider.value = s.aiProvider || 'Not configured';
       els.notifyAuditCompleted.checked = !!s.notifyAuditCompleted;
       els.notifyCriticalIssue.checked = !!s.notifyCriticalIssue;
       els.notifyWeeklySummary.checked = !!s.notifyWeeklySummary;
       setSelect(els.language, s.language);
-      setSelect(els.scheduleFrequency, s.scheduleFrequency);
-      els.scheduleTime.value = s.scheduleTime || '';
       setThemeSelection(s.theme || 'light', false);
       apiKey = s.apiKey || '';
       renderApiKey();
@@ -174,14 +167,11 @@
             name: s.name || '',
             email: s.email || '',
             company: s.company || '',
-            aiProvider: s.aiProvider,
             notifyAuditCompleted: !!s.notifyAuditCompleted,
             notifyCriticalIssue: !!s.notifyCriticalIssue,
             notifyWeeklySummary: !!s.notifyWeeklySummary,
             theme: s.theme || 'light',
-            language: s.language,
-            scheduleFrequency: s.scheduleFrequency,
-            scheduleTime: s.scheduleTime || ''
+            language: s.language
           };
           fillForm(s);
           // Apply the saved theme in this browser straight away.

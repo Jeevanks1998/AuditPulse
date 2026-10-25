@@ -4,8 +4,11 @@ model lives here because only this service reads and writes it.
 Timed runs are started by scheduler/jobs.py.
 """
 
-from datetime import datetime, timedelta, timezone
+import calendar
+import re
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException, status
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, select
@@ -19,7 +22,6 @@ from models.user import User
 from models.website import get_or_create_website
 from services import audit_service
 
-FREQUENCY_DAYS = {"Daily": 1, "Weekly": 7, "Monthly": 30, "Yearly": 365}
 DEFAULT_RUN_NOW_MAX_PAGES = 50
 
 
@@ -57,10 +59,101 @@ class Schedule(Base):
     )
 
 
-# Helpers
-def compute_next_run(frequency: str, from_time: Optional[datetime] = None) -> datetime:
-    base = from_time or datetime.now(timezone.utc)
-    return base + timedelta(days=FREQUENCY_DAYS.get(frequency, 7))
+# Next run time
+WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
+          "September", "October", "November", "December"]
+
+
+def _get(cfg: dict, *keys, default=None):
+    """Reads a key in snake_case or camelCase (the page sends camelCase, the API stores snake_case)."""
+    for k in keys:
+        if cfg.get(k) not in (None, ""):
+            return cfg[k]
+    return default
+
+
+def _zone(name) -> ZoneInfo:
+    try:
+        return ZoneInfo(str(name))
+    except (ZoneInfoNotFoundError, ValueError, TypeError):
+        return ZoneInfo("UTC")
+
+
+def _parse_time(text) -> tuple:
+    """'09:00 AM', '9:30 pm', '21:15' -> (hour, minute). Defaults to 09:00."""
+    m = re.match(r"^\s*(\d{1,2})(?::(\d{2}))?\s*([AaPp][Mm])?\s*$", str(text or ""))
+    if not m:
+        return 9, 0
+    hour, minute, ampm = int(m.group(1)), int(m.group(2) or 0), (m.group(3) or "").lower()
+    if ampm == "pm" and hour < 12:
+        hour += 12
+    if ampm == "am" and hour == 12:
+        hour = 0
+    if hour > 23 or minute > 59:
+        return 9, 0
+    return hour, minute
+
+
+def _date(text) -> Optional[date]:
+    try:
+        return date.fromisoformat(str(text)[:10])
+    except (TypeError, ValueError):
+        return None
+
+
+def _candidates(frequency: str, cfg: dict, start: date):
+    """Run dates from `start` onwards, in order."""
+    if frequency == "Daily":
+        for i in range(0, 400):
+            yield start + timedelta(days=i)
+    elif frequency == "Monthly":
+        last_day = str(_get(cfg, "month_day_mode", "monthDayMode", default="specific")) == "last"
+        want = int(_get(cfg, "month_day", "monthDay", default=15))
+        y, m = start.year, start.month
+        for _ in range(0, 26):
+            days = calendar.monthrange(y, m)[1]
+            yield date(y, m, days if last_day else min(max(want, 1), days))
+            y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    elif frequency == "Yearly":
+        name = str(_get(cfg, "year_month", "yearMonth", default="January"))
+        month = MONTHS.index(name) + 1 if name in MONTHS else 1
+        want = int(_get(cfg, "year_day", "yearDay", default=1))
+        for y in range(start.year, start.year + 3):
+            yield date(y, month, min(max(want, 1), calendar.monthrange(y, month)[1]))
+    else:  # Weekly
+        name = str(_get(cfg, "weekday", default="Monday"))
+        wd = WEEKDAYS.index(name) if name in WEEKDAYS else 0
+        first = start + timedelta(days=(wd - start.weekday()) % 7)
+        for i in range(0, 60):
+            yield first + timedelta(weeks=i)
+
+
+def compute_next_run(frequency: str, from_time: Optional[datetime] = None,
+                     schedule: Optional[dict] = None, period: Optional[dict] = None) -> Optional[datetime]:
+    """Next run (UTC) strictly after `from_time`, at the chosen time in the chosen time zone.
+    Respects the schedule period: not before the start date, and None after the end date
+    (unless it never expires)."""
+    cfg, per = dict(schedule or {}), dict(period or {})
+    tz = _zone(_get(cfg, "timezone", default="UTC"))
+    hour, minute = _parse_time(_get(cfg, "time", default="09:00 AM"))
+    after = (from_time or datetime.now(timezone.utc)).astimezone(tz)
+
+    start = after.date()
+    start_date = _date(_get(per, "start_date", "startDate"))
+    if start_date and start_date > start:
+        start = start_date
+    never = _get(per, "never_expires", "neverExpires", default=True)
+    end_date = None if never in (True, "true", 1) else _date(_get(per, "end_date", "endDate"))
+
+    for day in _candidates(frequency, cfg, start):
+        run = datetime(day.year, day.month, day.day, hour, minute, tzinfo=tz)
+        if run <= after:
+            continue
+        if end_date and day > end_date:
+            return None
+        return run.astimezone(timezone.utc)
+    return None
 
 
 _DELIVERY_STATE_KEYS = ("last_status", "last_sent_at", "last_error", "last_audit_id")
@@ -109,7 +202,7 @@ async def create_schedule(db: AsyncSession, user: User, payload) -> Schedule:
         schedule=payload.schedule,
         schedule_period=payload.schedule_period,
         email_delivery=_delivery_config(payload.email_delivery),
-        next_run_at=compute_next_run(payload.frequency),
+        next_run_at=compute_next_run(payload.frequency, schedule=payload.schedule, period=payload.schedule_period),
     )
     db.add(schedule)
     await db.flush()
@@ -135,8 +228,9 @@ async def update_schedule(schedule_id: int, db: AsyncSession, user: User, payloa
         )
     for field, value in updates.items():
         setattr(schedule, field, value)
-    if "frequency" in updates:
-        schedule.next_run_at = compute_next_run(schedule.frequency, schedule.last_run_at)
+    if {"frequency", "schedule", "schedule_period"} & updates.keys():
+        schedule.next_run_at = compute_next_run(schedule.frequency, schedule=schedule.schedule,
+                                                period=schedule.schedule_period)
 
     await log_event(
         db, user.id, HistoryEventType.SCHEDULE_UPDATED, description=f"Updated schedule for {schedule.url}"
@@ -172,7 +266,7 @@ async def run_schedule_now(schedule_id: int, db: AsyncSession, user: User) -> Au
     db.add(audit)
 
     schedule.last_run_at = datetime.now(timezone.utc)
-    schedule.next_run_at = compute_next_run(schedule.frequency, schedule.last_run_at)
+    # "Run now" doesn't move the regular timetable.
 
     await db.flush()
     await log_event(

@@ -2,7 +2,8 @@
 ai/provider.py
 
 Single low-level entry point for talking to the configured AI provider
-(config.settings.AI_PROVIDER / ANTHROPIC_API_KEY). Every other module in
+(config.settings.AI_PROVIDER: "anthropic" with ANTHROPIC_API_KEY, or "groq"
+with GROQ_API_KEY — Groq's free tier, OpenAI-compatible API). Every other module in
 this package (executive_summary.py, recommendations.py, business_impact.py,
 action_plan.py, chatbot.py) calls through `call_ai` / `call_ai_json` rather
 than touching httpx or the Anthropic API directly, so there's exactly one
@@ -30,9 +31,22 @@ from config.settings import settings
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
 
-# Every module in this package uses the same model unless a caller has a
-# specific reason not to (none currently do) — keep it in one place.
-AI_MODEL = "claude-sonnet-4-6"
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+# Default model per provider; settings.AI_MODEL overrides it (e.g. when a
+# provider retires a model, change the setting instead of the code).
+# Groq retired llama-3.3-70b-versatile on 2026-08-16; gpt-oss-120b is its
+# recommended replacement.
+DEFAULT_MODELS = {
+    "anthropic": "claude-sonnet-4-6",
+    "groq": "openai/gpt-oss-120b",
+}
+# Kept for backwards compatibility with anything importing it.
+AI_MODEL = DEFAULT_MODELS["anthropic"]
+
+# gpt-oss models "think" before answering and those tokens count against
+# max_tokens; give them headroom so the answer itself is never cut off.
+GROQ_REASONING_HEADROOM = 1500
 
 DEFAULT_TIMEOUT_SECONDS = 20.0
 DEFAULT_MAX_TOKENS = 500
@@ -42,9 +56,23 @@ class AIProviderError(Exception):
     """Raised for any failure calling the AI provider — missing config, network, or parse errors."""
 
 
+def _provider() -> str:
+    return (settings.AI_PROVIDER or "").strip().lower()
+
+
+def _model() -> str:
+    override = (getattr(settings, "AI_MODEL", "") or "").strip()
+    return override or DEFAULT_MODELS.get(_provider(), "")
+
+
 def is_configured() -> bool:
     """True when a real provider call can be attempted at all."""
-    return settings.AI_PROVIDER == "anthropic" and bool(settings.ANTHROPIC_API_KEY)
+    provider = _provider()
+    if provider == "anthropic":
+        return bool(settings.ANTHROPIC_API_KEY)
+    if provider == "groq":
+        return bool(getattr(settings, "GROQ_API_KEY", ""))
+    return False
 
 
 async def call_ai(
@@ -62,9 +90,11 @@ async def call_ai(
     """
     if not is_configured():
         raise AIProviderError(
-            f"AI provider not configured (AI_PROVIDER={settings.AI_PROVIDER!r}, "
-            f"ANTHROPIC_API_KEY {'set' if settings.ANTHROPIC_API_KEY else 'missing'})"
+            f"AI provider not configured (AI_PROVIDER={settings.AI_PROVIDER!r}; set ANTHROPIC_API_KEY "
+            f"or AI_PROVIDER=groq with GROQ_API_KEY)"
         )
+    if _provider() == "groq":
+        return await _call_groq(prompt, system=system, max_tokens=max_tokens, timeout=timeout)
 
     headers = {
         "x-api-key": settings.ANTHROPIC_API_KEY,
@@ -72,7 +102,7 @@ async def call_ai(
         "content-type": "application/json",
     }
     payload: dict = {
-        "model": AI_MODEL,
+        "model": _model(),
         "max_tokens": max_tokens,
         "messages": [{"role": "user", "content": prompt}],
     }
@@ -90,6 +120,44 @@ async def call_ai(
     text = _extract_text(data)
     if not text:
         raise AIProviderError("Anthropic response contained no text content")
+    return text
+
+
+async def _call_groq(prompt: str, *, system: Optional[str], max_tokens: int, timeout: float) -> str:
+    """Groq's OpenAI-compatible chat completions API (free tier, no training on inputs)."""
+    model = _model()
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+    payload: dict = {"model": model, "messages": messages, "temperature": 0.3}
+    if model.startswith("openai/gpt-oss"):
+        payload["max_completion_tokens"] = max_tokens + GROQ_REASONING_HEADROOM
+        payload["reasoning_effort"] = "low"
+        payload["include_reasoning"] = False
+    else:
+        payload["max_completion_tokens"] = max_tokens
+    headers = {"Authorization": f"Bearer {settings.GROQ_API_KEY}", "Content-Type": "application/json"}
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(GROQ_API_URL, headers=headers, json=payload)
+            if response.status_code == 429:
+                raise AIProviderError("Groq free-tier rate limit reached; using the built-in summary instead")
+            response.raise_for_status()
+            data = response.json()
+    except httpx.HTTPError as exc:
+        detail = ""
+        if isinstance(exc, httpx.HTTPStatusError):
+            detail = f" — {exc.response.text[:200]}"
+        raise AIProviderError(f"Groq request failed: {exc}{detail}") from exc
+
+    try:
+        text = (data["choices"][0]["message"].get("content") or "").strip()
+    except (KeyError, IndexError, TypeError, AttributeError) as exc:
+        raise AIProviderError(f"Unexpected Groq response shape: {exc}") from exc
+    if not text:
+        raise AIProviderError("Groq response contained no text content")
     return text
 
 
@@ -113,7 +181,7 @@ async def call_ai_json(
         return json.loads(cleaned)
     except json.JSONDecodeError as exc:
         logger.warning(f"ai.provider: could not parse JSON from AI response: {exc}")
-        raise AIProviderError(f"Anthropic response was not valid JSON: {exc}") from exc
+        raise AIProviderError(f"AI response was not valid JSON: {exc}") from exc
 
 
 def _extract_text(data: dict) -> str:

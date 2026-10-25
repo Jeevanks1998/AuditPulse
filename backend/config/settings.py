@@ -66,8 +66,12 @@ class Settings(BaseSettings):
     CORS_ORIGINS_RAW: str = "http://localhost:3000"
 
     # --- Third-party APIs ---
+    # "anthropic" (ANTHROPIC_API_KEY) or "groq" (GROQ_API_KEY, free tier).
     AI_PROVIDER: str = "anthropic"
     ANTHROPIC_API_KEY: str = ""
+    GROQ_API_KEY: str = ""
+    # Optional model override; empty = the provider's default in ai/provider.py.
+    AI_MODEL: str = ""
     GOOGLE_PAGESPEED_API_KEY: str = ""
 
     # --- Crawler (crawler/) ---

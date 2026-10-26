@@ -124,7 +124,7 @@ async def run_customer_journey(
 
     try:
         from crawler.screenshots import DEFAULT_VIEWPORT
-        from journey.browser_session import JourneyBrowser, is_browser_dead_error
+        from journey.browser_session import JourneyBrowser, is_browser_dead_error, is_refused_error
     except ImportError as exc:
         result.error = f"runtime unavailable: {exc}"
         return result
@@ -174,6 +174,7 @@ async def run_customer_journey(
                 tests_deadline = time.monotonic() + test_budget
                 if deadline is not None:
                     tests_deadline = min(tests_deadline, deadline - PER_TEST_TIMEOUT_S)
+                refused_in_a_row, fallback = 0, 0
                 for n, it in enumerate(select_for_testing(interactions, max_tested, per_page)):
                     if time.monotonic() > tests_deadline:
                         logger.info(f"journey: test time budget reached after {n} interaction(s)")
@@ -208,6 +209,46 @@ async def run_customer_journey(
                         # Chromium died mid-test: run this interaction once more.
                         it.status, it.observed, it.outcome = "not_tested", "", None
                         it.screenshots = {}
+
+                    # The site's bot protection refusing page loads (e.g. ERR_HTTP2_PROTOCOL_ERROR):
+                    # 1st time switch to HTTP/1.1, 2nd time also drop the saved cookies, then stop.
+                    if not it.tested and is_refused_error(it.observed):
+                        refused_in_a_row += 1
+                    else:
+                        refused_in_a_row = 0
+                    if refused_in_a_row >= 2:
+                        if fallback >= 2:
+                            result.error = (
+                                "The site's bot protection refused the test browser's page loads "
+                                f"({(it.observed or '')[:80]}), so interaction testing stopped after "
+                                f"{n + 1} attempt(s). The scan results above are still valid.")
+                            result.tests_stopped_early = True
+                            break
+                        fallback += 1
+                        refused_in_a_row = 0
+                        if "--disable-http2" not in session.extra_args:
+                            session.extra_args.append("--disable-http2")
+                        if fallback == 2:
+                            session._state = None  # bot-protection cookies from the scan can be the trigger
+                        logger.warning(f"journey: site refused page loads; retrying with fallback {fallback} "
+                                       "(HTTP/1.1" + (", fresh cookies" if fallback == 2 else "") + ")")
+                        await session.restart(f"site refused page loads (fallback {fallback})")
+                        session.restarts = 0
+                        try:
+                            if not tc.page.is_closed():
+                                await tc.page.close()
+                        except Exception:  # noqa: BLE001
+                            pass
+                        tc.page = await session.new_page()
+                        tc.context = session.context
+                        # Run this interaction again on the new browser.
+                        it.status, it.observed, it.outcome = "not_tested", "", None
+                        it.screenshots = {}
+                        try:
+                            await asyncio.wait_for(test_interaction(tc, it, prefix), timeout=PER_TEST_TIMEOUT_S)
+                        except asyncio.TimeoutError:
+                            it.status = "not_tested"
+                            it.observed = it.observed or "Interaction test timed out (page did not respond)."
 
     try:
         if deadline is not None:

@@ -15,6 +15,21 @@ from config.browser import launch_chromium
 
 MAX_RESTARTS = 6
 
+# Page loads the site's bot protection refused (seen on Akamai sites such as axa.de).
+_REFUSED_MARKERS = (
+    "err_http2_protocol_error",
+    "err_connection_reset",
+    "err_connection_closed",
+    "err_empty_response",
+    "err_quic_protocol_error",
+)
+
+
+def is_refused_error(exc: BaseException | str | None) -> bool:
+    msg = str(exc or "").lower()
+    return any(m in msg for m in _REFUSED_MARKERS)
+
+
 _DEAD_MARKERS = (
     "has been closed",
     "target crashed",
@@ -48,6 +63,7 @@ class JourneyBrowser:
         self.browser = None
         self.context = None
         self.restarts = 0
+        self.extra_args: list = []   # e.g. ["--disable-http2"] after the site refuses HTTP/2
         self._pw = None
         self._state: Optional[dict] = None
 
@@ -68,7 +84,7 @@ class JourneyBrowser:
                 pass
 
     async def _launch(self) -> None:
-        self.browser = await launch_chromium(self._pw)
+        self.browser = await launch_chromium(self._pw, args=list(self.extra_args))
         kwargs: dict[str, Any] = dict(accept_downloads=True, service_workers="block")
         if self.viewport:
             kwargs["viewport"] = self.viewport

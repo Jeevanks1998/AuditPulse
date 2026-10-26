@@ -504,7 +504,17 @@ async def _reset_to(tc: TestContext, page_url: str, prefix: str) -> None:
     # Always reload so every test starts from the same state.
     from config.browser import goto_page
 
-    await goto_page(tc.page, page_url, load_wait_ms=3_000)
+    from journey.browser_session import is_refused_error
+
+    for delay_ms in (2_000, 5_000, None):
+        try:
+            await goto_page(tc.page, page_url, load_wait_ms=3_000)
+            break
+        except Exception as exc:  # noqa: BLE001
+            # Bot protection sometimes refuses a burst of page loads: pause, then try again.
+            if delay_ms is None or not is_refused_error(exc):
+                raise
+            await tc.page.wait_for_timeout(delay_ms)
     await tc.page.wait_for_timeout(600)
     return await tc.page.evaluate(DISCOVER_JS, {"maxElements": 1_500, "idPrefix": prefix, "lite": True}) or {}
 

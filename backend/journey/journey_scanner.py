@@ -29,7 +29,8 @@ FULL_DEPTH_PAGE_CAP = 25
 FULL_DEPTH_LEVELS = 3
 PAGE_SETTLE_MS = 1_200
 MAX_HTML_BYTES = 4_000_000
-MAX_ELEMENTS_PER_PAGE = 800   # mega-menus alone can have 300+ links
+MAX_ELEMENTS_PER_PAGE = 800
+PAGE_SCAN_TIMEOUT_S = 45.0       # one page (load, discover, screenshot) never takes longer than this   # mega-menus alone can have 300+ links
 MAX_CRAWL_DELAY_S = 5.0
 
 # Runs in the page: collects every interactive element and form, tagging each with data-journey-id.
@@ -553,7 +554,9 @@ async def scan_site(
             result.pages.append(scan)
             load_mark = capture.mark() if capture is not None else None
             pages_on_tab += 1
-            try:
+
+            async def _scan_one(scan=scan, url=url, level=level, load_mark=load_mark):
+                nonlocal page, pages_on_tab, first
                 try:
                     resp = await goto_page(page, url)
                 except Exception as nav_exc:  # noqa: BLE001
@@ -568,7 +571,7 @@ async def scan_site(
                 if landed != url and landed in scanned_final:
                     # Redirected to a page already scanned: skip the duplicate.
                     result.pages.remove(scan)
-                    continue
+                    return
                 scanned_final.add(landed)
                 await page.wait_for_timeout(PAGE_SETTLE_MS)
                 if first and on_page_loaded is not None:
@@ -617,6 +620,22 @@ async def scan_site(
                                                      if e.event})[:20]
                 if on_page_scanned is not None:
                     await on_page_scanned(page, scan)
+
+            page_timeout = PAGE_SCAN_TIMEOUT_S
+            if deadline is not None:
+                page_timeout = max(5.0, min(page_timeout, deadline - time.monotonic() + 15))
+            try:
+                await asyncio.wait_for(_scan_one(), timeout=page_timeout)
+            except asyncio.TimeoutError:
+                # A page that never finishes (heavy scripts, endless loading) must not use up the whole scan.
+                scan.error = f"Page did not finish loading within {int(page_timeout)} s; skipped."
+                logger.info(f"journey: page scan timed out for {url}")
+                try:
+                    await page.close()
+                except Exception:  # noqa: BLE001
+                    pass
+                page = await _new_page()
+                pages_on_tab = 0
             except Exception as exc:  # noqa: BLE001 — one bad page never stops the scan
                 scan.error = str(exc)[:300]
                 logger.info(f"journey: could not scan {url}: {exc}")

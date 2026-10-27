@@ -96,3 +96,25 @@ def test_plain_button_is_not_a_cta():
                                landmark="main", style={"has_background": True, "padded": True},
                                attributes={"class": "btn btn-primary"}, aria={})
     assert classify(styled, {}, "www.example.com").kind == CTA
+
+
+def test_hung_page_is_skipped_and_tests_still_run(journey_site, monkeypatch):
+    """One page that never finishes (seen on axa.it) must not use up the whole scan: it is
+    skipped after the per-page limit, the other pages are scanned and interactions are tested."""
+    from journey import journey_scanner, run_customer_journey
+
+    real = journey_scanner.discover_page
+
+    async def slow_discover(page, url, prefix):
+        if url.rstrip("/").endswith("/resources"):
+            await asyncio.sleep(3600)
+        return await real(page, url, prefix)
+
+    monkeypatch.setattr(journey_scanner, "discover_page", slow_discover)
+    monkeypatch.setattr(journey_scanner, "PAGE_SCAN_TIMEOUT_S", 6.0)
+    r = asyncio.run(run_customer_journey(site_url("/"), max_pages=6, depth="full", scan_id="pytest-hung-page",
+                                         max_tested=3))
+    hung = [p for p in r.pages if p["url"].rstrip("/").endswith("/resources")]
+    assert hung and "did not finish loading" in (hung[0].get("error") or "")
+    assert len(r.pages) >= 3
+    assert any(i["tested"] for i in r.interactions)

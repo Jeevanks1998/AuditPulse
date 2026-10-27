@@ -123,6 +123,25 @@ class InteractionTracking:
                 "before_action": self.before_action, "note": self.note}
 
 
+_ADOBE_RSID_RE = re.compile(r"/b/ss/([^/]+)/", re.I)
+
+
+def _property_id(url: str) -> str:
+    """The analytics account a hit was sent to (GA4/UA tid, Piano site, Adobe report suite)."""
+    from urllib.parse import parse_qs, urlparse
+
+    try:
+        parsed = urlparse(url or "")
+        q = parse_qs(parsed.query)
+    except ValueError:
+        return ""
+    for name in ("tid", "s", "idsite", "id"):
+        if q.get(name):
+            return q[name][0][:40]
+    m = _ADOBE_RSID_RE.search(parsed.path or "")
+    return m.group(1)[:40] if m else ""
+
+
 def evaluate_interaction(
     capture: TrackingCapture,
     action_started: float,
@@ -141,14 +160,18 @@ def evaluate_interaction(
         vendors=sorted({e.vendor for e in interaction}),
     )
 
-    # Duplicate: the same tool sent the same event more than once.
+    # Duplicate: the same tool sent the same event more than once to the same property.
+    # One hit each to two GA4 properties (dual tagging) is not a duplicate.
     counts: Dict[str, int] = {}
     for e in interaction:
         if e.source != "network":
             continue
         key = f"{e.vendor}:{e.event}"
+        prop = _property_id(e.url)
+        if prop:
+            key = f"{key}@{prop}"
         counts[key] = counts.get(key, 0) + 1
-    result.duplicates = sorted(k for k, n in counts.items() if n > 1)
+    result.duplicates = sorted({k.split("@")[0] for k, n in counts.items() if n > 1})
 
     if pre_window_start is not None:
         names = {e.event for e in interaction}

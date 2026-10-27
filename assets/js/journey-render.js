@@ -416,7 +416,9 @@
           (o.did || []).map(function (d) { return '<li>' + esc(d) + '</li>'; }).join('') + '</ol></div>' +
         '<div><p class="jr-ov__h">What it found</p><div class="jr-ov__results">' + results + '</div></div>' +
       '</div>' +
-      (fix ? '<p class="jr-ov__h">Fix first</p><ul class="jr-recs">' + fix + '</ul>' : '<p class="jr-ov__h">Fix first</p><p class="jr-muted">Nothing urgent: no critical issues or warnings in this scan.</p>') +
+      (fix ? '<p class="jr-ov__h">Fix first' + ((o.issues_total || 0) > (o.fix_first || []).length
+          ? ' <span class="jr-muted" style="font-weight:400;">(top ' + (o.fix_first || []).length + ' of ' + o.issues_total + ' critical issues and warnings; all are listed under Findings)</span>' : '') +
+          '</p><ul class="jr-recs">' + fix + '</ul>' : '<p class="jr-ov__h">Fix first</p><p class="jr-muted">Nothing urgent: no critical issues or warnings in this scan.</p>') +
       ((o.coverage || []).length ? '<p class="jr-ov__coverage"><strong>How complete is this scan?</strong> ' + esc(o.coverage.join(' ')) + '</p>' : '') +
       '<p class="jr-muted" style="margin-top:8px;">' + esc(o.score_explained || '') + '</p>' +
     '</div>';

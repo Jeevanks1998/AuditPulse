@@ -148,7 +148,21 @@ async def start_audit(db: AsyncSession, user: User, payload: AuditCreate) -> Aud
 
 
 # Pipeline
+# Longest an audit waits in the queue for the one before it (full-site audits take ~10 min).
+AUDIT_QUEUE_MAX_WAIT_S = 45 * 60
+
+
 async def run_audit_pipeline(audit_id: int) -> None:
+    """Runs one audit at a time: if another is running, this one stays "queued" until it finishes."""
+    from journey.run_lock import audit_slot
+
+    async with audit_slot(max_wait_s=AUDIT_QUEUE_MAX_WAIT_S) as waited:
+        if waited > 1:
+            logger.info(f"Audit {audit_id}: waited {waited:.0f}s in the queue")
+        await _run_audit_pipeline(audit_id)
+
+
+async def _run_audit_pipeline(audit_id: int) -> None:
     """Runs in the background after an audit is created. Fetches the page once,
     runs each selected module on it, saves progress after each step, and saves
     the final scores, findings and module rows. Uses its own database session.
@@ -354,17 +368,18 @@ async def run_audit_pipeline(audit_id: int) -> None:
             # Roll back a failed transaction first; read the values we need before that.
             audit_url = audit.url
             audit_user_id = audit.user_id
+            reason = failure_reason(exc)
 
             try:
                 await db.rollback()
                 audit.status = "failed"
                 # Cut the message to the column size, or this commit fails too.
-                audit.error_message = str(exc)[:500]
+                audit.error_message = reason[:500]
                 await log_event(
                     db,
                     audit_user_id,
                     HistoryEventType.AUDIT_FAILED,
-                    description=f"Audit of {audit_url} failed: {exc}"[:500],
+                    description=f"Audit of {audit_url} failed: {reason}"[:500],
                     audit_id=audit_id,
                 )
                 await db.commit()
@@ -383,6 +398,21 @@ async def run_audit_pipeline(audit_id: int) -> None:
     from services.audit_notify import notify_audit_finished
 
     await notify_audit_finished(audit_id)
+
+
+def failure_reason(exc: BaseException) -> str:
+    """A readable reason for a failed audit (network errors often have no message of their own)."""
+    import httpx
+
+    text = str(exc).strip()
+    if isinstance(exc, (httpx.RemoteProtocolError, httpx.ReadError, httpx.WriteError)) or "reset by peer" in text.lower():
+        return ("The website reset the connection from the AuditPulse server. Its bot protection may be "
+                "blocking our server, often for a few hours after many audits in a row. Try again later.")
+    if isinstance(exc, httpx.TimeoutException):
+        return "The website did not respond in time. It may be down, very slow, or blocking our server."
+    if isinstance(exc, httpx.ConnectError):
+        return f"Could not connect to the website ({text or 'connection failed'})."
+    return text or type(exc).__name__
 
 
 def _compute_overall_score(breakdown: dict) -> Optional[int]:

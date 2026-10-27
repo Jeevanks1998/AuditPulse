@@ -261,6 +261,7 @@ window.Api = (function () {
                   percent: progress.percent,
                   stepId: progress.currentStep,
                   status: progress.status === 'running' ? 'running'
+                    : progress.status === 'queued' ? 'queued'
                     : progress.status === 'failed' ? 'fail' : 'pass',
                   elapsedLabel: elapsedSec + 's'
                 });

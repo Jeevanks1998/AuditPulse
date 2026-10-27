@@ -410,7 +410,10 @@ def build_journey_section(payload: ReportPayload) -> List[Flowable]:
         story.append(note_box("<br/>".join(lines)))
         if ov.get("fix_first"):
             story.append(Spacer(1, 2 * mm))
-            story.append(note_box("<b>Fix first</b><br/>" + "<br/>".join(
+            total = ov.get("issues_total") or len(ov["fix_first"])
+            head = ("<b>Fix first</b>" + (f" (top {len(ov['fix_first'])} of {total} critical issues and warnings; "
+                                           "all are listed under Findings)" if total > len(ov["fix_first"]) else ""))
+            story.append(note_box(head + "<br/>" + "<br/>".join(
                 f"• <b>{esc(f['title'])}</b> — {esc(f.get('recommendation') or '')}" for f in ov["fix_first"]),
                 fg=ERROR_TEXT, bg=ERROR_SOFT))
         if ov.get("coverage"):

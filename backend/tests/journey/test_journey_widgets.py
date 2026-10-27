@@ -56,3 +56,18 @@ def test_dead_button_still_reported(journey_site):
     r = scan(journey_site)
     dead = _by_label(r, "Get my price")
     assert dead["tested"] and dead["status"] == "failed" and dead["outcome"] == "no_visible_effect"
+
+
+def test_late_new_tab_link_is_working(journey_site):
+    """A tag manager holds the click ~2 s, then opens the tab without an opener (axa.it)."""
+    r = scan(journey_site)
+    it = _by_label(r, "See the campaign")
+    assert it["status"] == "success" and it["outcome"] == "opened_new_tab", it["observed"]
+    assert "/quote" in (it["final_url"] or "")
+
+
+def test_click_registered_by_site_is_not_broken(journey_site):
+    r = scan(journey_site)
+    it = _by_label(r, "Find partners")
+    assert it["status"] == "success" and it["outcome"] == "click_registered", it["observed"]
+    assert "trovaagente" in it["observed"]

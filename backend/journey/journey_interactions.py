@@ -461,6 +461,7 @@ _STATE_JS = r"""
 """
 
 SETTLE_AFTER_ACTION_MS = 1_800
+NEW_TAB_EXTRA_WAIT_MS = 3_000     # extra wait for a new tab opened late by a tag manager
 ANALYTICS_EXTRA_WAIT_MS = 3_500   # analytics tools send in batches: give the hit time to leave
 
 _MUTATION_START_JS = r"""
@@ -544,6 +545,14 @@ def relocate_element(it: Interaction, data: dict) -> Optional[str]:
         for e in pool:
             if e.get("selector") == it.selector:
                 return e.get("id")
+    return None
+
+
+def _click_event(events) -> Optional[str]:
+    """Name of the first click/interaction event the site pushed for this click, if any."""
+    for e in events:
+        if e.source == "dataLayer" and not e.is_lifecycle and e.event:
+            return e.event
     return None
 
 
@@ -684,10 +693,19 @@ async def test_interaction(tc: TestContext, it: Interaction, page_prefix: str) -
                     pass
 
             def _on_popup(p):
-                popups.append(p)
+                if p is not page and p not in popups:
+                    popups.append(p)
 
             page.on("response", _on_response)
             page.on("popup", _on_popup)
+            # Some sites open the new tab without an opener (noopener) or a moment later
+            # (tag managers wait for their tags before opening it): watch the whole browser too.
+            context = getattr(tc, "context", None)
+            if context is not None:
+                try:
+                    context.on("page", _on_popup)
+                except Exception:  # noqa: BLE001
+                    context = None
             # Count page changes caused by the click: a reliable "something happened" signal.
             baseline = 0
             try:
@@ -716,9 +734,22 @@ async def test_interaction(tc: TestContext, it: Interaction, page_prefix: str) -
             except Exception:  # noqa: BLE001
                 pass
             await page.wait_for_timeout(SETTLE_AFTER_ACTION_MS)
+            opens_new_tab = (it.attributes or {}).get("target", "").lower() == "_blank"
+            if opens_new_tab and not popups and normalize_url(page.url) == normalize_url(
+                    before_state.get("url") or it.page_url):
+                # Tag managers can hold a new-tab link for up to ~2 s while their tags fire.
+                for _ in range(int(NEW_TAB_EXTRA_WAIT_MS / 250)):
+                    if popups:
+                        break
+                    await page.wait_for_timeout(250)
             for name, handler in (("response", _on_response), ("popup", _on_popup)):
                 try:
                     page.remove_listener(name, handler)
+                except Exception:  # noqa: BLE001
+                    pass
+            if context is not None:
+                try:
+                    context.remove_listener("page", _on_popup)
                 except Exception:  # noqa: BLE001
                     pass
 
@@ -797,6 +828,21 @@ async def test_interaction(tc: TestContext, it: Interaction, page_prefix: str) -
                 it.status, it.outcome, it.observed = "success", "scrolled", "The page scrolled to another section."
             elif it.pattern == PATTERN_LINK and dest and normalize_url(dest) == normalize_url(it.page_url):
                 it.status, it.outcome, it.observed = "success", "same_page_link", "Link points to the current page."
+            elif opens_new_tab and dest and urlparse(dest).scheme in ("http", "https"):
+                # A new-tab link whose tab the test browser could not see: check the destination itself.
+                status, _ctype, _size = await _http_check(tc, dest)
+                it.http_status = status
+                it.final_url = dest
+                ok = status is not None and status < 400
+                it.status = "success" if ok else "failed"
+                it.outcome = "opened_new_tab" if ok else "broken_destination"
+                it.observed = (f"Link opens in a new tab (target=_blank): {dest}"
+                               + (f" (HTTP {status})." if status else " (destination could not be reached)."))
+            elif registered := _click_event(tc.capture.between(started)):
+                # No visible change in this tab, but the site's own code reacted to the click.
+                it.status, it.outcome = "success", "click_registered"
+                it.observed = (f"No visible change in this tab, but the site registered the click "
+                               f"(event \"{registered}\").")
             else:
                 it.status, it.outcome = "failed", "no_visible_effect"
                 it.observed = ("Clicked, but nothing happened: no navigation, new tab, dialog, expansion or "

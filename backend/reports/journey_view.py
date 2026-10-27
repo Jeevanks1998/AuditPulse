@@ -315,7 +315,12 @@ def _overview(journey: dict, counts: dict, rows: List[dict], tested: List[dict],
         if len(fix_first) == 3:
             break
 
-    coverage = []
+    n_issues = len([f for f in findings if f.get("severity") in ("critical", "warning")])
+    n_critical = len([f for f in findings if f.get("severity") == "critical"])
+
+    coverage = [f"Clicked {n_tested} of the {_plural(n_found, 'clickable element')} found on "
+                f"{_plural(n_pages, 'page')}, starting with the most important ones (forms, sign-ups, "
+                "main buttons); repeats such as the same menu link on every page are tested once."]
     if limits.get("scan_stopped_by_time_budget"):
         coverage.append(f"The page scan reached its time limit after {_plural(n_pages, 'page')} "
                         f"(up to {limits.get('page_limit') or limits.get('max_pages')} allowed).")
@@ -324,11 +329,12 @@ def _overview(journey: dict, counts: dict, rows: List[dict], tested: List[dict],
                         f"{limits.get('max_tested_interactions')} planned tests.")
     if journey.get("error"):
         coverage.append(str(journey.get("error")))
-    if coverage:
+    if len(coverage) > 1:
         coverage.append("Results cover what was scanned; run the audit again or audit a specific section "
                         "for more coverage.")
 
     return {"headline": headline, "did": did, "results": results, "fix_first": fix_first,
+            "issues_total": n_issues, "critical_total": n_critical,
             "coverage": coverage,
             "score_explained": ("The Journey score combines three measurements from this scan: did the tested "
                                 "interactions work (35%), are the important ones tracked (45%), and is there "

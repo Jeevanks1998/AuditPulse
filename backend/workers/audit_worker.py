@@ -55,7 +55,7 @@ async def _run_audit_async(audit_id: int) -> None:
 
 # requeue_stuck_audits_task: marks audits stuck in "running" by a crashed worker
 @celery_app.task(name="workers.audit_worker.requeue_stuck_audits_task")
-def requeue_stuck_audits_task(stuck_after_minutes: int = 30) -> dict:
+def requeue_stuck_audits_task(stuck_after_minutes: int = 60) -> dict:
     logger.info("[audit_worker] scanning for stuck audits")
     result = asyncio.run(_requeue_stuck_audits_async(stuck_after_minutes))
     logger.info(f"[audit_worker] requeued {result['requeued']} stuck audit(s)")

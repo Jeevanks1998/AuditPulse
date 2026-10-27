@@ -79,12 +79,12 @@ class Settings(BaseSettings):
 
     # --- Journey Map (journey/) ---
     # Interaction tests per audit / per page.
-    JOURNEY_MAX_TESTED_INTERACTIONS: int = 25
+    JOURNEY_MAX_TESTED_INTERACTIONS: int = 40
     JOURNEY_MAX_TESTS_PER_PAGE: int = 8
     # Time limits (seconds): page discovery, interaction tests, and the whole module.
-    JOURNEY_SCAN_BUDGET_S: int = 180
-    JOURNEY_TEST_BUDGET_S: int = 240
-    JOURNEY_HARD_TIMEOUT_S: int = 480
+    JOURNEY_SCAN_BUDGET_S: int = 300
+    JOURNEY_TEST_BUDGET_S: int = 600
+    JOURNEY_HARD_TIMEOUT_S: int = 1000
     MODULE_HARD_TIMEOUT_S: int = 300   # consent / analytics step safety net
     JOURNEY_ENABLE_INTERACTION_TESTS: bool = True
 

@@ -242,6 +242,13 @@
     }
 
     function updateProgressUi(progress, config) {
+      // Another audit is running: this one waits its turn (one audit at a time on the server).
+      if (progress.status === 'queued') {
+        U.setRingProgress(progressRingCircle, 0);
+        if (progressPercentLabel) progressPercentLabel.textContent = 0;
+        if (progressStatusText) progressStatusText.textContent = 'Queued: waiting for the audit before it to finish…';
+        return;
+      }
       // 100% only when the audit has really finished; otherwise stop at 95.
       var isComplete = progress.status === 'pass';
       var shownPercent = isComplete ? 100 : Math.min(progress.percent, 95);

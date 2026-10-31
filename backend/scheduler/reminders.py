@@ -9,6 +9,7 @@ from typing import Optional
 
 from config.config import logger
 from config.database import AsyncSessionLocal, run_async
+from services.accepted_findings import active_findings
 from workers.celery_worker import celery_app
 
 WEEKLY_SUMMARY_EVENT = "weekly_summary_sent"
@@ -87,7 +88,7 @@ async def _notify_critical_issues_async(audit_id: int) -> dict:
         if not audit or audit.status != "completed":
             return {"notified": False}
 
-        critical_findings = [f for f in (audit.findings or []) if f.get("severity") == "critical"]
+        critical_findings = [f for f in (active_findings(audit.findings or [])) if f.get("severity") == "critical"]
         if not critical_findings:
             return {"notified": False}
 

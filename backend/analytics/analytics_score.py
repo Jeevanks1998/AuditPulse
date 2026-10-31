@@ -219,6 +219,10 @@ class PageAnalyticsResult:
     runtime_result: Optional[dict] = None
     # Only raw HTML was checked and it showed nothing on a JavaScript-tagged site: not evidence.
     not_verified: bool = False
+    # Shown in the page list: the page's <title>, HTTP status and the address it ended on.
+    title: str = ""
+    status_code: Optional[int] = None
+    final_url: Optional[str] = None
 
 
 def check_cross_page_consistency(pages: List[PageAnalyticsResult]) -> List[dict]:
@@ -253,20 +257,42 @@ def check_cross_page_consistency(pages: List[PageAnalyticsResult]) -> List[dict]
                 affected_urls=missing_urls,
             ))
 
-        # Different IDs for the same tool on different pages.
+        # IDs per page. The same set of IDs on every page (e.g. two GA4 properties = dual tagging) is consistent;
+        # only pages with a different set are an inconsistency.
         ids_to_pages: Dict[str, List[str]] = {}
+        sets_to_pages: Dict[tuple, List[str]] = {}
         for p in pages_with:
-            for vendor_id in p.vendor_configs.get(vendor_key) or []:
+            ids = tuple(sorted(set(p.vendor_configs.get(vendor_key) or [])))
+            if not ids:
+                continue
+            sets_to_pages.setdefault(ids, []).append(p.url)
+            for vendor_id in ids:
                 ids_to_pages.setdefault(vendor_id, []).append(p.url)
-        if len(ids_to_pages) > 1:
-            detail = "; ".join(f"{vid} on {', '.join(urls[:5])}" for vid, urls in ids_to_pages.items())
-            affected = sorted({url for urls in ids_to_pages.values() for url in urls})
+        n_with = len([p for p in pages_with if p.vendor_configs.get(vendor_key)])
+        id_lines = "; ".join(
+            f"{vid} on {len(urls)} of {n_with} page(s)" + (f" ({', '.join(urls[:5])}"
+                                                            + (f" and {len(urls) - 5} more" if len(urls) > 5 else "") + ")"
+                                                            if len(urls) < n_with else "")
+            for vid, urls in sorted(ids_to_pages.items(), key=lambda kv: -len(kv[1])))
+        if len(sets_to_pages) == 1 and len(ids_to_pages) > 1:
             findings.append(_finding(
-                "critical",
+                "info",
+                f"{label} sends to {len(ids_to_pages)} properties on every page",
+                f"Every scanned page loads the same {len(ids_to_pages)} {label} IDs: "
+                f"{', '.join(sorted(ids_to_pages))}. This is consistent (often a deliberate dual set-up, "
+                "for example a local and a group property).",
+                f"No action needed if both {label} properties are intended; otherwise remove the one that is not.",
+                category="cross_page_consistency",
+                affected_urls=[],
+            ))
+        elif len(sets_to_pages) > 1:
+            affected = sorted({url for urls in ids_to_pages.values() for url in urls if len(urls) < n_with})
+            findings.append(_finding(
+                "warning",
                 f"Inconsistent {label} configuration across pages",
-                f"More than one {label} ID/configuration was found across the scanned site: {detail}.",
-                f"Standardize on a single {label} ID across the site — mixed IDs split traffic "
-                "across separate properties/containers and undercount both.",
+                f"Not every page loads the same {label} IDs. Measurement IDs found: {id_lines}.",
+                f"Use the same {label} ID(s) on every page — pages with a different ID send their traffic to "
+                "another property, which splits and undercounts reporting.",
                 category="cross_page_consistency",
                 affected_urls=affected,
             ))

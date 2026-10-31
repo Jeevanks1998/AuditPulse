@@ -106,7 +106,8 @@
       var key = (item.title || '') + '\u0000' + (item.module || '');
       if (!byKey[key]) {
         byKey[key] = { title: item.title || '', module: item.module || '', description: item.description || '',
-          finding_id: item.finding_id || '', severity: item.severity || 'info', step: item.step || '', count: 0 };
+          finding_id: item.finding_id || '', severity: item.severity || 'info', step: item.step || '', count: 0,
+          review: item.review || null, originalSeverity: item.originalSeverity || item.original_severity || null };
         order.push(key);
       }
       byKey[key].count += 1;
@@ -454,6 +455,9 @@
       window.Api.audits.getCookies ? window.Api.audits.getCookies(auditId).catch(function () { return null; }) : null
     ]).then(function (results) {
       currentReport = results[0];
+      var allFindings = currentReport.findings || [];
+      currentReport.acceptedFindings = allFindings.filter(function (f) { return f.review && f.review.status === 'accepted'; });
+      currentReport.findings = allFindings.filter(function (f) { return !(f.review && f.review.status === 'accepted'); });
       renderBanner(currentReport);
       renderGlance(currentReport);
       renderIssues(currentReport);
@@ -550,7 +554,14 @@
 
       if (favicon) favicon.textContent = U.faviconLetter(report.url);
       if (urlEl) urlEl.textContent = host;
-      if (metaEl) metaEl.textContent = 'Completed ' + U.formatRelativeTime(new Date(report.generatedAt).getTime());
+      if (metaEl) {
+        metaEl.textContent = 'Completed ' + U.formatRelativeTime(new Date(report.generatedAt).getTime());
+        var nAcc = groupByTitleModule(report.acceptedFindings || []).length;
+        if (nAcc && report.rawOverall != null) {
+          metaEl.textContent += ' · Score leaves out ' + nAcc + ' accepted finding' + (nAcc === 1 ? '' : 's') +
+            ' (measured: ' + report.rawOverall + '/100)';
+        }
+      }
       // Nothing scored: show "Not scored", never 0.
       if (!(report.scoreGrid || []).length) {
         if (label) label.textContent = '–';
@@ -698,6 +709,7 @@
         return {
           title: g.title, module: g.module, severity: SEV_ORDER[g.severity] != null ? g.severity : 'info',
           description: g.description, count: g.count, findingId: g.finding_id,
+          review: g.review, originalSeverity: g.originalSeverity,
           fix: recos[key] || steps[key] || steps['\u0000' + g.title] || '',
           impact: impact[g.title] || '',
           rank: (g.title in rank) ? rank[g.title] : 999
@@ -734,15 +746,102 @@
       var link = DETAIL_TABS.indexOf(it.module) !== -1
         ? '<button type="button" class="rp-link" data-goto="' + U.escapeHtml(it.module) + '">See evidence in ' + U.escapeHtml(moduleLabel(it.module)) + ' →</button>'
         : '';
+      var verify = it.review && it.review.status === 'to_verify';
+      if (verify) {
+        rows += '<div class="rp-kv"><dt>Marked “To be verified”</dt><dd>' +
+          U.escapeHtml(it.review.note || 'No reason given.') + reviewByline(it.review) +
+          (it.originalSeverity ? ' Measured as ' + U.escapeHtml(SEV_LABEL[it.originalSeverity] || it.originalSeverity) + '.' : '') + '</dd></div>';
+      }
+      var actions = '<div class="rp-review" data-title="' + U.escapeHtml(it.title) + '" data-module="' + U.escapeHtml(it.module) + '">' +
+        '<button type="button" class="btn btn--sm btn--secondary" data-review="accepted">Mark as intentional / accepted</button>' +
+        (verify ? '<button type="button" class="btn btn--sm btn--ghost" data-review="none">Remove “To be verified”</button>'
+                : '<button type="button" class="btn btn--sm btn--ghost" data-review="to_verify">Mark “To be verified”</button>') +
+      '</div>';
       return '<div class="rp-issue rp-issue--' + it.severity + '" role="listitem">' +
         '<button type="button" class="rp-issue__row" aria-expanded="false" aria-controls="' + bodyId + '">' +
-          '<span class="rp-sev rp-sev--' + it.severity + '">' + SEV_LABEL[it.severity] + '</span>' +
+          (verify ? '<span class="rp-sev rp-sev--verify">To be verified</span>'
+                  : '<span class="rp-sev rp-sev--' + it.severity + '">' + SEV_LABEL[it.severity] + '</span>') +
           '<span class="rp-issue__title">' + findingIdBadge(it.findingId) + U.escapeHtml(it.title) + '</span>' +
           '<span class="rp-issue__meta">' + meta.join('') + '</span>' +
           CHEVRON +
         '</button>' +
-        '<div class="rp-issue__body" id="' + bodyId + '" hidden><dl>' + rows + '</dl>' + link + '</div>' +
+        '<div class="rp-issue__body" id="' + bodyId + '" hidden><dl>' + rows + '</dl>' + link + actions + '</div>' +
       '</div>';
+    }
+
+    function reviewByline(review) {
+      if (!review) return '';
+      var parts = [];
+      if (review.by) parts.push(review.by);
+      if (review.at) parts.push(new Date(review.at).toLocaleDateString());
+      return parts.length ? ' <span class="rp-muted">(' + U.escapeHtml(parts.join(', ')) + ')</span>' : '';
+    }
+
+    // Findings the site's team marked as intentional / accepted: listed apart, out of the score and priorities.
+    function renderAcceptedPanel() {
+      var list = document.getElementById('issueList');
+      if (!list) return;
+      var panel = document.getElementById('acceptedPanel');
+      if (!panel) {
+        panel = document.createElement('details');
+        panel.id = 'acceptedPanel';
+        panel.className = 'rp-accepted';
+        var more = document.getElementById('issueShowMore');
+        (more || list).insertAdjacentElement('afterend', panel);
+      }
+      var groups = groupByTitleModule((currentReport && currentReport.acceptedFindings) || []);
+      panel.hidden = !groups.length;
+      if (!groups.length) { panel.innerHTML = ''; return; }
+      panel.innerHTML = '<summary>Accepted / intentional (' + groups.length + ') — not counted in the score or priorities</summary>' +
+        '<div class="rp-accepted__list">' + groups.map(function (g) {
+          return '<div class="rp-accepted__item">' +
+            '<div><span class="rp-sev rp-sev--accepted">Accepted</span> <strong>' + U.escapeHtml(g.title) + '</strong>' +
+              ' <span class="rp-issue__module">' + U.escapeHtml(moduleLabel(g.module)) + '</span></div>' +
+            '<p class="rp-muted">' + U.escapeHtml((g.review && g.review.note) || 'No reason given.') + reviewByline(g.review) + '</p>' +
+            '<div class="rp-review" data-title="' + U.escapeHtml(g.title) + '" data-module="' + U.escapeHtml(g.module) + '">' +
+              '<button type="button" class="btn btn--sm btn--ghost" data-review="none">Undo — count it again</button></div>' +
+          '</div>';
+        }).join('') + '</div>';
+      wireReviewButtons(panel);
+    }
+
+    function wireReviewButtons(root) {
+      U.qsa('.rp-review [data-review]', root).forEach(function (btn) {
+        U.on(btn, 'click', function (ev) {
+          ev.stopPropagation();
+          var box = btn.closest('.rp-review');
+          var status = btn.dataset.review === 'none' ? null : btn.dataset.review;
+          if (!status) { saveReview(box, null, '', btn); return; }
+          if (box.querySelector('.rp-review__form')) return;
+          var form = document.createElement('div');
+          form.className = 'rp-review__form';
+          form.innerHTML = '<label class="rp-muted" style="display:block;margin:8px 0 4px;">' +
+              (status === 'accepted' ? 'Why is this intentional? (e.g. vendor approved by the DPO)' : 'What needs to be verified?') + '</label>' +
+            '<textarea rows="2" maxlength="2000" style="width:100%;"></textarea>' +
+            '<p class="rp-muted" style="margin:4px 0 8px;">Applies to every audit of this website, including future ones. You can undo it at any time.</p>' +
+            '<button type="button" class="btn btn--sm btn--primary" data-save>Save</button> ' +
+            '<button type="button" class="btn btn--sm btn--ghost" data-cancel>Cancel</button>';
+          box.appendChild(form);
+          var ta = form.querySelector('textarea');
+          ta.focus();
+          U.on(form.querySelector('[data-cancel]'), 'click', function () { form.remove(); });
+          U.on(form.querySelector('[data-save]'), 'click', function (e2) { saveReview(box, status, ta.value, e2.currentTarget); });
+        });
+      });
+    }
+
+    function saveReview(box, status, note, btn) {
+      if (window.Loader) window.Loader.setButtonLoading(btn, true);
+      window.Api.audits.reviewFinding(auditId, {
+        module: box.dataset.module, title: box.dataset.title, status: status, note: note || ''
+      }).then(function () {
+        window.Notifications.success('Saved', status === 'accepted' ? 'Marked as intentional / accepted for this website.'
+          : (status === 'to_verify' ? 'Marked “To be verified” for this website.' : 'Mark removed.'));
+        setTimeout(function () { window.location.reload(); }, 600);
+      }).catch(function (err) {
+        if (window.Loader) window.Loader.setButtonLoading(btn, false);
+        window.Notifications.error('Couldn\'t save', err.message || 'Please try again.');
+      });
     }
 
     function renderIssueList() {
@@ -802,6 +901,8 @@
       U.qsa('.rp-link[data-goto]', list).forEach(function (a) {
         U.on(a, 'click', function () { selectModuleTab(a.dataset.goto, true); });
       });
+      wireReviewButtons(list);
+      renderAcceptedPanel();
     }
 
     function renderIssues(report) {
@@ -1822,14 +1923,16 @@
           '<div style="overflow-x:auto;">' +
           '<table class="text-sm" style="width:100%; border-collapse:collapse;">' +
             '<thead><tr style="text-align:left; color: var(--text-tertiary);">' +
-              '<th style="padding:6px 10px;">Page</th><th style="padding:6px 10px;">Trackers Detected</th>' +
+              '<th style="padding:6px 10px;">Page</th><th style="padding:6px 10px;">HTTP</th><th style="padding:6px 10px;">Trackers Detected</th>' +
               '<th style="padding:6px 10px;">Score</th><th style="padding:6px 10px;">Findings</th>' +
             '</tr></thead><tbody>' +
             pageResults.map(function (p) {
               var pTrackers = sk(p, 'trackers_detected') || [];
               var pFindings = p.findings || [];
               return '<tr style="border-top:1px solid var(--border, #e5e7eb);">' +
-                '<td style="padding:6px 10px; word-break:break-all;">' + U.escapeHtml(p.url || '') + '</td>' +
+                '<td style="padding:6px 10px; word-break:break-all;">' + (p.title ? '<strong>' + U.escapeHtml(p.title) + '</strong><br>' : '') +
+                  U.escapeHtml(p.url || '') + '</td>' +
+                '<td style="padding:6px 10px;">' + (sk(p, 'status_code') || '—') + '</td>' +
                 '<td style="padding:6px 10px;">' + (pTrackers.length
                   ? U.escapeHtml(pTrackers.join(', '))
                   : '<span style="color: var(--text-tertiary);">None detected</span>') + '</td>' +

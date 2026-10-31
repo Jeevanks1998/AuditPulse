@@ -35,6 +35,8 @@ def to_json_report(payload: ReportPayload) -> Dict[str, Any]:
         "business_impact": payload.business_impact,
         "action_plan": asdict(payload.action_plan),
         "priorities": [asdict(item) for item in payload.priorities],
+        "accepted_findings": payload.accepted_findings,
+        "raw_overall": payload.raw_overall,
     }
 
 

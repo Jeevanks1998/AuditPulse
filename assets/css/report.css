@@ -912,3 +912,16 @@ a.is-missing { cursor: default; }
 
 /* Tabs for modules that didn't run are hidden */
 .rp-tab[hidden] { display: none !important; }
+
+
+/* Findings marked by the site's team: "To be verified" and "Accepted / intentional". */
+.rp-sev--verify { background: var(--color-info-soft, #EFF8FF); color: var(--color-info-text, #175CD3); border: 1px solid var(--border); }
+.rp-sev--accepted { background: var(--color-success-soft, #ECFDF3); color: var(--color-success-text, #027A48); }
+.rp-review { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
+.rp-review__form { flex-basis: 100%; }
+.rp-review__form textarea { font: inherit; padding: 8px 10px; border: 1px solid var(--border-strong, #D0D5DD); border-radius: 8px; background: var(--surface); color: var(--text-primary); }
+.rp-accepted { margin-top: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); padding: 12px 16px; }
+.rp-accepted > summary { cursor: pointer; font-weight: 600; color: var(--text-secondary); }
+.rp-accepted__list { display: grid; gap: 12px; margin-top: 12px; }
+.rp-accepted__item { padding-top: 12px; border-top: 1px solid var(--border); }
+.rp-accepted__item p { margin: 6px 0 0; }

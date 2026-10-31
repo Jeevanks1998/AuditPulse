@@ -47,6 +47,7 @@ async def _warm_report_cache_async(audit_id: int) -> dict:
             generated_at=audit.completed_at.isoformat() if audit.completed_at else "",
             breakdown=audit.breakdown or {},
             findings=audit.findings or [],
+            raw_overall=audit.raw_overall_score,
             share_url=None,
             **(await _module_data(audit_id, db)),
         )
@@ -93,6 +94,7 @@ async def _generate_report_pdf_async(audit_id: int) -> Optional[str]:
             generated_at=audit.completed_at.isoformat() if audit.completed_at else "",
             breakdown=audit.breakdown or {},
             findings=audit.findings or [],
+            raw_overall=audit.raw_overall_score,
             share_url=None,
             **(await _module_data(audit_id, db)),
         )

@@ -99,6 +99,9 @@ async def get_report(audit_id: int, db: AsyncSession, user: User) -> ReportOut:
         score_grid=score_grid,
         findings=[Finding(**f) for f in (audit.findings or [])],
         share_url=f"/public/report/{report.share_token}" if report and report.share_token else None,
+        raw_overall=audit.raw_overall_score,
+        raw_score_grid=([ScoreCell(module=c.module, label=c.label, score=c.score, target_section=c.target_section)
+                         for c in build_score_grid(audit.raw_breakdown)] if audit.raw_breakdown else None),
     )
 
 
@@ -147,6 +150,7 @@ async def _build_full_payload(audit_id: int, db: AsyncSession, user: User):
         consent=consent,
         analytics=analytics,
         journey=journey,
+        raw_overall=audit.raw_overall_score,
     )
     # Bring back screenshots the server disk lost since the audit ran.
     from utils.screenshot_store import restore_for_payload

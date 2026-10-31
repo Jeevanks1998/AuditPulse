@@ -13,6 +13,7 @@ from config.constants import SCORE_BANDS
 from config.database import AsyncSessionLocal
 from config.logging import logger
 from config.settings import settings
+from services.accepted_findings import active_findings
 
 
 def frontend_url() -> str:
@@ -65,7 +66,7 @@ def build_message(audit, user_name: str, base_url: str) -> tuple[str, str]:
     score_text = f"{score}/100" if score is not None else "not scored"
     subject = f"Audit complete: {site} scored {score_text}"
 
-    findings = audit.findings or []
+    findings = active_findings(audit.findings or [])
     critical = sum(1 for f in findings if f.get("severity") == "critical")
     warnings = sum(1 for f in findings if f.get("severity") == "warning")
 

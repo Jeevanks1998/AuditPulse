@@ -73,6 +73,11 @@ class ReportPayload:
     action_plan: ActionPlan = field(default_factory=ActionPlan)
     priorities: List[PrioritizedFinding] = field(default_factory=list)
 
+    # Findings the site's team marked as intentional / accepted: shown apart, out of the score.
+    accepted_findings: List[dict] = field(default_factory=list)
+    # Scores as measured, before accepted findings were taken out (None if nothing was marked).
+    raw_overall: Optional[int] = None
+
 
 def build_score_grid(breakdown: Dict[str, int]) -> List[ScoreCell]:
     """One cell per module that actually ran; never a placeholder score."""
@@ -181,8 +186,13 @@ async def build_report_payload(
     consent: Optional[dict] = None,
     analytics: Optional[dict] = None,
     journey: Optional[dict] = None,
+    raw_overall: Optional[int] = None,
 ) -> ReportPayload:
     """Builds the payload from already-loaded audit data, then adds the AI sections."""
+    from services.accepted_findings import accepted_findings as _accepted, active_findings
+
+    accepted = _accepted(findings)
+    findings = active_findings(findings)
     score_grid = build_score_grid(breakdown)
 
     executive_summary = await generate_executive_summary(url, overall, breakdown, findings)
@@ -216,6 +226,8 @@ async def build_report_payload(
         business_impact=business_impact,
         action_plan=action_plan,
         priorities=priorities,
+        accepted_findings=accepted,
+        raw_overall=raw_overall,
     )
 
 

@@ -507,6 +507,10 @@ async def _click_safe_element(page) -> Optional[str]:
     return None
 
 
+# Session-recording tools send session data, never a "page view" hit: data sent on load counts as recording the visit.
+SESSION_VENDORS = frozenset({"clarity", "hotjar"})
+
+
 def _build_vendor_results(
     captured: List[CapturedRequest], scroll_tested: bool = True, click_tested: bool = True,
 ) -> Dict[str, VendorRuntimeResult]:
@@ -522,6 +526,8 @@ def _build_vendor_results(
         click_reqs = [r for r in requests if r.phase == "click"]
 
         page_views_on_load = [r for r in load_reqs if r.is_page_view]
+        if vendor_key in SESSION_VENDORS:
+            page_views_on_load = load_reqs[:1]
         identifier = next((r.identifier for r in requests if r.identifier), None)
 
         # GTM and TagCommander send no scroll/click hits of their own: "not applicable".
@@ -571,6 +577,16 @@ def check_runtime_analytics(
             continue
         vendor = result.vendors.get(vendor_key)
         label = VENDOR_LABELS.get(vendor_key, vendor_key)
+        if vendor is not None and vendor.captured_request_count and vendor.page_view_status != PASSED:
+            # It does send data (e.g. on scroll or click), just no page view: never call that "never fires".
+            findings.append(_finding(
+                "warning",
+                f"{label} sends data but no page view was recorded on load",
+                f"{page_url}: {label} sent {vendor.captured_request_count} request(s) during the live check, "
+                "but none of them was a page view when the page loaded.",
+                f"Check the {label} page-view trigger: it should fire once on every page load.",
+            ))
+            continue
         if vendor is None or vendor.page_view_status != PASSED:
             findings.append(_finding(
                 "critical",

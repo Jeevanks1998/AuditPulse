@@ -36,6 +36,7 @@ class HistoryEventType(str, Enum):
     ACCESS_REVOKED = "access_revoked"  # access pulled by the Access Portal
     AUTHENTICATOR_SETUP = "authenticator_setup"  # first authenticator set-up
     AUTHENTICATOR_RESET = "authenticator_reset"  # admin reset from the Access Portal
+    FINDING_REVIEWED = "finding_reviewed"  # a finding marked accepted / to verify, or the mark removed
 
 
 class History(Base):

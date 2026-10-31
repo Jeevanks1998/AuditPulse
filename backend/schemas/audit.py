@@ -289,4 +289,5 @@ class JourneyOut(BaseModel):
             "interactions": self.interactions, "forms": self.forms, "downloads": self.downloads,
             "journey_map": self.journey_map, "tracking": self.tracking, "findings": self.findings,
             "limits": self.limits, "started_at": self.started_at, "finished_at": self.finished_at,
+            "journey_score": self.journey_score,
         })

@@ -181,15 +181,18 @@ async def run_customer_journey(
                         result.tests_stopped_early = True
                         break
                     prefix = prefixes.get(normalize_url(it.page_url), "pXe")
+                    logger.info(f"journey: test {n + 1}: #{it.index} {it.label[:60]!r} on {it.page_url}")
                     for attempt in range(2):
+                        timed_out = False
                         try:
                             await asyncio.wait_for(test_interaction(tc, it, prefix), timeout=PER_TEST_TIMEOUT_S)
                         except asyncio.TimeoutError:
+                            timed_out = True
                             it.status = "failed" if it.tested else "not_tested"
                             it.observed = it.observed or "Interaction test timed out (page did not respond)."
                             await session.restart("interaction test timed out")
-                        dead = not session.alive() or is_browser_dead_error(it.observed)
-                        if dead:
+                        dead = timed_out or not session.alive() or is_browser_dead_error(it.observed)
+                        if dead and not timed_out:
                             if not await session.restart(it.observed or "browser died during test"):
                                 result.error = ("The test browser kept crashing (out of memory?) — "
                                                 f"stopped after {n} interaction test(s).")
@@ -199,12 +202,12 @@ async def run_customer_journey(
                             # New tab every few tests so memory doesn't build up.
                             try:
                                 if not tc.page.is_closed():
-                                    await tc.page.close()
+                                    await asyncio.wait_for(tc.page.close(), timeout=10)
                             except Exception:  # noqa: BLE001
                                 pass
                             tc.page = await session.new_page()
                             tc.context = session.context
-                        if not (dead and not it.tested and attempt == 0):
+                        if timed_out or not (dead and not it.tested and attempt == 0):
                             break
                         # Chromium died mid-test: run this interaction once more.
                         it.status, it.observed, it.outcome = "not_tested", "", None

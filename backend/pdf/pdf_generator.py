@@ -23,7 +23,8 @@ from pdf.components import hostname
 from pdf.scoring import build_scoring_flowables
 from pdf.cover import BAND_HEIGHT, build_cover_flowables, draw_cover_band, draw_cover_footer
 from pdf.issues import group_findings
-from pdf.modules import build_analytics_section, build_consent_section, build_cookie_section, build_journey_section
+from pdf.modules import (build_accepted_section, build_analytics_section, build_consent_section,
+                         build_cookie_section, build_journey_section)
 from pdf.overview import TOP_N, build_overview_flowables
 from pdf.theme import BORDER, FONT_BODY, FONT_SEMIBOLD, PAGE_MARGIN_MM, PDF_LAYOUT_VERSION, TEXT_PRIMARY, TEXT_TERTIARY
 from reports.generator import ReportPayload
@@ -53,6 +54,7 @@ def generate_pdf_report(payload: ReportPayload, screenshot_path: Optional[str] =
     story.append(cover[-1])
 
     story += build_overview_flowables(payload, issues)
+    story += build_accepted_section(payload)
 
     for _module, builder in _MODULE_SECTIONS:
         section = builder(payload)

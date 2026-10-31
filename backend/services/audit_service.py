@@ -249,6 +249,21 @@ async def _run_audit_pipeline(audit_id: int) -> None:
                         breakdown["journey"] = journey_score
                     findings += journey_findings
 
+                # Findings the site's team marked "accepted" / "to verify" on earlier audits.
+                raw_breakdown = None
+                try:
+                    from services.accepted_findings import apply_to_results, marks_for_website
+                    marks = await marks_for_website(db, audit.website_id)
+                    findings, breakdown, raw_breakdown = apply_to_results(
+                        findings, breakdown, marks,
+                        (journey_row.interactions if journey_row is not None else None))
+                    if raw_breakdown and journey_row is not None:
+                        from services.accepted_findings import apply_marks
+                        journey_row.findings = apply_marks(journey_row.findings or [], marks)
+                        if breakdown.get("journey") is not None:
+                            journey_row.journey_score = breakdown["journey"]
+                except Exception:  # noqa: BLE001 — marks never break an audit
+                    logger.exception(f"Audit {audit_id}: could not apply accepted findings")
                 overall = _compute_overall_score(breakdown)
 
                 if "ai" in (audit.modules or []) and not blocked:
@@ -264,6 +279,8 @@ async def _run_audit_pipeline(audit_id: int) -> None:
             audit.current_step = "checkReport"
             audit.overall_score = overall
             audit.breakdown = breakdown
+            audit.raw_breakdown = raw_breakdown
+            audit.raw_overall_score = _compute_overall_score(raw_breakdown) if raw_breakdown else None
             audit.findings = findings
             audit.completed_at = datetime.now(timezone.utc)
             await db.commit()
@@ -287,7 +304,8 @@ async def _run_audit_pipeline(audit_id: int) -> None:
                     )
 
             async def _issues() -> None:
-                await sync_issues_from_findings(db, audit, findings)
+                from services.accepted_findings import active_findings
+                await sync_issues_from_findings(db, audit, active_findings(findings))
 
             async def _consent() -> None:
                 # Replace any earlier Consent row for this audit.
@@ -413,6 +431,22 @@ def failure_reason(exc: BaseException) -> str:
     if isinstance(exc, httpx.ConnectError):
         return f"Could not connect to the website ({text or 'connection failed'})."
     return text or type(exc).__name__
+
+
+def _same_page_key(url: Optional[str]) -> str:
+    """Address of a page for de-duplicating: no fragment, no trailing slash, lower-case host."""
+    from urllib.parse import urlsplit
+
+    if not url:
+        return ""
+    try:
+        from journey.journey_scanner import normalize_url   # drops campaign parameters (utm_*, gclid…)
+        url = normalize_url(url)
+    except Exception:  # noqa: BLE001
+        pass
+    p = urlsplit(url)
+    path = p.path.rstrip("/")
+    return f"{(p.hostname or '').lower()}{path}" + (f"?{p.query}" if p.query else "")
 
 
 def _compute_overall_score(breakdown: dict) -> Optional[int]:
@@ -655,6 +689,9 @@ async def _run_analytics_checks_site(
         runtime_available=result.summary.runtime_available,
         runtime_tested=result.summary.runtime_tested,
         runtime_result=result.summary.runtime_result,
+        title=((getattr(homepage_page, "title", None) or "").strip()[:200]),
+        status_code=200,
+        final_url=getattr(homepage_page, "url", None) or audit.url,
     )
     page_results = [homepage_page_result]
 
@@ -675,21 +712,48 @@ async def _run_analytics_checks_site(
                     except Exception as page_exc:  # noqa: BLE001 — one unreachable page shouldn't drop the rest
                         logger.debug(f"_run_analytics_checks_site: could not fetch {page_url} for analytics: {page_exc}")
                         return None
-                    return analytics_module.analyze_page_for_site(parsed_page, page_url)
+                    res = analytics_module.analyze_page_for_site(parsed_page, page_url)
+                    res.title = (parsed_page.title or "").strip()[:200]
+                    res.status_code = page_response.status_code
+                    res.final_url = str(page_response.url)
+                    return res
 
-            other_urls = [p.url for p in crawl_result.ok_pages if p.url != audit.url]
+            # Each page once: "https://site" and "https://site/" (or a redirect to a page already listed) are the same page.
+            seen_pages = {_same_page_key(audit.url), _same_page_key(homepage_page_result.final_url)}
+            other_urls = []
+            for p in crawl_result.ok_pages:
+                key = _same_page_key(p.url)
+                if key not in seen_pages:
+                    seen_pages.add(key)
+                    other_urls.append(p.url)
             for site_page_result in await asyncio.gather(*(_fetch_and_analyze(u) for u in other_urls)):
                 if site_page_result is None:
                     continue
-                # Homepage tags only exist in the browser: a page whose raw HTML shows nothing is "not verified", not missing.
-                if result.tags_injected_by_js and not site_page_result.trackers_detected:
+                landed = _same_page_key(site_page_result.final_url)
+                if landed != _same_page_key(site_page_result.url) and landed in seen_pages:
+                    continue      # redirected to a page already listed
+                seen_pages.add(landed)
+                # Raw HTML with no tag at all can't prove a tag is missing (tag managers add tags in the
+                # browser): "not verified", never "missing".
+                if not site_page_result.trackers_detected:
                     site_page_result.not_verified = True
                 page_results.append(site_page_result)
                 findings += site_page_result.findings
         except Exception as exc:  # noqa: BLE001 — full-site analytics degrades to homepage-only, not a hard failure
             logger.warning(f"_run_analytics_checks_site: full-site crawl failed for {audit.url}: {exc}")
 
-    cross_page_findings = analytics_module.check_cross_page_consistency(page_results) if len(page_results) > 1 else []
+    # Compare like with like: the other pages were checked from their HTML only, so the homepage
+    # takes part with what its HTML shows too (not the tags only seen in the live browser).
+    comparable = page_results
+    if len(page_results) > 1 and homepage_page is not None:
+        try:
+            home_static = analytics_module.analyze_page_for_site(homepage_page, audit.url)
+            comparable = [dataclasses.replace(homepage_page_result, vendor_configs=home_static.vendor_configs,
+                                              trackers_detected=home_static.trackers_detected,
+                                              not_verified=not home_static.trackers_detected)] + page_results[1:]
+        except Exception:  # noqa: BLE001
+            comparable = page_results
+    cross_page_findings = analytics_module.check_cross_page_consistency(comparable) if len(page_results) > 1 else []
     findings += cross_page_findings
 
     if consent_runtime_result is not None:

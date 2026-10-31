@@ -201,9 +201,9 @@ def build_consent_section(payload: ReportPayload) -> List[Flowable]:
             label, fg, bg = _NET_VERDICT.get(n.get("kind") or "unknown", _NET_VERDICT["unknown"])
             vendors = ", ".join(n.get("vendors") or []) or "—"
             rows.append([Paragraph(esc(n.get("label") or n.get("category", "")), STYLES["TDBold"]),
-                         str(n.get("count", 0)), pill(label, fg, bg, width=24 * mm), vendors])
-        story.append(data_table(["Type", "Requests", "Verdict", "Who"], rows,
-                                [40 * mm, 20 * mm, 30 * mm, W - 90 * mm], align_right=(1,)))
+                         str(n.get("count", 0)), str(n.get("tracking_count") or 0), pill(label, fg, bg, width=24 * mm), vendors])
+        story.append(data_table(["Type", "All requests", "Sent data", "Verdict", "Who"], rows,
+                                [38 * mm, 22 * mm, 20 * mm, 28 * mm, W - 108 * mm], align_right=(1, 2)))
 
     cookies = cv.get("cookies") or []
     if cookies:
@@ -345,9 +345,13 @@ def build_analytics_section(payload: ReportPayload) -> List[Flowable]:
         for p in pages[:MAX_ROWS]:
             trackers = ", ".join(p.get("trackers_detected") or []) or "None found"
             n_find = len(p.get("findings") or [])
-            rows.append([soft_wrap(short_url(p.get("url"), limit=70)), trackers,
+            title = (p.get("title") or "").strip()
+            page_cell = Paragraph((f"<b>{esc(title[:80])}</b><br/>" if title else "")
+                                  + esc(short_url(p.get("url"), limit=70)), STYLES["TD"])
+            rows.append([page_cell, str(p.get("status_code") or "—"), trackers,
                          str(n_find) if n_find else "—"])
-        story.append(data_table(["Page", "Tools found", "Issues"], rows, [W - 92 * mm, 74 * mm, 18 * mm], align_right=(2,)))
+        story.append(data_table(["Page", "HTTP", "Tools found", "Issues"], rows,
+                                [W - 106 * mm, 14 * mm, 74 * mm, 18 * mm], align_right=(1, 3)))
         story += _more_note(min(len(pages), MAX_ROWS), len(pages), "pages")
     return story
 
@@ -419,6 +423,15 @@ def build_journey_section(payload: ReportPayload) -> List[Flowable]:
         if ov.get("coverage"):
             story.append(Spacer(1, 2 * mm))
             story.append(note_box("<b>How complete is this scan?</b> " + esc(" ".join(ov["coverage"]))))
+        if jv.get("test_method"):
+            story.append(Spacer(1, 2 * mm))
+            story.append(note_box("<b>How each interaction was tested</b><br/>" + "<br/>".join(
+                f"{n}. {esc(t)}" for n, t in enumerate(jv["test_method"], 1))))
+        if jv.get("accepted_findings"):
+            story.append(Spacer(1, 2 * mm))
+            story.append(note_box(f"<b>{len(jv['accepted_findings'])} finding(s) accepted as intentional</b> by the "
+                                  "site's team are left out of this section's score and priorities "
+                                  + (f"(score as measured: {jv.get('measured_score')}/100)." if jv.get("measured_score") is not None else ".")))
     story += _journey_paths(jv)
     story += _health_breakdown(jv)
 
@@ -784,3 +797,30 @@ def build_cookie_section(payload: ReportPayload) -> List[Flowable]:
         story.append(data_table(["Key", "Type", "Seen"], rows, [70 * mm, 30 * mm, W - 100 * mm]))
         story += _more_note(min(len(stor), MAX_ROWS * 2), len(stor), "storage keys")
     return story
+
+
+def build_accepted_section(payload: ReportPayload) -> List[Flowable]:
+    """Findings the site's team marked as intentional / accepted: listed, out of the score and priorities."""
+    accepted = payload.accepted_findings or []
+    if not accepted:
+        return []
+    seen, rows = set(), []
+    for f in accepted:
+        key = (f.get("module"), f.get("title"))
+        if key in seen:
+            continue
+        seen.add(key)
+        review = f.get("review") or {}
+        who = ", ".join(x for x in (review.get("by") or "", (review.get("at") or "")[:10]) if x)
+        rows.append([Paragraph(esc((f.get("module") or "").capitalize()), STYLES["Small"]),
+                     Paragraph(esc(f.get("title") or ""), STYLES["Small"]),
+                     Paragraph(esc(review.get("note") or "—") + (f"<br/><font color='{hexstr(TEXT_TERTIARY)}'>{esc(who)}</font>" if who else ""),
+                               STYLES["Small"])])
+    raw = payload.raw_overall
+    sub = ("Marked by the site's team as intentional or approved (for example vendors approved by the DPO). "
+           "They are not counted in the score or the priorities"
+           + (f"; the score as measured, before these were taken out, was {raw}/100." if raw is not None else "."))
+    return _h2("Accepted / intentional findings", sub) + [
+        Spacer(1, 2 * mm),
+        data_table(["Module", "Finding", "Reason"], rows, [0.16 * CONTENT_WIDTH, 0.44 * CONTENT_WIDTH, 0.40 * CONTENT_WIDTH]),
+    ]

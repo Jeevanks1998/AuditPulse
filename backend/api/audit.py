@@ -2,7 +2,9 @@
 Endpoints to start an audit, check progress and get results. Logic lives in services.audit_service.
 """
 
-from typing import List
+from typing import List, Optional
+
+from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import Response
@@ -174,6 +176,62 @@ async def audit_cookies_csv(
         content="\ufeff" + inventory_csv(inventory), media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="cookies-{host}-audit-{audit.id}.csv"'},
     )
+
+
+class FindingReviewIn(BaseModel):
+    module: str = Field(..., max_length=40)
+    title: str = Field(..., max_length=300)
+    # "accepted" = intentional / approved choice (left out of score and priorities);
+    # "to_verify" = keep, shown as "To be verified"; None = remove the mark.
+    status: Optional[str] = Field(default=None, pattern="^(accepted|to_verify)$")
+    note: str = Field(default="", max_length=2000)
+
+
+async def _owned_completed(db: AsyncSession, audit_id: int, user: User) -> Audit:
+    audit = await db.get(Audit, audit_id)
+    if not audit or audit.user_id != user.id or audit.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audit not found")
+    if audit.status != "completed":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The audit has not finished yet.")
+    return audit
+
+
+@router.get("/{audit_id}/findings/review")
+async def list_finding_reviews(
+    audit_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Findings marked accepted / to verify for this audit's website (they apply to every audit of the site)."""
+    from services.accepted_findings import marks_for_website
+
+    audit = await _owned_completed(db, audit_id, current_user)
+    marks = await marks_for_website(db, audit.website_id)
+    return {"website_id": audit.website_id, "marks": list(marks.values())}
+
+
+@router.post("/{audit_id}/findings/review")
+async def review_finding(
+    audit_id: int,
+    payload: FindingReviewIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_module("audits")),
+):
+    """Marks a finding as accepted / to verify (or removes the mark) for the site, and updates this audit."""
+    from models.history import HistoryEventType, log_event
+    from services.accepted_findings import set_mark
+
+    audit = await _owned_completed(db, audit_id, current_user)
+    await set_mark(db, audit, current_user, payload.module, payload.title, payload.status, payload.note)
+    verb = {"accepted": "accepted as intentional", "to_verify": "marked to be verified"}.get(
+        payload.status or "", "un-marked")
+    try:
+        await log_event(db, current_user.id, HistoryEventType.FINDING_REVIEWED, description=f"Finding {verb}: {payload.title[:120]} ({audit.url})", audit_id=audit.id)
+    except Exception:  # noqa: BLE001 — history is informational
+        pass
+    await db.commit()
+    return {"overall": audit.overall_score, "raw_overall": audit.raw_overall_score,
+            "breakdown": audit.breakdown, "raw_breakdown": audit.raw_breakdown}
 
 
 @router.get("/{audit_id}", response_model=AuditOut)

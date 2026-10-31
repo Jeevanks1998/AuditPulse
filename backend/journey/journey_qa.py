@@ -200,8 +200,11 @@ def build_findings(interactions: List[Interaction], pages_meta: List[dict], anal
 
         if status == "not_tracked" and it.status == "success":
             if kind in _CRITICAL_GAP_CLASSES:
+                # Real conversions (sign-up, purchase, booking, download) and the page's most important
+                # CTAs are critical; an ordinary CTA without its own event is a warning.
+                gap_sev = "critical" if (kind != CTA or it.importance >= 3) else "warning"
                 findings.append(_finding(
-                    "critical", "tracking", f"Not tracked: {label} “{name}”", it,
+                    gap_sev, "tracking", f"Not tracked: {label} “{name}”", it,
                     f"“{it.label}” ({label}) on {it.page_url} was clicked and worked, but no analytics tool "
                     "received anything for the click and no dataLayer event was pushed.",
                     f"Add an analytics event for this {label.lower()} (e.g. a GA4 event via GTM) and verify it fires on click.",
@@ -265,12 +268,14 @@ def build_findings(interactions: List[Interaction], pages_meta: List[dict], anal
     by_kind: Dict[str, Dict[str, List[Interaction]]] = {}
     for it in tested:
         st = (it.tracking or {}).get("status")
-        if it.status == "success" and st in ("tracked", "duplicate", "not_tracked"):
+        # Only the interactions that matter (importance 2+) are compared; minor UI controls would add noise.
+        if it.status == "success" and st in ("tracked", "duplicate", "not_tracked") and it.importance >= 2:
             by_kind.setdefault(it.classification, {}).setdefault("t" if st != "not_tracked" else "n", []).append(it)
     for kind, groups in by_kind.items():
         if groups.get("t") and groups.get("n") and kind in CONVERSION_CLASSES | {FORM}:
+            # A summary of gaps already listed one by one above: an insight, not another issue to fix.
             findings.append(_finding(
-                "warning", "tracking", f"Tracking inconsistency across {CLASS_LABELS.get(kind, kind)} interactions", None,
+                "info", "tracking", f"Tracking inconsistency across {CLASS_LABELS.get(kind, kind)} interactions", None,
                 f"{len(groups['t'])} {CLASS_LABELS.get(kind, kind)} interaction(s) are tracked "
                 f"({', '.join(names.get(i.index, i.label) for i in groups['t'][:3])}) but {len(groups['n'])} send nothing "
                 f"({', '.join(names.get(i.index, i.label) for i in groups['n'][:3])}).",

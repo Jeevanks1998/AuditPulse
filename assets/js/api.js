@@ -293,6 +293,9 @@ window.Api = (function () {
     getConsent: function (auditId) { return get('/audits/' + auditId + '/consent'); },
     getAnalytics: function (auditId) { return get('/audits/' + auditId + '/analytics'); },
     getJourney: function (auditId) { return get('/audits/' + auditId + '/journey'); },
+    // Mark a finding "accepted" (intentional) or "to_verify" for the audit's website; status null removes the mark.
+    reviewFinding: function (auditId, payload) { return post('/audits/' + auditId + '/findings/review', payload); },
+    listFindingReviews: function (auditId) { return get('/audits/' + auditId + '/findings/review'); },
     // Cookie Scanner. raw: cookie names and category ids stay as sent.
     getCookies: function (auditId) { return get('/audits/' + auditId + '/cookies', { raw: true }); },
     exportCookiesCsvBlob: function (auditId) { return getBlob('/audits/' + auditId + '/cookies.csv'); }

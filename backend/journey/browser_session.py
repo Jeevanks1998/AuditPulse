@@ -7,6 +7,7 @@ downloads.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Optional
 
 from config.logging import logger
@@ -14,6 +15,7 @@ from config.logging import logger
 from config.browser import launch_chromium
 
 MAX_RESTARTS = 6
+CLOSE_TIMEOUT_S = 10.0     # saving state / closing a frozen browser never blocks longer than this
 
 # Page loads the site's bot protection refused (seen on Akamai sites such as axa.de).
 _REFUSED_MARKERS = (
@@ -100,8 +102,9 @@ class JourneyBrowser:
             if obj is None:
                 continue
             try:
-                await obj.close()
-            except Exception:  # noqa: BLE001 — already dead
+                # A frozen Chromium can make close() wait forever: give up after a few seconds.
+                await asyncio.wait_for(obj.close(), timeout=CLOSE_TIMEOUT_S)
+            except Exception:  # noqa: BLE001 — already dead or frozen
                 pass
         self.context = None
         self.browser = None
@@ -118,7 +121,8 @@ class JourneyBrowser:
         if not self.alive():
             return
         try:
-            self._state = await self.context.storage_state()
+            # A frozen page can make this wait forever; keep the last saved state instead.
+            self._state = await asyncio.wait_for(self.context.storage_state(), timeout=CLOSE_TIMEOUT_S)
         except Exception:  # noqa: BLE001
             pass
 

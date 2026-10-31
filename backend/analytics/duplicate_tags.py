@@ -32,7 +32,9 @@ def check_duplicate_tags(page: ParsedPage, trackers: List[TrackerLoad]) -> List[
         if not tracker.ids and tracker.load_count <= 1:
             continue
 
-        if tracker.load_count > 1:
+        distinct_ids = list(dict.fromkeys(tracker.ids))
+        # One loader per ID (e.g. gtag.js once for each of two GA4 properties) is not a duplicate.
+        if tracker.load_count > max(1, len(distinct_ids)):
             findings.append(_finding(
                 "warning",
                 f"{tracker.display_name} loaded more than once",
@@ -44,7 +46,6 @@ def check_duplicate_tags(page: ParsedPage, trackers: List[TrackerLoad]) -> List[
                                 "tag manager, or added by more than one plugin/template.",
             ))
 
-        distinct_ids = list(dict.fromkeys(tracker.ids))
         if len(distinct_ids) > 1:
             shown = ", ".join(distinct_ids[:5])
             findings.append(_finding(

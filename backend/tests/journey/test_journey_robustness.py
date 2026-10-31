@@ -118,3 +118,38 @@ def test_hung_page_is_skipped_and_tests_still_run(journey_site, monkeypatch):
     assert hung and "did not finish loading" in (hung[0].get("error") or "")
     assert len(r.pages) >= 3
     assert any(i["tested"] for i in r.interactions)
+
+
+def test_frozen_test_page_does_not_stop_the_other_tests(journey_site, monkeypatch):
+    """A click test that freezes the page (seen on axa.it): the test times out, saving the
+    browser state on the frozen page must not block, and the remaining tests still run."""
+    import journey as journey_pkg
+    from journey import browser_session
+
+    real = journey_pkg.test_interaction
+    frozen = {"done": False}
+
+    async def freezing_test(tc, it, prefix):
+        if not frozen["done"]:
+            frozen["done"] = True
+            real_state = tc.context.storage_state
+
+            async def never(*a, **k):
+                await asyncio.sleep(3600)
+            tc.context.storage_state = never        # saving state on the frozen page hangs
+            await asyncio.sleep(3600)                # the test itself hangs
+            tc.context.storage_state = real_state
+        return await real(tc, it, prefix)
+
+    monkeypatch.setattr(journey_pkg, "test_interaction", freezing_test)
+    monkeypatch.setattr(journey_pkg, "PER_TEST_TIMEOUT_S", 5)
+    monkeypatch.setattr(browser_session, "CLOSE_TIMEOUT_S", 3.0)
+    t0 = time.monotonic()
+    r = asyncio.run(journey_pkg.run_customer_journey(site_url("/"), max_pages=3, depth="full",
+                                                     scan_id="pytest-frozen-test", max_tested=4))
+    assert time.monotonic() - t0 < 240
+    timed_out = [i for i in r.interactions if "timed out" in (i.get("observed") or "")]
+    assert len(timed_out) == 1
+    # The three tests after the frozen one still ran (purchases are only captured, never clicked).
+    ran = [i for i in r.interactions if i["status"] in ("success", "failed", "skipped")]
+    assert len(ran) >= 3 and any(i["tested"] for i in ran)

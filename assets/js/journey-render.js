@@ -175,6 +175,9 @@
       '<dt>Test result</dt><dd>' + testChip(row.test_status || n.test_status) + '</dd>' +
       '<dt>Safety</dt><dd>' + esc(row.safety_label || '—') + (row.safety_reason ? '<br><small>' + esc(row.safety_reason) + '</small>' : '') + '</dd>' +
       '<dt>Observed</dt><dd>' + esc(row.observed || n.observed || '—') + '</dd>' +
+      (row.final_url && row.final_url !== row.page ? '<dt>Ended on</dt><dd>' + esc(row.final_url) + '</dd>' : '') +
+      ((row.steps || []).length ? '<dt>How it was tested</dt><dd><ol class="jr-steps-list">' +
+        row.steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol></dd>' : '') +
       '<dt>Analytics</dt><dd>' + analyticsChip(row) +
         ((row.tracking_events || []).length ? '<br>' + esc(row.tracking_events.join(', ')) : '') +
         (row.analytics_reason ? '<br><small>' + esc(row.analytics_reason) + '</small>' :

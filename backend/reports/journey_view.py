@@ -176,6 +176,52 @@ def journey_type(goal: dict, goal_type: Optional[str], step_rows: List[dict]) ->
     return None
 
 
+TEST_METHOD = [
+    "Opened the page in a fresh Chrome browser (1366 × 900 window), with the cookie choice made at the start of the scan.",
+    "Found the element on the page and scrolled it into view; screenshots were taken before and with the element highlighted.",
+    "Acted on it once, like a visitor: links and buttons are clicked, form fields are typed into and cleared, "
+    "forms are never submitted and purchases are never made.",
+    "Watched for 2–5 seconds: navigation, new tabs, dialogs, expanded sections and page changes, plus every "
+    "analytics request and dataLayer event; then took the after screenshot.",
+]
+
+
+def _test_steps(i: dict) -> List[str]:
+    """How this one interaction was tested, step by step (for the evidence panel)."""
+    page = i.get("page_url") or ""
+    if not i.get("tested"):
+        reason = i.get("unsafe_reason") or i.get("observed") or "it was not among the interactions selected for testing"
+        return [f"Found on {page}.", f"Not clicked: {reason}"]
+    kind, outcome = i.get("classification"), i.get("outcome") or ""
+    steps = [f"Opened {page} in a fresh Chrome browser (1366 × 900), with the cookie choice made at the start of the scan."]
+    sel = i.get("selector")
+    steps.append("Found the element" + (f" ({sel[:120]})" if sel else "") +
+                 " and scrolled it into view; took a before screenshot and one with the element highlighted.")
+    target = (i.get("attributes") or {}).get("target")
+    if outcome == "external_link_checked":
+        steps.append(f"External link: checked its destination with a request instead of clicking ({i.get('destination')}).")
+    elif kind == "form" or outcome.startswith("form_"):
+        steps.append("Clicked into the first visible text field, typed one character and cleared it. The form was not submitted.")
+    elif outcome == "search_field_focused":
+        steps.append("Clicked into the search field and typed a test query (not submitted).")
+    elif kind == "download":
+        steps.append("Clicked the download link and requested the file to check it is reachable.")
+    else:
+        steps.append("Clicked it once, like a visitor" + (" (the link opens in a new tab)" if target == "_blank" else "") + ".")
+    steps.append("Watched for 2–5 seconds for navigation, new tabs, dialogs, expanded sections and page changes, "
+                 "and recorded every analytics request and dataLayer event; then took the after screenshot.")
+    result = i.get("observed") or ""
+    if result:
+        steps.append(f"Result: {result}")
+    dest, final = i.get("destination"), i.get("final_url")
+    if outcome == "unexpected_navigation" and dest and final:
+        steps.append(f"Expected destination: {dest} — observed: {final}.")
+    events = [f"{e.get('vendor_label') or e.get('vendor')}: {e.get('event')}" for e in ((i.get("tracking") or {}).get("events") or [])
+              if not _is_noise(e.get("event"))][:6]
+    steps.append("Analytics recorded: " + (", ".join(events) if events else "nothing for this click") + ".")
+    return steps
+
+
 def _interaction_row(i: dict) -> dict:
     tr = i.get("tracking") or {}
     ar = analytics_result(i)
@@ -215,6 +261,8 @@ def _interaction_row(i: dict) -> dict:
         "http_status": i.get("http_status"),
         "screenshots": _shots(i.get("screenshots")),
         "selector": i.get("selector"),
+        "final_url": i.get("final_url"),
+        "steps": _test_steps(i),
     }
 
 
@@ -408,10 +456,15 @@ def build_journey_view(journey: Optional[dict]) -> Optional[dict]:
         elif a == "unable" and r["test_status"] not in ("consent_control",):
             validation["unable"] += 1
 
-    gaps = [r for r in tested if r["test_status"] == "success" and r["tracking_status"] == "not_tracked"
-            and r["type"] in _CONVERSION]
+    from services.accepted_findings import accepted_findings as _accepted, active_findings
 
-    findings = sorted(journey.get("findings") or [], key=lambda f: _SEVERITY_RANK.get(f.get("severity"), 3))
+    accepted = _accepted(journey.get("findings") or [])
+    accepted_idx = {(f.get("journey") or {}).get("interaction_index") for f in accepted} - {None}
+    gaps = [r for r in tested if r["test_status"] == "success" and r["tracking_status"] == "not_tracked"
+            and r["type"] in _CONVERSION and r["index"] not in accepted_idx]
+
+    findings = sorted(active_findings(journey.get("findings") or []),
+                      key=lambda f: _SEVERITY_RANK.get(f.get("severity"), 3))
     recs: List[dict] = []
     seen = set()
     for f in findings:
@@ -428,7 +481,9 @@ def build_journey_view(journey: Optional[dict]) -> Optional[dict]:
         r["test_status"] != "failed",                    # then failures
         r["type"] not in _CONVERSION,                    # then conversion interactions
         r["index"]))
-    score = health.get("score")
+    measured_score = health.get("score")
+    # Score with the site's accepted findings left out (set on the Journey row); else as measured.
+    score = journey.get("journey_score") if (accepted and journey.get("journey_score") is not None) else measured_score
     rates = health.get("rates") or {}
     critical = [f for f in findings if f.get("severity") == "critical"]
     conv_ok = [r for r in tested if r["test_status"] == "success" and r["type"] in _CONVERSION]
@@ -547,6 +602,9 @@ def build_journey_view(journey: Optional[dict]) -> Optional[dict]:
         "ctas": [r for r in rows if r["type"] == "cta"],
         "evidence": evidence[:60],
         "findings": findings,
+        "accepted_findings": accepted,
+        "test_method": TEST_METHOD,
+        "measured_score": measured_score,
         "recommendations": recs[:20],
         "limits": journey.get("limits") or {},
         "overview": _overview(journey, counts, rows, tested, successful, findings, score),

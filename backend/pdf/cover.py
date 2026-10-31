@@ -5,7 +5,7 @@ Page 1: header band (site, date, overall score) and "At a glance": module cards,
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -209,12 +209,14 @@ def _row(cells: List[Flowable], width: float, gap: float = 4 * mm) -> Table:
     return t
 
 
-def _severity_tile(sev: str, count: int, width: float) -> Table:
+def _severity_tile(sev: str, count: int, width: float, raw: Optional[int] = None) -> Table:
     meta = SEVERITY_META[sev]
+    # Same numbers as the module sections: N issues, grouped from M findings.
+    raw_note = f" ({raw} finding{'s' if raw != 1 else ''})" if raw is not None and raw != count else ""
     t = Table(
         [[Paragraph(f'<font color="{hexstr(meta["text"])}">{count}</font>', STYLES["Stat"].clone("sv_n", fontSize=22, leading=25)),
           [Paragraph(esc(meta["action"]), STYLES["H3"].clone("sv_a", spaceAfter=0, textColor=meta["text"])),
-           Paragraph(f'{esc(meta["label"])} issue{"s" if count != 1 else ""}', STYLES["Small"])]]],
+           Paragraph(f'{esc(meta["label"])} issue{"s" if count != 1 else ""}{raw_note}', STYLES["Small"])]]],
         colWidths=[19 * mm, width - 19 * mm], cornerRadii=[7, 7, 7, 7],
     )
     t.setStyle(TableStyle([
@@ -242,7 +244,8 @@ def build_cover_flowables(payload: ReportPayload, issues: List[Issue], has_appen
         story.append(Spacer(1, 3 * mm))
 
     counts = issue_counts(issues)
-    tiles = [_severity_tile(s, counts[s], (width - 8 * mm) / 3) for s in ("critical", "warning", "info")]
+    raw_counts = {s: sum(i.count for i in issues if i.severity == s) for s in ("critical", "warning", "info")}
+    tiles = [_severity_tile(s, counts[s], (width - 8 * mm) / 3, raw_counts[s]) for s in ("critical", "warning", "info")]
     story.append(_row(tiles, width))
     total = len(payload.findings or [])
     story.append(Paragraph(

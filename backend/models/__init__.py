@@ -13,6 +13,7 @@ from models.screenshot_blob import ScreenshotBlob
 from models.report import Report
 from models.report_email import ReportEmail
 from models.history import History, HistoryEventType, log_event
+from models.accepted_finding import AcceptedFinding
 
 __all__ = [
     "User",
@@ -34,4 +35,5 @@ __all__ = [
     "History",
     "HistoryEventType",
     "log_event",
+    "AcceptedFinding",
 ]

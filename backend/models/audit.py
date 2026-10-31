@@ -49,6 +49,9 @@ class Audit(Base):
     overall_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     breakdown: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # scores per module
     findings: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)   # [{module, severity, title, description}]
+    # Scores as measured, before findings marked "accepted" / "to verify" were taken out (None = none marked).
+    raw_breakdown: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    raw_overall_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     error_message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 

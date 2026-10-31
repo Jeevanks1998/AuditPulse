@@ -317,7 +317,7 @@ def test_tracking_before_consent_names_actual_requests():
         "runtime_result": {},
     })
     tile = next(t for t in view["tiles"] if t["key"] == "tracking")
-    assert tile["value"] == "3 request(s)"
+    assert tile["value"] == "3 data-collection request(s)"
     assert "e.g." not in tile["sub"]
     assert "Piano Analytics (2)" in tile["sub"] and "Medallia" in tile["sub"] and "Google Tag Manager" in tile["sub"]
     reqs = [(d["kind"], d["vendor"], d["request"]) for d in tile["details"]]

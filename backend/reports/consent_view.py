@@ -282,6 +282,8 @@ def build_consent_view(consent: Optional[dict]) -> Optional[dict]:
     }
     before_rows = network.get("before_consent") or []
     tracking_before = sum(r["tracking_count"] for r in before_rows)
+    # Analytics/advertising requests include script and settings downloads; only some of them send data.
+    tracking_rows_total = sum(r.get("count") or 0 for r in before_rows if r.get("category") in ("ANALYTICS", "ADVERTISING"))
     before_summary, before_items = _before_consent_evidence(before_rows)
 
     # Cookies
@@ -303,9 +305,13 @@ def build_consent_view(consent: Optional[dict]) -> Optional[dict]:
          "state": "info" if (assessed or legacy) else "neutral"},
         {"key": "tracking", "label": "Tracking before consent",
          "value": ("None observed" if checks.get("trackers_blocked_pre_consent") is True
-                   else f"{tracking_before} request(s)" if checks.get("trackers_blocked_pre_consent") is False
+                   else f"{tracking_before} data-collection request(s)" if checks.get("trackers_blocked_pre_consent") is False
                    else "Not tested"),
-         "sub": before_summary,
+         # Same numbers as the "What loaded before the visitor chose" table: data-collection hits out of all requests.
+         "sub": (f"{tracking_before} of the {tracking_rows_total} analytics/advertising requests sent data "
+                 "(the others downloaded scripts or settings). "
+                 if tracking_rows_total > tracking_before and checks.get("trackers_blocked_pre_consent") is False
+                 else "") + (before_summary or ""),
          "details": before_items,
          "state": _state(checks.get("trackers_blocked_pre_consent"))},
         {"key": "reject", "label": "Reject works",

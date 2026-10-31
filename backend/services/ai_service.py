@@ -20,6 +20,8 @@ from models.audit import Audit
 from models.user import User
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from services.accepted_findings import active_findings
+
 
 async def generate_ai_findings(url: str, breakdown: dict) -> List[dict]:
     """AI findings for the audit pipeline."""
@@ -43,23 +45,23 @@ async def get_owned_completed_audit(audit_id: int, db: AsyncSession, user: User)
 async def get_executive_summary(audit_id: int, db: AsyncSession, user: User) -> str:
     audit = await get_owned_completed_audit(audit_id, db, user)
     return await generate_executive_summary(
-        audit.url, audit.overall_score or 0, audit.breakdown or {}, audit.findings or []
+        audit.url, audit.overall_score or 0, audit.breakdown or {}, active_findings(audit.findings or [])
     )
 
 
 async def get_priorities(audit_id: int, db: AsyncSession, user: User) -> List[PrioritizedFinding]:
     audit = await get_owned_completed_audit(audit_id, db, user)
-    return top_priorities(audit.findings or [], audit.breakdown or {})
+    return top_priorities(active_findings(audit.findings or []), audit.breakdown or {})
 
 
 async def get_business_impact(audit_id: int, db: AsyncSession, user: User) -> List[dict]:
     audit = await get_owned_completed_audit(audit_id, db, user)
-    return await generate_business_impact(audit.url, audit.breakdown or {}, audit.findings or [])
+    return await generate_business_impact(audit.url, audit.breakdown or {}, active_findings(audit.findings or []))
 
 
 async def get_action_plan(audit_id: int, db: AsyncSession, user: User) -> ActionPlan:
     audit = await get_owned_completed_audit(audit_id, db, user)
-    return await generate_action_plan(audit.url, audit.breakdown or {}, audit.findings or [])
+    return await generate_action_plan(audit.url, audit.breakdown or {}, active_findings(audit.findings or []))
 
 
 async def chat_about_audit(
@@ -75,6 +77,6 @@ async def chat_about_audit(
         audit.url,
         audit.overall_score or 0,
         audit.breakdown or {},
-        audit.findings or [],
+        active_findings(audit.findings or []),
         history,
     )

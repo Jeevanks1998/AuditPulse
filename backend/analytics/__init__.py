@@ -344,6 +344,10 @@ _RUNTIME_DISPROVABLE = {
     "Piano Analytics loaded without a detected sendEvent call": ("vendor_pv", "piano"),
     "Adobe Analytics loaded without a detected page-view call": ("vendor_pv", "adobe"),
     "GTM installed but no dataLayer activity found": ("global", "dataLayer"),
+    # Set up by a tag manager at runtime: the live page view proves the setup works.
+    "Meta Pixel loader present with no init() call": ("vendor_pv", "meta_pixel"),
+    "GA4 loader present with no resolvable measurement ID": ("vendor_pv", "ga4"),
+    "LinkedIn partner ID set without the Insight Tag loader": ("vendor_pv", "linkedin"),
 }
 
 

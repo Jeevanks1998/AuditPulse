@@ -60,8 +60,11 @@ def _ga4_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedReques
     tid = (qs.get("tid") or [""])[0]
     if urlparse(url).path.endswith("/g/collect") and tid.upper().startswith("G-"):
         event = (qs.get("en") or [None])[0]
-        return CapturedRequest(url=url, phase="", vendor_key="ga4", event_name=event,
-                               is_page_view=(event == "page_view"), identifier=tid)
+        # stats.g.doubleclick.net/g/collect (Google signals) is sent together with a GA4 page view
+        # whose own hit may go to a server-side endpoint the browser check can't name.
+        signals = (urlparse(url).hostname or "").endswith("doubleclick.net") and event is None
+        return CapturedRequest(url=url, phase="", vendor_key="ga4", event_name=event or ("page_view" if signals else None),
+                               is_page_view=(event == "page_view") or signals, identifier=tid)
     if "google-analytics.com" not in url and "analytics.google.com" not in url:
         return None
     if "adblocker_check" in url and not tid:
@@ -194,6 +197,15 @@ def _has_duplicate_page_view(vendor_key: str, page_views: List[CapturedRequest])
         key = r.identifier or ""
         per_id[key] = per_id.get(key, 0) + 1
     return any(n > 1 for n in per_id.values())
+
+
+
+def _sent_by_gtm(url: str) -> bool:
+    """A hit sent by a tag inside a Google Tag Manager container (gtm= on Google hits, GTM templates on others)."""
+    q = parse_qs(urlparse(url).query)
+    if (q.get("gtm") or [""])[0]:
+        return True
+    return "-gtm-" in url.lower() or "gtm-webtemplate" in url.lower()
 
 
 def _tagcommander_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedRequest]:
@@ -539,6 +551,11 @@ def _build_vendor_results(
         page_views_on_load = [r for r in load_reqs if r.is_page_view]
         if vendor_key in SESSION_VENDORS:
             page_views_on_load = load_reqs[:1]
+        # Tags released by the consent tool can fire a little later (during the scroll step):
+        # that is still the page view of this page load, not "no page view".
+        late_page_views = [r for r in scroll_reqs if r.is_page_view] if not page_views_on_load else []
+        if vendor_key in SESSION_VENDORS and not page_views_on_load:
+            late_page_views = scroll_reqs[:1]
         identifier = next((r.identifier for r in requests if r.identifier), None)
 
         # GTM and TagCommander send no scroll/click hits of their own: "not applicable".
@@ -555,7 +572,7 @@ def _build_vendor_results(
             detected=True,
             runtime_tested=True,
             identifier=identifier,
-            page_view_status=PASSED if page_views_on_load else FAILED,
+            page_view_status=PASSED if (page_views_on_load or late_page_views) else FAILED,
             scroll_status=scroll_status,
             click_status=click_status,
             custom_event_status=PASSED if any(
@@ -568,6 +585,18 @@ def _build_vendor_results(
             event_names=sorted({r.event_name for r in requests if r.event_name}),
         )
         results[vendor_key] = vendor
+
+    if "gtm" not in results:
+        fired_by_gtm = [r for r in captured if r.vendor_key != "gtm" and _sent_by_gtm(r.url)]
+        if fired_by_gtm:
+            results["gtm"] = VendorRuntimeResult(
+                vendor_key="gtm", vendor_name=VENDOR_LABELS.get("gtm", "Google Tag Manager"), detected=True,
+                runtime_tested=True, identifier=None, page_view_status=PASSED,
+                scroll_status=NOT_APPLICABLE, click_status=NOT_APPLICABLE, custom_event_status=NOT_APPLICABLE,
+                duplicate_page_view=False, captured_request_count=0,
+                request_urls=[r.url for r in fired_by_gtm][:5],
+                event_names=["container_ran (tags it fired were seen)"],
+            )
 
     return results
 

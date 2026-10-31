@@ -746,8 +746,28 @@ async def test_interaction(tc: TestContext, it: Interaction, page_prefix: str) -
                 try:
                     await loc.evaluate("el => el.click()")
                 except Exception as exc:  # noqa: BLE001
-                    it.tested, it.status = True, "failed"
-                    it.observed = f"Could not click the element: {str(exc)[:160]}"
+                    # The element was gone or hidden when its turn came (menus, carousels, re-rendered
+                    # pages): a limit of the test, not proof the control is broken.
+                    dest_ok = it.destination and urlparse(it.destination).scheme in ("http", "https")
+                    if dest_ok:
+                        status, _ctype, _size = await _http_check(tc, it.destination)
+                        it.http_status = status
+                        if status is not None and status < 400:
+                            it.tested, it.status, it.outcome = True, "success", "destination_checked"
+                            it.final_url = it.destination
+                            it.observed = (f"The element could not be clicked in the test browser (it was hidden or "
+                                           f"re-rendered), so its address was checked instead: {it.destination} "
+                                           f"(HTTP {status}).")
+                            it.tracking = {"status": NOT_TESTED, "note": "Not tested — the element could not be clicked."}
+                            return
+                        if status is not None:
+                            it.tested, it.status, it.outcome = True, "failed", "broken_destination"
+                            it.observed = (f"The element could not be clicked and its address {it.destination} "
+                                           f"responded HTTP {status}.")
+                            return
+                    it.status, it.outcome = "skipped", "element_not_clickable"
+                    it.observed = f"Not tested: the element could not be clicked in the test browser ({str(exc)[:120]})."
+                    it.tracking = {"status": NOT_TESTED, "note": "Not tested — the element could not be clicked."}
                     return
             try:
                 await page.wait_for_load_state("load", timeout=8_000)

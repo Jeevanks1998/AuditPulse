@@ -355,6 +355,7 @@ def check_consent_analytics_correlation(
     vendor_configs: Dict[str, List[str]],
     consent_runtime_result,
     page_url: str,
+    analytics_runtime=None,
 ) -> List[dict]:
     """Checks detected analytics tools against the consent check's captured requests
     (before consent, after Reject, after Accept). No findings if that check didn't run.
@@ -404,8 +405,11 @@ def check_consent_analytics_correlation(
             for r in _vendor_reqs(after_accept)
         }
         # A tool that never fires even after Accept is broken tracking, not good compliance.
+        # Tools the analytics browser check saw firing (after it accepted the banner) did fire.
+        seen_by_analytics = {k for k, v in (getattr(analytics_runtime, "vendors", None) or {}).items()
+                             if getattr(v, "captured_request_count", 0) or getattr(v, "page_view_status", None) == "passed"}
         for vendor_key in vendor_configs:
-            if vendor_key in before_vendor_keys or vendor_key in accept_vendor_keys:
+            if vendor_key in before_vendor_keys or vendor_key in accept_vendor_keys or vendor_key in seen_by_analytics:
                 continue
             if vendor_key not in _CONSENT_TRACKER_NAME_TO_VENDOR_KEY.values():
                 continue  # the consent check can't see this tool

@@ -768,7 +768,8 @@ async def _run_analytics_checks_site(
 
     if consent_runtime_result is not None:
         findings += analytics_module.check_consent_analytics_correlation(
-            result.summary.vendor_configs, consent_runtime_result, audit.url
+            result.summary.vendor_configs, consent_runtime_result, audit.url,
+            analytics_runtime=getattr(result, "runtime_result", None),
         )
 
     if len(page_results) > 1:

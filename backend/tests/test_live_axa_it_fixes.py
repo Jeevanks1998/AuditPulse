@@ -123,3 +123,37 @@ def test_one_gtag_loader_per_property_is_not_loaded_twice():
     html2 = html + '<script async src="https://www.googletagmanager.com/gtag/js?id=G-AAA"></script>'
     page2 = SimpleNamespace(soup=BeautifulSoup(html2, "html.parser"), url="https://x.it", html=html2)
     assert detect_ga4(page2).repeated_loader_count == 1
+
+
+# axa.de: tags released by the consent tool fire a little after load; GTM runs from its own loader.
+
+def _req(url, phase):
+    from analytics.runtime import _classify
+    r = _classify(url)
+    r.phase = phase
+    return r
+
+
+def test_late_page_views_and_gtm_inferred_from_its_tags():
+    from analytics.runtime import _build_vendor_results, PASSED
+    reqs = [
+        _req("https://www.facebook.com/tr/?id=386519035982041&ev=PageView&a=tmSimo-GTM-WebTemplate-2.0.9", "scroll"),
+        _req("https://stats.g.doubleclick.net/g/collect?v=2&tid=G-X70K9LDP0J&gtm=45be6as1", "scroll"),
+        _req("https://px.ads.linkedin.com/collect?v=2&fmt=js&pid=2923529", "scroll"),
+    ]
+    res = _build_vendor_results(reqs)
+    assert res["meta_pixel"].page_view_status == PASSED
+    assert res["ga4"].page_view_status == PASSED
+    assert res["linkedin"].page_view_status == PASSED
+    assert res["gtm"].page_view_status == PASSED
+
+
+def test_consent_correlation_trusts_the_analytics_browser_check():
+    from analytics.analytics_score import check_consent_analytics_correlation
+    cap = SimpleNamespace(available=True, tracker_requests=[], vendor_requests=[])
+    consent_rt = SimpleNamespace(available=True, after_reject=None, before_consent=cap, after_accept=cap)
+    analytics_rt = SimpleNamespace(vendors={"ga4": SimpleNamespace(captured_request_count=2, page_view_status="passed")})
+    found = check_consent_analytics_correlation({"ga4": ["G-X"]}, consent_rt, "https://www.axa.de", analytics_rt)
+    assert not [f for f in found if "did not fire" in f["title"]]
+    found2 = check_consent_analytics_correlation({"ga4": ["G-X"]}, consent_rt, "https://www.axa.de")
+    assert [f for f in found2 if "did not fire" in f["title"]]

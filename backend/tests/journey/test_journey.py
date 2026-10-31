@@ -149,3 +149,16 @@ def test_journey_map_and_findings(journey_site):
     h = r.health["counts"]
     assert h["tracking_gaps"] >= 2 and h["forms"] == 3 and h["downloads"] == 3
     assert r.health["score"] is not None
+
+
+# axa.com: document titles and skip links are not sign-ups
+@pytest.mark.parametrize("element,kind", [
+    (el(destination="https://www.example.com/page/newsletter-form#main", attributes={"href": "#main"},
+        text="Skip to main content", page_url="https://www.example.com/page/newsletter-form"), NAVIGATION),
+    (el(destination="https://www.example.com/en/annual-report", text="2025 Annual Report (Universal Registration Document)"),
+     NAVIGATION),
+    (el(destination="https://www.example.com/join-us", text="Join the circle"), SIGNUP),
+])
+def test_document_titles_and_skip_links_are_not_signups(element, kind):
+    c = classify(element, {}, HOST)
+    assert c.kind == kind, (c.kind, c.signals)

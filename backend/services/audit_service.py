@@ -6,6 +6,8 @@ a Website row and logged in History. No FastAPI imports, so it can be
 reused anywhere.
 """
 
+import os
+import tempfile
 from datetime import datetime, timezone
 from typing import List, Optional
 from urllib.parse import urlparse
@@ -148,15 +150,52 @@ async def start_audit(db: AsyncSession, user: User, payload: AuditCreate) -> Aud
 
 
 # Pipeline
-# Longest an audit waits in the queue for the one before it (full-site audits take ~10 min).
-AUDIT_QUEUE_MAX_WAIT_S = 45 * 60
+# Longest an audit waits in the queue. Full-site audits take 20-30 min each, so a batch of
+# ten needs hours; starting "anyway" after a short wait ran several browsers at once and
+# overloaded the server (seen with 9 AXA sites queued together).
+AUDIT_QUEUE_MAX_WAIT_S = 8 * 60 * 60
+
+
+QUEUE_DIR = os.path.join(tempfile.gettempdir(), "auditpulse-queue")
+QUEUE_ALIVE_S = 60  # a waiting audit refreshes its ticket every few seconds
+
+
+async def _is_my_turn(audit_id: int) -> bool:
+    """First come, first served among audits that are really waiting in this container.
+
+    Each waiting audit keeps a ticket file fresh; tickets of audits lost in a restart
+    go stale and are ignored, so they never block the queue.
+    """
+    os.makedirs(QUEUE_DIR, exist_ok=True)
+    mine = os.path.join(QUEUE_DIR, str(audit_id))
+    with open(mine, "a"):
+        os.utime(mine, None)
+    now = time.time()
+    for name in os.listdir(QUEUE_DIR):
+        if not name.isdigit() or int(name) >= audit_id:
+            continue
+        try:
+            if now - os.path.getmtime(os.path.join(QUEUE_DIR, name)) < QUEUE_ALIVE_S:
+                return False
+        except OSError:
+            continue
+    return True
+
+
+def _leave_queue(audit_id: int) -> None:
+    try:
+        os.remove(os.path.join(QUEUE_DIR, str(audit_id)))
+    except OSError:
+        pass
 
 
 async def run_audit_pipeline(audit_id: int) -> None:
-    """Runs one audit at a time: if another is running, this one stays "queued" until it finishes."""
+    """Runs one audit at a time, in the order they were started: the others stay "queued"."""
     from journey.run_lock import audit_slot
 
-    async with audit_slot(max_wait_s=AUDIT_QUEUE_MAX_WAIT_S) as waited:
+    async with audit_slot(max_wait_s=AUDIT_QUEUE_MAX_WAIT_S, poll_s=8.0,
+                          my_turn=lambda: _is_my_turn(audit_id)) as waited:
+        _leave_queue(audit_id)
         if waited > 1:
             logger.info(f"Audit {audit_id}: waited {waited:.0f}s in the queue")
         await _run_audit_pipeline(audit_id)

@@ -56,6 +56,13 @@ class Issue(Base):
         return f"<Issue id={self.id} module={self.module!r} severity={self.severity!r}>"
 
 
+def _clip(text, limit: int):
+    if text is None:
+        return None
+    text = str(text)
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
 async def sync_issues_from_findings(db: AsyncSession, audit: "Audit", findings: List[dict]) -> None:
     """Replaces an audit's Issue rows with its current findings."""
     # Don't use audit.issues here (lazy loading fails in async code); query instead.
@@ -70,11 +77,12 @@ async def sync_issues_from_findings(db: AsyncSession, audit: "Audit", findings: 
         db.add(
             Issue(
                 audit_id=audit.id,
-                module=f.get("module", "general"),
-                severity=f.get("severity", IssueSeverity.WARNING.value),
-                title=f.get("title", ""),
+                module=(f.get("module") or "general")[:40],
+                severity=(f.get("severity") or IssueSeverity.WARNING.value)[:20],
+                # Long link names (e.g. "Download, 2024 Climate and Biodiversity Report, ...") overflowed the column.
+                title=_clip(f.get("title") or "", 200),
                 description=f.get("description", ""),
                 recommendation=f.get("recommendation"),
-                element_selector=f.get("element_selector"),
+                element_selector=_clip(f.get("element_selector"), 300),
             )
         )

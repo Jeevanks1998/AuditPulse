@@ -31,13 +31,14 @@ def journey_slot(max_wait_s: float, poll_s: float = 2.0):
     return _slot(LOCK_PATH, "journey scan", max_wait_s, poll_s)
 
 
-def audit_slot(max_wait_s: float, poll_s: float = 3.0):
-    """Waits up to max_wait_s for the running audit to finish; then goes ahead anyway. Yields the seconds waited."""
-    return _slot(AUDIT_LOCK_PATH, "audit", max_wait_s, poll_s)
+def audit_slot(max_wait_s: float, poll_s: float = 3.0, my_turn=None):
+    """Waits up to max_wait_s for the running audit to finish; then goes ahead anyway. Yields the seconds waited.
+    my_turn: optional async callable; the slot is only taken once it returns True (first come, first served)."""
+    return _slot(AUDIT_LOCK_PATH, "audit", max_wait_s, poll_s, my_turn)
 
 
 @asynccontextmanager
-async def _slot(path: str, what: str, max_wait_s: float, poll_s: float) -> AsyncIterator[float]:
+async def _slot(path: str, what: str, max_wait_s: float, poll_s: float, my_turn=None) -> AsyncIterator[float]:
     started = time.monotonic()
     if fcntl is None:
         yield 0.0
@@ -47,6 +48,17 @@ async def _slot(path: str, what: str, max_wait_s: float, poll_s: float) -> Async
     try:
         logged = False
         while True:
+            if my_turn is not None and time.monotonic() - started < max_wait_s:
+                try:
+                    turn = await my_turn()
+                except Exception:  # noqa: BLE001 — never block the queue on a failed check
+                    turn = True
+                if not turn:
+                    if not logged:
+                        logger.info(f"an earlier {what} is waiting — keeping the queue order")
+                        logged = True
+                    await asyncio.sleep(poll_s)
+                    continue
             try:
                 fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 locked = True

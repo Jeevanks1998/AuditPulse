@@ -176,7 +176,15 @@ def _ext(url: Optional[str]) -> str:
     return last.rsplit(".", 1)[-1] if "." in last else ""
 
 
+# Phrases that contain action words but are document titles or page furniture, not actions.
+_NOT_ACTION_RE = re.compile(r"(universal )?registration document|document d'enregistrement( universel)?|"
+                            r"link to the page of the document|lien vers la page du document", re.I)
+_SKIP_LINK_RE = re.compile(r"^\s*(skip to|jump to|go to (main )?content|aller (au|à la)|passer au|zum (haupt)?inhalt|"
+                           r"saltar a|vai al|salta al|ir para)\b", re.I)
+
+
 def _intent(text: str) -> List[Tuple[str, str]]:
+    text = _NOT_ACTION_RE.sub(" ", text or "")
     found = []
     for kind, rx in _INTENT:
         m = rx.search(text)
@@ -294,9 +302,15 @@ def classify(el: DiscoveredElement, forms: Dict[str, DiscoveredForm], host: str)
             return result(FORM_START, "medium", 2)
         return result(OTHER, "low", 1)
 
-    # Action words
+    # Skip links ("Skip to main content") are accessibility shortcuts, not actions.
+    if _SKIP_LINK_RE.search(text_blob or ""):
+        signals.append("skip link")
+        return result(NAVIGATION, "high", 1)
+
+    # Action words (an in-page #anchor's path is just the current page, so it says nothing)
     external = bool(dest) and scheme in ("http", "https") and not _same_site(dest, host)
-    intents = _intent(f"{text_blob} {path_blob}")
+    anchor_only = bool(dest) and bool(urlparse(dest).fragment) and (el.attributes or {}).get("href", "").startswith("#")
+    intents = _intent(text_blob if anchor_only else f"{text_blob} {path_blob}")
     intent_kind = intents[0][0] if intents else None
     if intents:
         signals.append(f"action wording: “{intents[0][1]}”")
@@ -670,6 +684,16 @@ async def test_interaction(tc: TestContext, it: Interaction, page_prefix: str) -
             it.observed = "Search field focused and a query typed (not submitted)."
             it.screenshots["after"] = await tc.evidence.viewport(page, it.page_url, it.index, "after")
             await loc.fill("")
+        elif kind == DOWNLOAD and dest and urlparse(dest).scheme in ("data", "blob"):
+            # e.g. "Add to calendar" building an .ics file in the page: nothing to fetch from a server.
+            try:
+                await loc.click(timeout=4_000)
+            except Exception:  # noqa: BLE001
+                pass
+            await page.wait_for_timeout(SETTLE_AFTER_ACTION_MS)
+            it.tested, it.status, it.outcome = True, "success", "generated_in_browser"
+            it.observed = f"The file is generated in the browser ({dest.split(',')[0][:60]}), not downloaded from a server."
+            it.screenshots["after"] = await tc.evidence.viewport(page, it.page_url, it.index, "after")
         elif kind == DOWNLOAD and dest:
             status, ctype, size = await _http_check(tc, dest)
             it.http_status = status

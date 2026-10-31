@@ -157,3 +157,19 @@ def test_consent_correlation_trusts_the_analytics_browser_check():
     assert not [f for f in found if "did not fire" in f["title"]]
     found2 = check_consent_analytics_correlation({"ga4": ["G-X"]}, consent_rt, "https://www.axa.de")
     assert [f for f in found2 if "did not fire" in f["title"]]
+
+
+def test_queue_is_first_come_first_served_and_ignores_lost_audits(tmp_path, monkeypatch):
+    import os
+    import time
+    from services import audit_service as svc
+    monkeypatch.setattr(svc, "QUEUE_DIR", str(tmp_path))
+    assert asyncio.run(svc._is_my_turn(10)) is True
+    assert asyncio.run(svc._is_my_turn(12)) is False          # 10 is still waiting
+    svc._leave_queue(10)
+    assert asyncio.run(svc._is_my_turn(12)) is True
+    stale = tmp_path / "5"
+    stale.write_text("")
+    old = time.time() - 600
+    os.utime(stale, (old, old))                                # lost in a restart
+    assert asyncio.run(svc._is_my_turn(12)) is True

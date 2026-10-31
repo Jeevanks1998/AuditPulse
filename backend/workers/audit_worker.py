@@ -74,7 +74,7 @@ async def _requeue_stuck_audits_async(stuck_after_minutes: int) -> dict:
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(
-            select(Audit).where(Audit.status == "running", Audit.started_at < cutoff)
+            select(Audit).where(Audit.status == "running", Audit.started_at < cutoff, Audit.deleted_at.is_(None))
         )
         stuck = list(result.scalars().all())
 

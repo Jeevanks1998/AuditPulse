@@ -209,7 +209,9 @@ def build_findings(interactions: List[Interaction], pages_meta: List[dict], anal
             if kind in _CRITICAL_GAP_CLASSES:
                 # Real conversions (sign-up, purchase, booking, download) and the page's most important
                 # CTAs are critical; an ordinary CTA without its own event is a warning.
-                gap_sev = "critical" if (kind != CTA or it.importance >= 3) else "warning"
+                # Document downloads are content, not conversions: a missing event is "Fix soon".
+                gap_sev = "warning" if kind == DOWNLOAD else (
+                    "critical" if (kind != CTA or it.importance >= 3) else "warning")
                 findings.append(_finding(
                     gap_sev, "tracking", f"Not tracked: {label} “{name}”", it,
                     f"“{it.label}” ({label}) on {it.page_url} was clicked and worked, but no analytics tool "

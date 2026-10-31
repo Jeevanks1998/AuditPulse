@@ -507,7 +507,7 @@
         content: 'journeyContent', empty: 'journeyEmpty', overview: 'journeyOverview', health: 'journeyHealth', summary: 'journeySummary',
         map: 'journeyMap', detail: 'journeyDetail', coverage: 'journeyCoverage', forms: 'journeyForms',
         interactions: 'journeyInteractions', clickDetail: 'journeyClickDetail', findings: 'journeyFindings',
-        pages: 'journeyPages', how: 'journeyHow'
+        pages: 'journeyPages', how: 'journeyHow', gallery: 'journeyGallery', galleryDetail: 'journeyGalleryDetail'
       });
       if (chipEl) {
         if (view && view.score != null) {

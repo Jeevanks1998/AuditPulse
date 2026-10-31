@@ -270,3 +270,24 @@ details.jr-group > summary { cursor: pointer; }
   .jr-page__row { grid-template-columns: 24px minmax(0, 1fr); }
   .jr-page__http, .jr-page__tested, .jr-page__issues { grid-column: 2; }
 }
+
+/* Screenshots everywhere (thumbnails, page shots, gallery tab) */
+.jr-thumb img { width: 88px; height: 56px; object-fit: cover; object-position: top; border: 1px solid var(--border); border-radius: 6px; display: block; background: var(--surface-sunken); }
+.jr-thumb:hover img { border-color: var(--color-primary); }
+.jr-page__grid { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: var(--sp-3); align-items: start; }
+.jr-page__shot { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-xs); color: var(--text-tertiary); }
+.jr-page__shot img { width: 100%; height: auto; max-height: 360px; object-fit: contain; object-position: top center; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-sunken); }
+.jr-page__shot--none { height: 120px; align-items: center; justify-content: center; border: 1px dashed var(--border); border-radius: var(--radius-md); }
+.jr-shots--top { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.jr-detail .jr-shots--top { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.jr-detail .jr-shots--top .jr-shot img { height: 200px; max-height: none; object-fit: cover; object-position: top; }
+.jr-map .jr-detail .jr-shots--top { grid-template-columns: 1fr; }
+.jr-map .jr-detail .jr-shots--top .jr-shot img { height: auto; max-height: 220px; object-fit: contain; }
+.jr-card.is-clickable { cursor: pointer; }
+.jr-card.is-clickable:hover { border-color: var(--color-primary); }
+.jr-select { font: inherit; font-size: var(--fs-sm); padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text-primary); max-width: 260px; }
+@media (max-width: 760px) {
+  .jr-page__grid { grid-template-columns: 1fr; }
+  .jr-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .jr-detail .jr-shots--top { grid-template-columns: 1fr; }
+}

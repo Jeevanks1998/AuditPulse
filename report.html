@@ -403,6 +403,7 @@
                     <button type="button" class="jr-tabs__btn" role="tab" aria-selected="false" data-jtab="issues">Issues <span id="jtabCount-issues"></span></button>
                     <button type="button" class="jr-tabs__btn" role="tab" aria-selected="false" data-jtab="paths">Journey paths <span id="jtabCount-paths"></span></button>
                     <button type="button" class="jr-tabs__btn" role="tab" aria-selected="false" data-jtab="clicks">All clicks <span id="jtabCount-clicks"></span></button>
+                    <button type="button" class="jr-tabs__btn" role="tab" aria-selected="false" data-jtab="shots">Screenshots <span id="jtabCount-shots"></span></button>
                   </div>
 
                   <section class="jr-pane" data-jpane="pages" role="tabpanel">
@@ -425,6 +426,11 @@
                   <section class="jr-pane" data-jpane="clicks" role="tabpanel" hidden>
                     <div id="journeyInteractions"></div>
                     <aside id="journeyClickDetail" class="jr-detail jr-detail--inline" aria-live="polite" hidden></aside>
+                  </section>
+
+                  <section class="jr-pane" data-jpane="shots" role="tabpanel" hidden>
+                    <div id="journeyGallery"></div>
+                    <aside id="journeyGalleryDetail" class="jr-detail jr-detail--inline" aria-live="polite" hidden></aside>
                   </section>
 
                   <!-- Explanations and reference lists, folded away -->

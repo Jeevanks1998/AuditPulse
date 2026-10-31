@@ -150,7 +150,9 @@
     }
     var row = (view.interactions || []).filter(function (r) { return r.index === n.index; })[0] || {};
     var shotHtml = shotLinks(row.screenshots || {});
-    return '<h4>' + esc(row.label || n.label) + '</h4><dl>' +
+    return '<h4>' + esc(row.label || n.label) + '</h4>' +
+      (shotHtml ? '<div class="jr-shots jr-shots--top">' + shotHtml + '</div>' : '<p class="jr-muted">No screenshot was captured for this interaction.</p>') +
+      '<dl>' +
       '<dt>Type</dt><dd>' + chip('type', row.type_label || n.type_label) + importanceChip(row.importance) + '</dd>' +
       '<dt>Page</dt><dd>' + esc(row.page_path || n.path) + '</dd>' +
       (row.destination ? '<dt>Destination</dt><dd>' + esc(row.destination) + '</dd>' : '') +
@@ -166,7 +168,7 @@
           (row.tracking_note ? '<br><small>' + esc(row.tracking_note) + '</small>' : '')) + '</dd>' +
       '<dt>Signals</dt><dd>' + esc((row.signals || []).join(' · ') || '—') + '</dd>' +
       ((n.issues || []).length ? '<dt>Issues</dt><dd>' + n.issues.map(function (i) { var f = (view.findings || [])[i]; return f ? esc(f.title) : ''; }).join('<br>') + '</dd>' : '') +
-      '</dl>' + (shotHtml ? '<div class="jr-shots">' + shotHtml + '</div>' : '<p class="jr-muted">No screenshot was captured for this interaction.</p>');
+      '</dl>';
   }
 
   function nodeIdForIndex(view, index) { return 'int:' + index; }
@@ -229,7 +231,7 @@
           ? chip('skipped', 'Not tested') + '<small>' + esc(r.safety_reason || '') + '</small>'
           : testChip(r.test_status)),
         (analyticsKey(r) === 'safety_restricted' ? '<span class="jr-muted">—</span>' : analyticsChip(r)),
-        shot ? '<a class="jr-nowrap" href="' + esc(img(shot)) + '" target="_blank" rel="noopener">Screenshot</a>' : '<span class="jr-muted">—</span>'];
+        shot ? '<a class="jr-thumb" href="' + esc(img(shot)) + '" target="_blank" rel="noopener" title="Open screenshot"><img src="' + esc(img(shot)) + '" alt="Screenshot of ' + esc(r.label || '') + '" loading="lazy"></a>' : '<span class="jr-muted">No screenshot</span>'];
     });
   }
 
@@ -393,7 +395,11 @@
         '<span class="jr-page__issues">' + (issues || '<span class="jr-muted">No issues</span>') + '</span>' +
         '</summary><div class="jr-page__body">' +
           (p.via ? '<p class="jr-muted">Reached via “' + esc(p.via) + '”' + (p.analytics_on_load.length ? ' · Analytics on load: ' + esc(p.analytics_on_load.slice(0, 4).join(', ')) : '') + '</p>' : '') +
-          body + '<aside class="jr-detail jr-detail--inline" hidden></aside></div></details>';
+          '<div class="jr-page__grid">' +
+            (p.screenshot ? '<a class="jr-page__shot" href="' + esc(img(p.screenshot)) + '" target="_blank" rel="noopener"><img src="' + esc(img(p.screenshot)) + '" alt="Screenshot of ' + esc(p.title || p.path) + '" loading="lazy"><span>Full page</span></a>'
+              : '<div class="jr-page__shot jr-page__shot--none">No page screenshot</div>') +
+            '<div>' + body + '</div></div>' +
+          '<aside class="jr-detail jr-detail--inline" hidden></aside></div></details>';
     }).join('') + '</div>';
     el.querySelectorAll('.jr-page').forEach(function (d) {
       var aside = d.querySelector('.jr-detail');
@@ -405,6 +411,47 @@
         });
       });
     });
+  }
+
+
+  /* Screenshots: every page and every tested click, as before. */
+  function renderGallery(el, view, onPick) {
+    var pages = view.page_rows || [];
+    var rows = (view.interactions || []).filter(function (r) {
+      var s = r.screenshots || {}; return isTested(r) && (s.highlighted || s.before || s.after);
+    });
+    var current = 'all';
+    function draw() {
+      var pageShots = pages.filter(function (p) { return p.screenshot && (current === 'all' || p.path === current); });
+      var clickShots = rows.filter(function (r) { return current === 'all' || r.page_path === current; });
+      var opts = [['all', 'All pages']].concat(pages.map(function (p) { return [p.path, p.title || p.path]; }));
+      el.innerHTML = '<div class="jr-filter"><label class="jr-muted">Page&nbsp;<select class="jr-select">' + opts.map(function (o) {
+          return '<option value="' + esc(o[0]) + '"' + (o[0] === current ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+        }).join('') + '</select></label><span class="jr-muted">' + pageShots.length + ' page and ' + clickShots.length + ' click screenshots</span></div>' +
+        (pageShots.length ? '<p class="jr-title">Pages</p><div class="jr-gallery">' + pageShots.map(function (p) {
+          return '<div class="jr-card"><a href="' + esc(img(p.screenshot)) + '" target="_blank" rel="noopener"><img src="' + esc(img(p.screenshot)) + '" alt="' + esc(p.title || p.path) + '" loading="lazy"></a>' +
+            '<span class="jr-card__title">' + esc(p.title || p.path) + '</span>' +
+            '<span class="jr-card__meta">' + (p.status ? chip(p.ok ? 'success' : 'failed', 'HTTP ' + p.status) : '') + '<span class="jr-muted" style="font-size:12px;">' + esc(p.path) + '</span></span></div>';
+        }).join('') + '</div>' : '') +
+        (clickShots.length ? '<p class="jr-title" style="margin-top:12px;">Clicks — highlighted element, with before and after</p><div class="jr-gallery">' + clickShots.map(function (r) {
+          var s = r.screenshots || {};
+          var main = s.highlighted || s.before || s.after;
+          var links = ['before', 'highlighted', 'after', 'form'].filter(function (k) { return s[k]; }).map(function (k) {
+            return '<a href="' + esc(img(s[k])) + '" target="_blank" rel="noopener">' + esc(k) + '</a>';
+          }).join(' · ');
+          return '<div class="jr-card is-clickable" data-index="' + r.index + '"><img src="' + esc(img(main)) + '" alt="' + esc(r.label) + '" loading="lazy">' +
+            '<span class="jr-card__title">' + esc(r.label) + '</span>' +
+            '<span class="jr-card__meta">' + chip('type', r.type_label) + testChip(r.test_status) + analyticsChip(r) + '</span>' +
+            '<span class="jr-muted" style="font-size:12px;">' + esc(r.page_path) + ' · ' + links + '</span></div>';
+        }).join('') + '</div>' : '<p class="jr-muted">No click screenshots for this page.</p>');
+      var sel = el.querySelector('.jr-select');
+      if (sel) sel.addEventListener('change', function () { current = sel.value; draw(); });
+      el.querySelectorAll('.jr-card[data-index]').forEach(function (c) {
+        c.addEventListener('click', function (e) { if (e.target.closest('a')) return; onPick(parseInt(c.getAttribute('data-index'), 10)); });
+      });
+    }
+    if (!rows.length && !pages.some(function (p) { return p.screenshot; })) { el.innerHTML = '<p class="jr-muted">No screenshots were captured in this scan.</p>'; return; }
+    draw();
   }
 
   /* How this audit works (folded). */
@@ -503,6 +550,16 @@
     };
     var inter = get(ids.interactions);
     if (inter) renderInteractions(inter, view, pick);
+    var galleryEl = get(ids.gallery), galleryDetail = get(ids.galleryDetail);
+    if (galleryEl) renderGallery(galleryEl, view, function (index) {
+      if (!galleryDetail) return;
+      galleryDetail.innerHTML = detailFor(index);
+      galleryDetail.hidden = false;
+      galleryDetail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+    var shotCount = (view.interactions || []).filter(function (r) { var x = r.screenshots || {}; return isTested(r) && (x.highlighted || x.before || x.after); }).length +
+      (view.page_rows || []).filter(function (p) { return p.screenshot; }).length;
+    count('shots', shotCount);
 
     // Issues: "Show evidence" opens the click in All clicks.
     var issuesEl = set(ids.findings, renderFindings(view));

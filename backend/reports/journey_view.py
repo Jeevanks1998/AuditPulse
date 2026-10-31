@@ -299,7 +299,10 @@ def _overview(journey: dict, counts: dict, rows: List[dict], tested: List[dict],
     n_failed = len([r for r in tested if r["test_status"] == "failed"])
     hit = [r for r in tested if r["test_status"] == "success" and r["analytics_hit"]]
     dl_only = [r for r in tested if r["test_status"] == "success" and not r["analytics_hit"] and r["datalayer_event"]]
-    nothing = [r for r in tested if r["test_status"] == "success" and r["tracking_status"] == "not_tracked"]
+    # Important actions only (CTAs, forms, downloads, sign-ups…), the same count as "Tracking gaps"
+    # and the "not tracked" lines in Pages checked, so every number in the report matches.
+    nothing = [r for r in tested if r["test_status"] == "success" and r["tracking_status"] == "not_tracked"
+               and r["type"] in _CONVERSION]
     skipped = len([r for r in rows if r["safety_status"] == "not_executed"])
 
     consent_line = ""
@@ -329,7 +332,7 @@ def _overview(journey: dict, counts: dict, rows: List[dict], tested: List[dict],
         {"key": "datalayer", "label": "Reached the dataLayer only", "value": f"{len(dl_only)} of {n_ok}",
          "state": "info" if dl_only else "neutral",
          "detail": "Your tag manager saw the click, but no analytics tool received it."},
-        {"key": "nothing", "label": "Not tracked at all", "value": f"{len(nothing)} of {n_ok}",
+        {"key": "nothing", "label": "Important clicks not tracked", "value": f"{len(nothing)} of {n_ok}",
          "state": "fail" if nothing else "pass",
          "detail": "Nothing at all was recorded for the click."},
     ]
@@ -342,7 +345,7 @@ def _overview(journey: dict, counts: dict, rows: List[dict], tested: List[dict],
         if n_failed:
             problems.append(f"{_plural(n_failed, 'interaction')} did not work")
         if nothing:
-            problems.append(f"{_plural(len(nothing), 'working click')} {'is' if len(nothing) == 1 else 'are'} not tracked")
+            problems.append(f"{_plural(len(nothing), 'important click')} {'is' if len(nothing) == 1 else 'are'} not tracked")
         if dl_only:
             problems.append(f"{len(dl_only)} only reach{'es' if len(dl_only) == 1 else ''} the dataLayer")
         headline = (f"Journey score {score}/100. "
@@ -388,6 +391,63 @@ def _overview(journey: dict, counts: dict, rows: List[dict], tested: List[dict],
                                 "interactions work (35%), are the important ones tracked (45%), and is there "
                                 "screenshot evidence (20%).")}
 
+
+
+def _page_key(url: Optional[str]) -> str:
+    """Same page whatever the trailing slash, #anchor or tracking parameters."""
+    if not url:
+        return ""
+    try:
+        from journey.journey_scanner import normalize_url
+        return normalize_url(url).rstrip("/")
+    except Exception:  # noqa: BLE001
+        return url.split("#")[0].rstrip("/")
+
+
+def _page_rows(pages: List[dict], rows: List[dict], findings: List[dict]) -> List[dict]:
+    """One row per page checked: what it is, how it answered, its clicks and its issues (for "Pages checked")."""
+    by_page: Dict[str, List[dict]] = {}
+    for r in rows:
+        by_page.setdefault(_page_key(r.get("page")), []).append(r)
+    issues: Dict[str, Dict[str, int]] = {}
+    for f in findings:
+        key = _page_key((f.get("journey") or {}).get("page") or ((f.get("affected_urls") or [None])[0]))
+        if key:
+            sev = issues.setdefault(key, {"critical": 0, "warning": 0, "info": 0})
+            sev[f.get("severity") or "info"] = sev.get(f.get("severity") or "info", 0) + 1
+    out = []
+    for n, pg in enumerate(pages):
+        key = _page_key(pg.get("url"))
+        prow = by_page.get(key, [])
+        tested = [r for r in prow if r.get("test_status") in ("success", "failed")]
+        sev = issues.get(key, {"critical": 0, "warning": 0, "info": 0})
+        status = pg.get("status")
+        out.append({
+            "n": n + 1,
+            "url": pg.get("url"),
+            "path": _path(pg.get("url")),
+            "title": (pg.get("title") or "").strip(),
+            "status": status,
+            "ok": (status is None or status < 400) and not pg.get("error"),
+            "error": pg.get("error"),
+            "final_url": pg.get("final_url"),
+            "redirected": bool(pg.get("final_url") and _page_key(pg.get("final_url")) != key),
+            "depth": pg.get("depth") or 0,
+            "via": pg.get("via_label"),
+            "screenshot": screenshot_url(pg.get("screenshot")),
+            "analytics_on_load": pg.get("analytics_on_load") or [],
+            "elements": pg.get("element_count") or len(prow),
+            "forms": pg.get("form_count") or 0,
+            "tested": len(tested),
+            "worked": len([r for r in tested if r.get("test_status") == "success"]),
+            "failed": len([r for r in tested if r.get("test_status") == "failed"]),
+            "not_tracked": len([r for r in tested if r.get("test_status") == "success"
+                                and r.get("analytics_result") == "not_detected" and r.get("type") in _CONVERSION]),
+            "issues_critical": sev.get("critical", 0),
+            "issues_warning": sev.get("warning", 0),
+            "interaction_indexes": [r.get("index") for r in prow],
+        })
+    return out
 
 def build_journey_view(journey: Optional[dict]) -> Optional[dict]:
     if not journey:
@@ -580,6 +640,7 @@ def build_journey_view(journey: Optional[dict]) -> Optional[dict]:
                                                                 key=lambda kv: -kv[1])],
         "pages": [{**p, "screenshot": screenshot_url(p.get("screenshot"))} for p in (journey.get("pages") or [])],
         "interactions": rows,
+        "page_rows": _page_rows(journey.get("pages") or [], rows, findings),
         "map": {
             "start": jm.get("start"),
             "nodes": map_nodes,

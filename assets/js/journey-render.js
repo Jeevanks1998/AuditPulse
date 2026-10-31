@@ -104,17 +104,6 @@
       '<span class="jr-step__kind">' + esc(node.type_label) + '</span><span class="jr-step__label">' + esc(node.label) + '</span></button>';
   }
 
-  function renderTree(nodes, tree) {
-    function li(t) {
-      var n = nodes[t.node] || {};
-      var ints = (t.interactions || []).map(function (id) { return stepButton(nodes[id], id); }).join('');
-      return '<li><div class="jr-tree__row">' + stepButton(n, t.node) +
-        (ints ? '<span class="jr-tree__ints">' + ints + '</span>' : '') + '</div>' +
-        ((t.children || []).length ? '<ul>' + t.children.map(li).join('') + '</ul>' : '') + '</li>';
-    }
-    return '<ul class="jr-tree">' + (tree || []).map(li).join('') + '</ul>';
-  }
-
   function journeyFlow(j, nodes, compact) {
     var meta = compact ? '' :
       '<span class="jr-flow__meta">' + (j.goal_type_label ? chip('type', j.goal_type_label) : '') + importanceChip(j.importance) +
@@ -133,18 +122,11 @@
     var nodes = map.nodes || {};
     var journeys = map.journeys || [];
     var flows = journeys.map(function (j) { return journeyFlow(j, nodes, false); }).join('');
-    var pages = Object.keys(nodes).filter(function (k) { return nodes[k].kind === 'page'; }).length;
-    var pipe = (view.pipeline || []).map(function (x) { return '<span>' + esc(x) + '</span>'; }).join('<span class="jr-arrow" aria-hidden="true">→</span>');
-    return '<p class="jr-provenance">' + esc(view.provenance || '') + '</p>' +
-      (pipe ? '<p class="jr-pipeline">' + pipe + '</p>' : '') +
-      '<div class="jr-legend"><span class="l-tracked">Analytics Hit Detected / Both Detected</span><span class="l-dl">DataLayer Event Detected</span>' +
-      '<span class="l-gap">Not Detected</span><span class="l-dup">Duplicate Detected</span>' +
-      '<span>Unable to Validate / Not Tested — Safety Restricted</span><span class="l-gap">Dashed = interaction failed</span></div>' +
-      '<p class="jr-title" style="margin-top:4px;">' + journeys.length + ' journey path' + (journeys.length === 1 ? '' : 's') + ' discovered</p>' +
-      (journeys.length ? '<p class="jr-muted" style="margin-top:0;">Most critical first: broken steps, then tracking gaps, then by importance of the goal.</p>' : '') +
-      '<div class="jr-flows">' + (flows || '<p class="jr-muted">No journey path was discovered in this scan — no conversion-type interaction (CTA, form, download, signup, booking, purchase, phone or email link) was found on the scanned pages.</p>') + '</div>' +
-      '<details class="jr-structure"><summary class="jr-title" style="cursor:pointer;">Supporting information: site structure (' + pages + ' page' + (pages === 1 ? '' : 's') + ')</summary>' +
-      renderTree(nodes, map.site_tree) + '</details>';
+    return '<div class="jr-legend"><span class="l-tracked">Tracked</span><span class="l-gap">Not tracked</span>' +
+      '<span>Not tested</span><span class="l-gap">Dashed border = did not work</span></div>' +
+      '<p class="jr-title" style="margin-top:4px;">' + journeys.length + ' journey path' + (journeys.length === 1 ? '' : 's') + ' found' +
+      (journeys.length ? ' <span class="jr-muted" style="font-weight:400;">— most critical first</span>' : '') + '</p>' +
+      '<div class="jr-flows">' + (flows || '<p class="jr-muted">No journey path was found — no important action (CTA, form, download, sign-up, booking, purchase, phone or email link) was found on the scanned pages.</p>') + '</div>';
   }
 
   function shotLinks(shots) {
@@ -201,19 +183,23 @@
 
   /* Interaction details */
   var INTERACTION_FILTERS = [
-    ['all', 'All discovered'], ['executed', 'Executed'], ['not_executed', 'Not Tested — Safety Restricted'],
-    ['failed', 'Failed'], ['gap', 'Executed — Not Detected'], ['datalayer', 'DataLayer Event Detected'], ['unable', 'Unable to Validate']
+    ['tested', 'All tested'], ['gap', 'Not tracked'], ['failed', "Didn't work"], ['forms', 'Forms'],
+    ['downloads', 'Downloads'], ['cta', 'Main buttons'], ['not_tested', 'Not tested'], ['all', 'Everything found']
   ];
   var MAX_INTERACTION_ROWS = 200;
+  var FORM_TYPES = { form: 1, form_start: 1, form_submit: 1 };
+
+  function isTested(r) { return r.test_status === 'success' || r.test_status === 'failed'; }
 
   function filterInteractions(rows, f) {
     return rows.filter(function (r) {
-      if (f === 'executed') return r.test_status === 'success' || r.test_status === 'failed';
-      if (f === 'not_executed') return r.safety_status === 'not_executed';
-      if (f === 'failed') return r.test_status === 'failed';
+      if (f === 'tested') return isTested(r);
       if (f === 'gap') return r.test_status === 'success' && analyticsKey(r) === 'not_detected';
-      if (f === 'unable') return analyticsKey(r) === 'unable';
-      if (f === 'datalayer') return analyticsKey(r) === 'datalayer';
+      if (f === 'failed') return r.test_status === 'failed';
+      if (f === 'forms') return !!FORM_TYPES[r.type];
+      if (f === 'downloads') return r.type === 'download';
+      if (f === 'cta') return r.type === 'cta' || r.type === 'signup' || r.type === 'appointment' || r.type === 'purchase';
+      if (f === 'not_tested') return !isTested(r);
       return true;
     });
   }
@@ -237,36 +223,33 @@
     return rows.map(function (r) {
       var s = r.screenshots || {};
       var shot = s.highlighted || s.before || s.after;
-      return [esc(r.label || '—') + '<small>' + esc(r.page_path) + '</small>',
+      return [esc(r.label || '—') + '<small>' + esc(r.page_path) + (r.destination ? ' → ' + esc(shortDest(r)) : '') + '</small>',
         chip('type', r.type_label),
-        r.destination ? '<span class="jr-dest" title="' + esc(r.destination) + '">' + esc(shortDest(r)) + '</span>' : '—',
         (r.safety_status === 'not_executed'
-          ? chip('skipped', 'Not Tested — Safety Restricted') + '<small>' + esc(r.safety_reason || '') + '</small>'
-          : testChip(r.test_status) + (r.observed ? '<small>' + esc(r.observed) + '</small>' : '')),
-        safetyCell(r),
-        (analyticsKey(r) === 'safety_restricted' ? '<span class="jr-muted">—</span>' : analyticsChip(r)) +
-          ((r.tracking_events || []).length ? '<small>' + esc(r.tracking_events.join(', ')) + '</small>' : ''),
-        shot ? '<a class="jr-nowrap" href="' + esc(img(shot)) + '" target="_blank" rel="noopener">View</a>' : '<span class="jr-muted">—</span>'];
+          ? chip('skipped', 'Not tested') + '<small>' + esc(r.safety_reason || '') + '</small>'
+          : testChip(r.test_status)),
+        (analyticsKey(r) === 'safety_restricted' ? '<span class="jr-muted">—</span>' : analyticsChip(r)),
+        shot ? '<a class="jr-nowrap" href="' + esc(img(shot)) + '" target="_blank" rel="noopener">Screenshot</a>' : '<span class="jr-muted">—</span>'];
     });
   }
 
-  function renderInteractions(el, view, onPick) {
+  function renderInteractions(el, view, onPick, startFilter) {
     var all = (view.interactions || []).slice().sort(function (a, b) {
-      var ea = (a.test_status === 'success' || a.test_status === 'failed') ? 0 : 1;
-      var eb = (b.test_status === 'success' || b.test_status === 'failed') ? 0 : 1;
-      return ea - eb || (a.index - b.index);
+      return (isTested(a) ? 0 : 1) - (isTested(b) ? 0 : 1) || (a.index - b.index);
     });
-    var current = 'all';
+    var current = startFilter || 'tested';
     function draw() {
       var rows = filterInteractions(all, current);
       var shown = rows.slice(0, MAX_INTERACTION_ROWS);
       el.innerHTML = '<div class="jr-filter">' + INTERACTION_FILTERS.map(function (f) {
         var n = filterInteractions(all, f[0]).length;
+        if (!n && f[0] !== current && f[0] !== 'tested') return '';
         return '<button type="button" class="jr-filter__btn' + (f[0] === current ? ' is-active' : '') + '" data-filter="' + f[0] + '">' +
           esc(f[1]) + ' <span>' + n + '</span></button>';
       }).join('') + '</div>' +
-      '<div class="jr-wide">' + table(['Interaction', 'Type', 'Destination', 'Test result', 'Safety', 'Analytics', 'Evidence'], interactionDetailRows(shown),
-        function (i) { return ' class="is-clickable" data-index="' + shown[i].index + '"'; }) + '</div>' +
+      (shown.length ? table(['Button / link', 'Type', 'Result', 'Analytics', 'Evidence'], interactionDetailRows(shown),
+        function (i) { return ' class="is-clickable" data-index="' + shown[i].index + '"'; })
+        : '<p class="jr-muted">Nothing in this group.</p>') +
       (rows.length > shown.length ? '<p class="jr-muted">Showing the first ' + shown.length + ' of ' + rows.length + '.</p>' : '');
       el.querySelectorAll('[data-filter]').forEach(function (b) {
         b.addEventListener('click', function () { current = b.getAttribute('data-filter'); draw(); });
@@ -278,7 +261,7 @@
         });
       });
     }
-    if (!all.length) { el.innerHTML = '<p class="jr-muted">No interactive elements were discovered in this scan.</p>'; return; }
+    if (!all.length) { el.innerHTML = '<p class="jr-muted">No buttons or links were found in this scan.</p>'; return; }
     draw();
   }
 
@@ -308,34 +291,6 @@
       }));
   }
 
-  function interactionRows(rows) {
-    return rows.map(function (r) {
-      return [esc(r.label) + '<small>' + esc(r.page_path) + '</small>', chip('type', r.type_label), testChip(r.test_status) + (r.observed ? '<small>' + esc(r.observed) + '</small>' : ''),
-        analyticsChip(r) + ((r.tracking_events || []).length ? '<small>' + esc(r.tracking_events.join(', ')) + '</small>' : '')];
-    });
-  }
-
-  function clickableRows(container, rows, onPick) {
-    container.querySelectorAll('tr[data-index]').forEach(function (tr) {
-      tr.addEventListener('click', function () { onPick(parseInt(tr.getAttribute('data-index'), 10)); });
-    });
-  }
-
-  function renderGaps(view) {
-    var gaps = view.gaps || [];
-    var dl = view.datalayer_only || [];
-    var html = '<p class="jr-muted">A tracking gap is a conversion interaction that worked when executed but produced neither an Analytics Hit nor a DataLayer Event.</p>';
-    html += gaps.length
-      ? table(['Interaction', 'Type', 'Test result', 'Analytics'], interactionRows(gaps), function (i) { return ' class="is-clickable" data-index="' + gaps[i].index + '"'; })
-      : '<p class="jr-note">No tracking gaps detected based on the configured validation criteria.</p>';
-    if (dl.length) {
-      html += '<p class="jr-title" style="margin-top:12px;">DataLayer evidence only (' + dl.length + ')</p>' +
-        '<p class="jr-muted">These pushed a DataLayer Event but no analytics network hit was observed. They are not counted as gaps, but delivery to an analytics tool is not confirmed.</p>' +
-        table(['Interaction', 'Type', 'Test result', 'Analytics'], interactionRows(dl), function (i) { return ' class="is-clickable" data-index="' + dl[i].index + '"'; });
-    }
-    return html;
-  }
-
   function renderForms(view) {
     var forms = (view.forms || []).filter(function (f) { return !f.is_search; });
     return '<p class="jr-muted">Forms are discovered and focused, never submitted on production sites.</p>' +
@@ -348,83 +303,119 @@
       }));
   }
 
-  function renderDownloads(view) {
-    var d = view.downloads || [];
-    return table(['Download', 'Type', 'Resource', 'Analytics'], d.map(function (x) {
-      return [esc(x.label) + '<small>' + esc(x.destination) + '</small>', esc((x.file_type || '').toUpperCase() || '—'),
-        x.http_status ? (x.accessible ? chip('success', 'HTTP ' + x.http_status) : chip('failed', 'HTTP ' + x.http_status)) : chip('', 'Not checked'),
-        x.row ? analyticsChip(x.row) : trackChip(x.tracking)];
-    }), function (i) { return ' class="is-clickable" data-index="' + d[i].index + '"'; });
-  }
-
-  function renderCtas(view) {
-    var c = view.ctas || [];
-    return table(['CTA', 'Type', 'Test result', 'Analytics'], interactionRows(c), function (i) { return ' class="is-clickable" data-index="' + c[i].index + '"'; });
-  }
-
-  function renderEvidence(view) {
-    var ev = (view.evidence || []).filter(function (r) { return (r.screenshots || {}).highlighted || (r.screenshots || {}).before; });
-    if (!ev.length) return '<p class="jr-muted">No screenshots were captured in this scan.</p>';
-    return '<p class="jr-muted">Each screenshot belongs to the interaction named under it and was taken while executing it.</p><div class="jr-gallery">' + ev.map(function (r) {
-      var s = r.screenshots || {};
-      var main = s.highlighted || s.before;
-      var links = ['before', 'highlighted', 'after', 'form'].filter(function (k) { return s[k]; }).map(function (k) {
-        return '<a href="' + esc(img(s[k])) + '" target="_blank" rel="noopener">' + esc(k) + '</a>';
-      }).join(' · ');
-      return '<div class="jr-card"><a href="' + esc(img(main)) + '" target="_blank" rel="noopener"><img src="' + esc(img(main)) + '" alt="' + esc(r.label) + '" loading="lazy"></a>' +
-        '<span class="jr-card__title">#' + r.index + ' ' + esc(r.label) + '</span>' +
-        '<span class="jr-card__meta">' + chip('type', r.type_label) + testChip(r.test_status) + analyticsChip(r) + '</span>' +
-        '<span class="jr-muted" style="font-size:12px;">' + esc(r.page_path) + ' · ' + links + '</span></div>';
-    }).join('') + '</div>';
-  }
-
   var SEV_CHIP = { critical: 'failed', warning: 'skipped', info: '' };
+  var SEV_GROUPS = [['critical', 'Fix now'], ['warning', 'Fix soon'], ['info', 'Good to know']];
+
+  function issueItem(x) {
+    var j = x.journey || {};
+    var idx = j.interaction_index;
+    var page = j.page || (x.affected_urls || [])[0];
+    var path = '';
+    try { path = page ? new URL(page).pathname : ''; } catch (e) { path = page || ''; }
+    return '<li class="jr-issue">' +
+      '<span class="jr-issue__title">' + esc(x.title) + '</span>' +
+      (x.description ? '<span class="jr-issue__text">' + esc(x.description) + '</span>' : '') +
+      (x.recommendation ? '<span class="jr-issue__fix"><strong>Fix:</strong> ' + esc(x.recommendation) + '</span>' : '') +
+      '<span class="jr-issue__meta">' + (path ? 'Page ' + esc(path) : '') +
+        (idx != null ? ' <button type="button" class="jr-link" data-show-index="' + esc(idx) + '">Show evidence</button>' : '') + '</span>' +
+      '</li>';
+  }
 
   function renderFindings(view) {
     var f = view.findings || [];
-    if (!f.length) return '<p class="jr-muted">No journey issues were detected in this scan.</p>';
-    return '<ul class="jr-recs">' + f.map(function (x) {
-      var j = x.journey || {};
-      return '<li>' + chip(SEV_CHIP[x.severity], x.severity) + '<span><strong>' + esc(x.title) + '</strong><br>' + esc(x.description) +
-        (j.tracking_behavior ? '<br><small class="jr-muted">' + esc(j.tracking_behavior) + '</small>' : '') + '</span></li>';
-    }).join('') + '</ul>';
+    var accepted = (view.accepted_findings || []).length;
+    var note = accepted ? '<p class="jr-muted">' + accepted + ' finding' + (accepted === 1 ? '' : 's') +
+      ' marked as intentional by the site\'s team ' + (accepted === 1 ? 'is' : 'are') + ' left out (see Accepted findings in the report).</p>' : '';
+    if (!f.length) return note + '<p class="jr-note">No Journey Map issues were found in this scan.</p>';
+    return note + SEV_GROUPS.map(function (g) {
+      var items = f.filter(function (x) { return (x.severity || 'info') === g[0]; });
+      if (!items.length) return '';
+      var head = chip(SEV_CHIP[g[0]], g[1]) + ' <span class="jr-muted">' + items.length + '</span>';
+      var list = '<ul class="jr-issues">' + items.map(issueItem).join('') + '</ul>';
+      return g[0] === 'info'
+        ? '<details class="jr-group"><summary>' + head + '</summary>' + list + '</details>'
+        : '<div class="jr-group"><p class="jr-group__head">' + head + '</p>' + list + '</div>';
+    }).join('');
   }
 
-  function renderRecs(view) {
-    var recs = view.recommendations || [];
-    if (!recs.length) return '<p class="jr-muted">No recommendations: no journey issues were detected in this scan.</p>';
-    return '<p class="jr-muted">Generated only from the findings above.</p><ul class="jr-recs">' + recs.map(function (r) {
-      return '<li>' + chip(SEV_CHIP[r.severity], r.severity) + '<span><strong>' + esc(r.title) + '</strong><br>' + esc(r.recommendation) + '</span></li>';
-    }).join('') + '</ul>';
-  }
-
-  /* Summary at the top: what was done, found, what to fix first, how complete. */
+  /* Summary strip at the top: score, four numbers, top fixes. */
   function renderOverview(view) {
-    var o = view.overview;
-    if (!o) return '';
-    var results = (o.results || []).map(function (r) {
-      return '<div class="jr-ov__result" data-state="' + esc(r.state || 'neutral') + '">' +
-        '<span class="jr-ov__value">' + esc(r.value) + '</span>' +
-        '<span class="jr-ov__label">' + esc(r.label) + '</span>' +
-        '<span class="jr-ov__detail">' + esc(r.detail || '') + '</span></div>';
-    }).join('');
-    var fix = (o.fix_first || []).map(function (f) {
-      return '<li>' + chip(SEV_CHIP[f.severity], f.severity) + '<span><strong>' + esc(f.title) + '</strong>' +
-        (f.recommendation ? '<br><span class="jr-muted">' + esc(f.recommendation) + '</span>' : '') + '</span></li>';
-    }).join('');
-    return '<div class="jr-ov">' +
-      '<p class="jr-ov__headline">' + esc(o.headline) + '</p>' +
-      '<div class="jr-ov__cols">' +
-        '<div><p class="jr-ov__h">What the audit did</p><ol class="jr-ov__did">' +
-          (o.did || []).map(function (d) { return '<li>' + esc(d) + '</li>'; }).join('') + '</ol></div>' +
-        '<div><p class="jr-ov__h">What it found</p><div class="jr-ov__results">' + results + '</div></div>' +
-      '</div>' +
-      (fix ? '<p class="jr-ov__h">Fix first' + ((o.issues_total || 0) > (o.fix_first || []).length
-          ? ' <span class="jr-muted" style="font-weight:400;">(top ' + (o.fix_first || []).length + ' of ' + o.issues_total + ' critical issues and warnings; all are listed under Findings)</span>' : '') +
-          '</p><ul class="jr-recs">' + fix + '</ul>' : '<p class="jr-ov__h">Fix first</p><p class="jr-muted">Nothing urgent: no critical issues or warnings in this scan.</p>') +
-      ((o.coverage || []).length ? '<p class="jr-ov__coverage"><strong>How complete is this scan?</strong> ' + esc(o.coverage.join(' ')) + '</p>' : '') +
-      '<p class="jr-muted" style="margin-top:8px;">' + esc(o.score_explained || '') + '</p>' +
-    '</div>';
+    var c = view.counts || {};
+    var o = view.overview || {};
+    var pages = (view.page_rows || view.pages || []).length || c.pages_scanned || 0;
+    // Same count as the "not tracked" lines in Pages checked (important actions that worked but sent nothing).
+    var notTracked = (view.page_rows || []).reduce(function (n, p) { return n + (p.not_tracked || 0); }, 0);
+    var stats = [
+      [pages, 'pages checked', ''],
+      [c.interactions_tested || 0, 'clicks tested', ''],
+      [c.successful_interactions || 0, 'worked', (c.interactions_tested && c.successful_interactions === c.interactions_tested) ? 'pass' : ''],
+      [notTracked, 'not tracked', notTracked ? 'fail' : 'pass']
+    ];
+    var fix = (o.fix_first || []).slice(0, 3);
+    return '<div class="jr-strip">' +
+      '<div class="jr-strip__score" data-band="' + band(view.score) + '"><span class="jr-strip__value">' +
+        (view.score == null ? '—' : view.score) + '<small>/100</small></span><span class="jr-strip__label">Journey score</span></div>' +
+      '<div class="jr-strip__stats">' + stats.map(function (t) {
+        return '<div class="jr-stat"' + (t[2] ? ' data-state="' + t[2] + '"' : '') + '><span class="jr-stat__value">' + esc(t[0]) +
+          '</span><span class="jr-stat__label">' + esc(t[1]) + '</span></div>';
+      }).join('') + '</div></div>' +
+      (fix.length ? '<div class="jr-fixfirst"><p class="jr-fixfirst__h">Fix first' +
+          ((o.issues_total || 0) > fix.length ? ' <span class="jr-muted">(top ' + fix.length + ' of ' + o.issues_total + ' — all in Issues)</span>' : '') +
+          '</p><ol>' + fix.map(function (f) {
+            return '<li>' + chip(SEV_CHIP[f.severity], f.severity === 'critical' ? 'Fix now' : 'Fix soon') + ' <strong>' + esc(f.title) + '</strong></li>';
+          }).join('') + '</ol></div>'
+        : '<p class="jr-note" style="margin-top:10px;">Nothing urgent: no Fix now or Fix soon issues in this scan.</p>');
+  }
+
+  /* Pages checked: one row per page, its clicks inside. */
+  function renderPages(el, view, onPick) {
+    var pages = view.page_rows || [];
+    if (!pages.length) { el.innerHTML = '<p class="jr-muted">No pages were recorded in this scan.</p>'; return; }
+    var byIndex = {};
+    (view.interactions || []).forEach(function (r) { byIndex[r.index] = r; });
+    el.innerHTML = '<div class="jr-pages">' + pages.map(function (p) {
+      var http = p.error ? chip('failed', 'Error') : (p.status ? chip(p.ok ? 'success' : 'failed', 'HTTP ' + p.status) : chip('', '—'));
+      var issues = (p.issues_critical ? chip('failed', p.issues_critical + ' Fix now') : '') +
+        (p.issues_warning ? chip('skipped', p.issues_warning + ' Fix soon') : '');
+      var ints = (p.interaction_indexes || []).map(function (i) { return byIndex[i]; }).filter(function (r) { return r && isTested(r); });
+      var body = ints.length
+        ? table(['Button / link', 'Type', 'Result', 'Analytics', 'Evidence'], interactionDetailRows(ints),
+            function (i) { return ' class="is-clickable" data-index="' + ints[i].index + '"'; })
+        : '<p class="jr-muted">No buttons or links were tested on this page' +
+            (p.elements ? ' (' + p.elements + ' found; repeats of elements already tested elsewhere, like the main menu, are tested once).' : '.') + '</p>';
+      return '<details class="jr-page" data-page="' + p.n + '"><summary class="jr-page__row">' +
+        '<span class="jr-page__n">' + p.n + '</span>' +
+        '<span class="jr-page__name"><strong>' + esc(p.title || p.path) + '</strong><small>' + esc(p.path) +
+          (p.redirected ? ' → ' + esc(p.final_url) : '') + '</small></span>' +
+        '<span class="jr-page__http">' + http + '</span>' +
+        '<span class="jr-page__tested">' + (p.tested ? p.worked + ' of ' + p.tested + ' worked' : '<span class="jr-muted">none tested</span>') +
+          (p.not_tracked ? '<small>' + p.not_tracked + ' not tracked</small>' : '') + '</span>' +
+        '<span class="jr-page__issues">' + (issues || '<span class="jr-muted">No issues</span>') + '</span>' +
+        '</summary><div class="jr-page__body">' +
+          (p.via ? '<p class="jr-muted">Reached via “' + esc(p.via) + '”' + (p.analytics_on_load.length ? ' · Analytics on load: ' + esc(p.analytics_on_load.slice(0, 4).join(', ')) : '') + '</p>' : '') +
+          body + '<aside class="jr-detail jr-detail--inline" hidden></aside></div></details>';
+    }).join('') + '</div>';
+    el.querySelectorAll('.jr-page').forEach(function (d) {
+      var aside = d.querySelector('.jr-detail');
+      d.querySelectorAll('tr[data-index]').forEach(function (tr) {
+        tr.addEventListener('click', function (e) {
+          if (e.target.closest('a')) return;
+          aside.innerHTML = onPick(parseInt(tr.getAttribute('data-index'), 10));
+          aside.hidden = false;
+        });
+      });
+    });
+  }
+
+  /* How this audit works (folded). */
+  function renderHow(view) {
+    var o = view.overview || {};
+    return '<ol class="jr-ov__did">' + (o.did || []).map(function (d) { return '<li>' + esc(d) + '</li>'; }).join('') + '</ol>' +
+      ((o.coverage || []).length ? '<p><strong>How complete is this scan?</strong> ' + esc(o.coverage.join(' ')) + '</p>' : '') +
+      ((view.test_method || []).length ? '<p class="jr-title">How each click was tested</p><ol class="jr-steps-list">' +
+        view.test_method.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ol>' : '') +
+      '<p class="jr-title">How the score is calculated</p>' + renderHealth(view) +
+      '<p class="jr-muted" style="margin-top:8px;">' + esc(view.provenance || '') + '</p>';
   }
 
   /* Public */
@@ -448,47 +439,85 @@
     var notice = '';
     var tested = ((view.counts || {}).interactions_tested) || 0;
     if (view.error) {
-      notice = '<p class="jr-muted" role="status" style="margin:0 0 10px;padding:10px 12px;border-radius:8px;background:var(--color-warning-bg, #FFF7E6);color:inherit;">' +
-        '<strong>Scan note:</strong> ' + esc(view.error) + '</p>';
+      notice = '<p class="jr-notice" role="status"><strong>Scan note:</strong> ' + esc(view.error) + '</p>';
     } else if (!tested && ((view.counts || {}).interactions_discovered || 0) > 0) {
-      notice = '<p class="jr-muted" role="status" style="margin:0 0 10px;padding:10px 12px;border-radius:8px;background:var(--color-warning-bg, #FFF7E6);color:inherit;">' +
-        '<strong>Scan note:</strong> interactions were found but none could be executed in this run, so no Journey Health score was calculated. Please run the audit again.</p>';
+      notice = '<p class="jr-notice" role="status"><strong>Scan note:</strong> buttons and links were found but none could be clicked in this run, so no Journey score was calculated. Please run the audit again.</p>';
     }
     set(ids.overview, renderOverview(view));
-    set(ids.health, notice + renderHealth(view));
-    set(ids.summary, renderSummary(view));
-    var mapEl = get(ids.map), detailEl = get(ids.detail);
-    mapEl.innerHTML = renderMap(view);
-    var firstJourney = ((view.map || {}).journeys || [])[0];
-    var firstGap = (view.gaps || [])[0];
-    var initial = firstJourney ? firstJourney.steps[firstJourney.steps.length - 1] : (firstGap ? nodeIdForIndex(view, firstGap.index) : null);
-    detailEl.innerHTML = renderDetail(view, initial);
-    wireMap(mapEl, detailEl, view);
+    set(ids.health, notice);
 
-    var pick = function (index) {
+    // Evidence for one click (built on demand, so screenshots load only when opened).
+    var detailFor = function (index) {
       var nid = nodeIdForIndex(view, index);
-      if (!(view.map.nodes || {})[nid]) {
-        // Not on a journey path: show its evidence directly.
+      view.map = view.map || {};
+      view.map.nodes = view.map.nodes || {};
+      if (!view.map.nodes[nid]) {
         var row = (view.interactions || []).filter(function (r) { return r.index === index; })[0];
-        if (!row) return;
-        var fake = { kind: 'interaction', index: index, label: row.label, path: row.page_path, type_label: row.type_label };
-        view.map.nodes[nid] = fake;
+        if (!row) return '';
+        view.map.nodes[nid] = { kind: 'interaction', index: index, label: row.label, path: row.page_path, type_label: row.type_label };
       }
-      detailEl.innerHTML = renderDetail(view, nid);
-      mapEl.querySelectorAll('.jr-step.is-selected').forEach(function (x) { x.classList.remove('is-selected'); });
-      mapEl.querySelectorAll('[data-node="' + nid + '"]').forEach(function (x) { x.classList.add('is-selected'); });
-      detailEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      return renderDetail(view, nid);
+    };
+
+    // Tabs
+    var showTab = function (name) {
+      content.querySelectorAll('[data-jtab]').forEach(function (b) {
+        var on = b.getAttribute('data-jtab') === name;
+        b.classList.toggle('is-active', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      content.querySelectorAll('[data-jpane]').forEach(function (p) { p.hidden = p.getAttribute('data-jpane') !== name; });
+    };
+    content.querySelectorAll('[data-jtab]').forEach(function (b) {
+      b.onclick = function () { showTab(b.getAttribute('data-jtab')); };
+    });
+    showTab('pages');
+    var count = function (name, n) { var el = get('jtabCount-' + name); if (el) el.textContent = n == null ? '' : n; };
+    var issuesN = (view.findings || []).filter(function (f) { return f.severity === 'critical' || f.severity === 'warning'; }).length;
+    count('pages', (view.page_rows || []).length);
+    count('issues', issuesN);
+    count('paths', ((view.map || {}).journeys || []).length);
+    count('clicks', tested);
+
+    // Pages checked
+    var pagesEl = get(ids.pages);
+    if (pagesEl) renderPages(pagesEl, view, detailFor);
+
+    // Journey paths
+    var mapEl = get(ids.map), detailEl = get(ids.detail);
+    if (mapEl && detailEl) {
+      mapEl.innerHTML = renderMap(view);
+      var firstJourney = ((view.map || {}).journeys || [])[0];
+      detailEl.innerHTML = firstJourney ? renderDetail(view, firstJourney.steps[firstJourney.steps.length - 1])
+        : '<p class="jr-muted">Select a step to see its evidence.</p>';
+      wireMap(mapEl, detailEl, view);
+    }
+
+    // All clicks
+    var clickDetail = get(ids.clickDetail);
+    var pick = function (index) {
+      if (!clickDetail) return;
+      clickDetail.innerHTML = detailFor(index);
+      clickDetail.hidden = false;
+      clickDetail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     };
     var inter = get(ids.interactions);
     if (inter) renderInteractions(inter, view, pick);
+
+    // Issues: "Show evidence" opens the click in All clicks.
+    var issuesEl = set(ids.findings, renderFindings(view));
+    if (issuesEl) issuesEl.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-show-index]');
+      if (!b) return;
+      showTab('clicks');
+      pick(parseInt(b.getAttribute('data-show-index'), 10));
+    });
+
+    // How this audit works (folded)
+    set(ids.how, renderHow(view));
     set(ids.coverage, renderCoverage(view));
-    var gapsEl = set(ids.gaps, renderGaps(view)); if (gapsEl) clickableRows(gapsEl, [], pick);
+    set(ids.summary, renderSummary(view));
     set(ids.forms, renderForms(view));
-    var dlEl = set(ids.downloads, renderDownloads(view)); if (dlEl) clickableRows(dlEl, [], pick);
-    var ctaEl = set(ids.ctas, renderCtas(view)); if (ctaEl) clickableRows(ctaEl, [], pick);
-    set(ids.evidence, renderEvidence(view));
-    set(ids.findings, renderFindings(view));
-    set(ids.recs, renderRecs(view));
     return view;
   }
 

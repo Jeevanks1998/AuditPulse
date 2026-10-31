@@ -99,3 +99,19 @@ def test_journey_type_only_from_detected_interaction():
                  "purchase": "Purchase", "login": "Login"}.items():
         assert journey_type({"classification": k}, k, []) == v
     assert journey_type({}, None, []) is None
+
+
+def test_pages_checked_rows_match_the_click_and_issue_counts():
+    from reports.journey_view import build_journey_view
+    j = {"available": True,
+         "pages": [{"url": "https://x.it/", "title": "Home", "status": 200, "element_count": 5},
+                   {"url": "https://x.it/quote/", "title": "Quote", "status": 200}],
+         "interactions": [
+             {"index": 1, "page_url": "https://x.it/", "classification": "cta", "status": "success", "tested": True,
+              "tracking": {"status": "not_tracked"}},
+             {"index": 2, "page_url": "https://x.it/quote", "classification": "form", "status": "failed", "tested": True}],
+         "findings": [{"module": "journey", "severity": "critical", "title": "x", "journey": {"page": "https://x.it/quote"}}],
+         "health": {}, "journey_map": {}}
+    rows = {r["path"]: r for r in build_journey_view(j)["page_rows"]}
+    assert rows["/"]["tested"] == 1 and rows["/"]["not_tracked"] == 1 and rows["/"]["issues_critical"] == 0
+    assert rows["/quote/"]["failed"] == 1 and rows["/quote/"]["issues_critical"] == 1   # trailing slash ignored

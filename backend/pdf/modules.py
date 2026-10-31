@@ -408,51 +408,21 @@ def build_journey_section(payload: ReportPayload) -> List[Flowable]:
         # Same summary as the web report.
         story.append(Spacer(1, 3 * mm))
         story.append(Paragraph(f"<b>{esc(ov['headline'])}</b>", STYLES["Body"]))
-        lines = [f"• {esc(d)}" for d in ov.get("did") or []]
-        lines += [f"• <b>{esc(r['label'])}:</b> {esc(r['value'])} — {esc(r.get('detail') or '')}" for r in ov.get("results") or []]
-        story.append(Spacer(1, 2 * mm))
-        story.append(note_box("<br/>".join(lines)))
         if ov.get("fix_first"):
             story.append(Spacer(1, 2 * mm))
             total = ov.get("issues_total") or len(ov["fix_first"])
-            head = ("<b>Fix first</b>" + (f" (top {len(ov['fix_first'])} of {total} critical issues and warnings; "
-                                           "all are listed under Findings)" if total > len(ov["fix_first"]) else ""))
+            fix = ov["fix_first"][:3]
+            head = ("<b>Fix first</b>" + (f" (top {len(fix)} of {total}; all are listed below)"
+                                           if total > len(fix) else ""))
             story.append(note_box(head + "<br/>" + "<br/>".join(
-                f"• <b>{esc(f['title'])}</b> — {esc(f.get('recommendation') or '')}" for f in ov["fix_first"]),
+                f"{n}. <b>{esc(f['title'])}</b> — {esc(f.get('recommendation') or '')}" for n, f in enumerate(fix, 1)),
                 fg=ERROR_TEXT, bg=ERROR_SOFT))
-        if ov.get("coverage"):
-            story.append(Spacer(1, 2 * mm))
-            story.append(note_box("<b>How complete is this scan?</b> " + esc(" ".join(ov["coverage"]))))
-        if jv.get("test_method"):
-            story.append(Spacer(1, 2 * mm))
-            story.append(note_box("<b>How each interaction was tested</b><br/>" + "<br/>".join(
-                f"{n}. {esc(t)}" for n, t in enumerate(jv["test_method"], 1))))
         if jv.get("accepted_findings"):
             story.append(Spacer(1, 2 * mm))
             story.append(note_box(f"<b>{len(jv['accepted_findings'])} finding(s) accepted as intentional</b> by the "
                                   "site's team are left out of this section's score and priorities "
                                   + (f"(score as measured: {jv.get('measured_score')}/100)." if jv.get("measured_score") is not None else ".")))
-    story += _journey_paths(jv)
-    story += _health_breakdown(jv)
-
-    cov = (jv.get("tracking") or {}).get("coverage_by_type") or []
-    if cov:
-        story += _h2("Analytics validation by type of action",
-                     "Analytics Hit Detected = a request reached an analytics tool. DataLayer Event Detected = the site "
-                     "pushed the event to its dataLayer, which alone doesn't prove an analytics tool received it.")
-        rows = []
-        for r in cov:
-            tested = r.get("tested") or 0
-            tracked = r.get("tracked") or 0
-            pct = round(100 * tracked / tested) if tested else 0
-            hit = r.get("analytics_hit")
-            rows.append([Paragraph(esc(r.get("type", "")), STYLES["TDBold"]), str(tested),
-                         str((hit or 0) + (r.get("both") or 0)) if hit is not None else str(tracked),
-                         str(r.get("datalayer_only") or 0) if hit is not None else "—",
-                         str(r.get("not_tracked") or 0), Bar(pct, 30 * mm, 2.2 * mm,
-                                                            color=module_color("journey")[0])])
-        story.append(data_table(["Action", "Executed", "Analytics hit", "DataLayer only", "Not Detected", "Hit or dataLayer"], rows,
-                                [W - 136 * mm, 18 * mm, 24 * mm, 26 * mm, 24 * mm, 44 * mm], align_right=(1, 2, 3, 4)))
+    story += _journey_pages(jv)
 
     broken = [i for i in jv.get("interactions") or [] if i.get("test_status") == "failed"]
     if broken:
@@ -521,12 +491,80 @@ def build_journey_section(payload: ReportPayload) -> List[Flowable]:
         story.append(data_table(["File", "Type", "Opens", "Analytics"], rows, [W - 82 * mm, 16 * mm, 22 * mm, 44 * mm]))
         story += _more_note(min(len(dls), MAX_ROWS), len(dls), "downloads")
 
+    story += _journey_paths(jv)
+    story += _journey_how(jv)
     story += _journey_screenshots(jv, broken, gaps)
 
     limits = jv.get("limits") or {}
     if limits.get("scan_stopped_by_time_budget") or limits.get("tests_stopped_by_time_budget"):
         story.append(note_box("The scan reached its time limit, so some pages or interactions were not tested.",
                               fg=INFO_TEXT, bg=INFO_SOFT))
+    return story
+
+
+def _journey_pages(jv: dict) -> List[Flowable]:
+    """Pages checked: one line per page, as in the web report's first tab."""
+    pages = jv.get("page_rows") or []
+    if not pages:
+        return []
+    out = _h2(f"Pages checked ({len(pages)})", "Every page the audit opened, how it answered, and what was tested on it.")
+    rows = []
+    for p in pages[:MAX_ROWS]:
+        http = p.get("status")
+        ok = p.get("ok")
+        http_cell = (pill(f"HTTP {http}" if http else "Error", SUCCESS_TEXT if ok else ERROR_TEXT,
+                          SUCCESS_SOFT if ok else ERROR_SOFT, width=18 * mm) if (http or p.get("error")) else "—")
+        tested = (f"{p.get('worked', 0)} of {p.get('tested', 0)} worked" if p.get("tested") else "none tested")
+        if p.get("not_tracked"):
+            tested += f"<br/><font color='#B42318'>{p['not_tracked']} not tracked</font>"
+        issues = ", ".join(x for x in (
+            f"{p['issues_critical']} Fix now" if p.get("issues_critical") else "",
+            f"{p['issues_warning']} Fix soon" if p.get("issues_warning") else "") if x) or "No issues"
+        name = esc(p.get("title") or p.get("path") or "")
+        rows.append([str(p.get("n")),
+                     Paragraph(f"<b>{name}</b><br/><font size='7' color='#667085'>{soft_wrap(p.get('path') or '')}</font>",
+                               STYLES["TD"]),
+                     http_cell, Paragraph(tested, STYLES["TD"]), Paragraph(esc(issues), STYLES["TD"])])
+    out.append(data_table(["#", "Page", "Answer", "Clicks tested", "Issues"], rows,
+                          [8 * mm, W - 98 * mm, 24 * mm, 34 * mm, 32 * mm]))
+    out += _more_note(min(len(pages), MAX_ROWS), len(pages), "pages")
+    return out
+
+
+def _journey_how(jv: dict) -> List[Flowable]:
+    """Appendix: how the audit works, how the score is calculated, coverage by type."""
+    ov = jv.get("overview") or {}
+    story: List[Flowable] = _h2("How this audit works", "Reference information behind the results above.")
+    lines = [f"• {esc(d)}" for d in ov.get("did") or []]
+    if lines:
+        story.append(note_box("<br/>".join(lines)))
+    if ov.get("coverage"):
+        story.append(Spacer(1, 2 * mm))
+        story.append(note_box("<b>How complete is this scan?</b> " + esc(" ".join(ov["coverage"]))))
+    if jv.get("test_method"):
+        story.append(Spacer(1, 2 * mm))
+        story.append(note_box("<b>How each click was tested</b><br/>" + "<br/>".join(
+            f"{n}. {esc(t)}" for n, t in enumerate(jv["test_method"], 1))))
+    story += _health_breakdown(jv)
+    cov = (jv.get("tracking") or {}).get("coverage_by_type") or []
+    if cov:
+        story += _h2("Analytics validation by type of action",
+                     "Analytics Hit Detected = a request reached an analytics tool. DataLayer Event Detected = the site "
+                     "pushed the event to its dataLayer, which alone doesn't prove an analytics tool received it.")
+        rows = []
+        for r in cov:
+            tested = r.get("tested") or 0
+            tracked = r.get("tracked") or 0
+            pct = round(100 * tracked / tested) if tested else 0
+            hit = r.get("analytics_hit")
+            rows.append([Paragraph(esc(r.get("type", "")), STYLES["TDBold"]), str(tested),
+                         str((hit or 0) + (r.get("both") or 0)) if hit is not None else str(tracked),
+                         str(r.get("datalayer_only") or 0) if hit is not None else "—",
+                         str(r.get("not_tracked") or 0), Bar(pct, 30 * mm, 2.2 * mm,
+                                                            color=module_color("journey")[0])])
+        story.append(data_table(["Action", "Executed", "Analytics hit", "DataLayer only", "Not Detected", "Hit or dataLayer"], rows,
+                                [W - 136 * mm, 18 * mm, 24 * mm, 26 * mm, 24 * mm, 44 * mm], align_right=(1, 2, 3, 4)))
+
     return story
 
 

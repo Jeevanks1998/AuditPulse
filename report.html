@@ -393,59 +393,52 @@
               <div class="card card__pad">
                 <div id="journeyEmpty" class="text-sm" style="display:none; color: var(--text-tertiary);"></div>
                 <div id="journeyContent" class="jr" style="display:none;">
+                  <!-- Summary: score, four numbers and the top fixes -->
                   <div id="journeyOverview"></div>
-                  <div class="jr-block">
-                    <p class="jr-title">1. Discovered Journey Paths</p>
-                    <p class="jr-muted">Each card is a path a visitor can take to an important action (a quote, a contact form, a download…). Click any step to see what happened and its screenshots.</p>
+                  <div id="journeyHealth"></div>
+
+                  <!-- Four views instead of one long page -->
+                  <div class="jr-tabs" role="tablist" aria-label="Journey Map views">
+                    <button type="button" class="jr-tabs__btn is-active" role="tab" aria-selected="true" data-jtab="pages">Pages checked <span id="jtabCount-pages"></span></button>
+                    <button type="button" class="jr-tabs__btn" role="tab" aria-selected="false" data-jtab="issues">Issues <span id="jtabCount-issues"></span></button>
+                    <button type="button" class="jr-tabs__btn" role="tab" aria-selected="false" data-jtab="paths">Journey paths <span id="jtabCount-paths"></span></button>
+                    <button type="button" class="jr-tabs__btn" role="tab" aria-selected="false" data-jtab="clicks">All clicks <span id="jtabCount-clicks"></span></button>
+                  </div>
+
+                  <section class="jr-pane" data-jpane="pages" role="tabpanel">
+                    <p class="jr-muted">Every page the audit opened. Click a page to see the buttons and links tested on it.</p>
+                    <div id="journeyPages"></div>
+                  </section>
+
+                  <section class="jr-pane" data-jpane="issues" role="tabpanel" hidden>
+                    <div id="journeyFindings"></div>
+                  </section>
+
+                  <section class="jr-pane" data-jpane="paths" role="tabpanel" hidden>
+                    <p class="jr-muted">Paths a visitor can take to an important action (a quote, a contact form, a download…). Click any step to see what happened and its screenshots.</p>
                     <div class="jr-map">
                       <div id="journeyMap" class="jr-map__main"></div>
                       <aside id="journeyDetail" class="jr-detail" aria-live="polite"></aside>
                     </div>
-                  </div>
-                  <details class="analytics-subsection" open>
-                    <summary class="analytics-subsection__summary"><span>2. Interaction Details — every element found and what happened when it was clicked</span></summary>
-                    <div class="analytics-subsection__body" id="journeyInteractions"></div>
-                  </details>
-                  <details class="analytics-subsection" open>
-                    <summary class="analytics-subsection__summary"><span>3. Analytics Validation — did an analytics tool receive each click?</span></summary>
+                  </section>
+
+                  <section class="jr-pane" data-jpane="clicks" role="tabpanel" hidden>
+                    <div id="journeyInteractions"></div>
+                    <aside id="journeyClickDetail" class="jr-detail jr-detail--inline" aria-live="polite" hidden></aside>
+                  </section>
+
+                  <!-- Explanations and reference lists, folded away -->
+                  <details class="analytics-subsection jr-how">
+                    <summary class="analytics-subsection__summary"><span>How this audit works — score, coverage and reference lists</span></summary>
                     <div class="analytics-subsection__body">
+                      <div id="journeyHow"></div>
+                      <p class="jr-title">Analytics validation by type of action</p>
                       <div id="journeyCoverage"></div>
-                      <p class="jr-title" style="margin-top:12px;">Tracking gaps</p>
-                      <div id="journeyGaps"></div>
+                      <p class="jr-title" style="margin-top:12px;">Elements found by type</p>
+                      <div id="journeySummary"></div>
+                      <p class="jr-title" style="margin-top:12px;">Forms</p>
+                      <div id="journeyForms"></div>
                     </div>
-                  </details>
-                  <details class="analytics-subsection" open>
-                    <summary class="analytics-subsection__summary"><span>4. Journey Health — how the score was calculated</span></summary>
-                    <div class="analytics-subsection__body" id="journeyHealth"></div>
-                  </details>
-                  <details class="analytics-subsection" open>
-                    <summary class="analytics-subsection__summary"><span>5. Findings</span></summary>
-                    <div class="analytics-subsection__body" id="journeyFindings"></div>
-                  </details>
-                  <details class="analytics-subsection">
-                    <summary class="analytics-subsection__summary"><span>6. Recommendations (also listed in Issues to fix)</span></summary>
-                    <div class="analytics-subsection__body" id="journeyRecs"></div>
-                  </details>
-                  <p class="jr-title" style="margin-top:4px;">Supporting information</p>
-                  <details class="analytics-subsection">
-                    <summary class="analytics-subsection__summary"><span>Interaction summary by type</span></summary>
-                    <div class="analytics-subsection__body" id="journeySummary"></div>
-                  </details>
-                  <details class="analytics-subsection">
-                    <summary class="analytics-subsection__summary"><span>Forms</span></summary>
-                    <div class="analytics-subsection__body" id="journeyForms"></div>
-                  </details>
-                  <details class="analytics-subsection">
-                    <summary class="analytics-subsection__summary"><span>Downloads</span></summary>
-                    <div class="analytics-subsection__body" id="journeyDownloads"></div>
-                  </details>
-                  <details class="analytics-subsection">
-                    <summary class="analytics-subsection__summary"><span>CTAs</span></summary>
-                    <div class="analytics-subsection__body" id="journeyCtas"></div>
-                  </details>
-                  <details class="analytics-subsection">
-                    <summary class="analytics-subsection__summary"><span>Evidence Screenshots</span></summary>
-                    <div class="analytics-subsection__body" id="journeyEvidence"></div>
                   </details>
                 </div>
               </div>

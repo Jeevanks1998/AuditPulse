@@ -505,9 +505,9 @@
       if (!window.JourneyRender) return;
       var view = window.JourneyRender.renderReport(journey, {
         content: 'journeyContent', empty: 'journeyEmpty', overview: 'journeyOverview', health: 'journeyHealth', summary: 'journeySummary',
-        map: 'journeyMap', detail: 'journeyDetail', coverage: 'journeyCoverage', gaps: 'journeyGaps',
-        forms: 'journeyForms', downloads: 'journeyDownloads', ctas: 'journeyCtas', evidence: 'journeyEvidence',
-        recs: 'journeyRecs', interactions: 'journeyInteractions', findings: 'journeyFindings'
+        map: 'journeyMap', detail: 'journeyDetail', coverage: 'journeyCoverage', forms: 'journeyForms',
+        interactions: 'journeyInteractions', clickDetail: 'journeyClickDetail', findings: 'journeyFindings',
+        pages: 'journeyPages', how: 'journeyHow'
       });
       if (chipEl) {
         if (view && view.score != null) {

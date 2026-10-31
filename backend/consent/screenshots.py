@@ -13,6 +13,7 @@ from config.logging import logger
 from consent.buttons import CONSENT_CONTAINER_SELECTORS
 from crawler.screenshots import DEFAULT_VIEWPORT, NAVIGATION_TIMEOUT_MS, _safe_filename, _screenshot_dir
 from config.browser import launch_chromium
+from consent.navigation import open_page  # noqa: E402
 
 # Fallback only; the detected banner is preferred.
 _BANNER_SELECTORS = list(CONSENT_CONTAINER_SELECTORS)
@@ -87,7 +88,7 @@ async def capture_banner_screenshot(url: str, filename_hint: str, scan_id: Optio
                 context = await browser.new_context(viewport=DEFAULT_VIEWPORT, storage_state=None,
                                                     service_workers="block")
                 page = await context.new_page()
-                await page.goto(url, wait_until="load", timeout=NAVIGATION_TIMEOUT_MS)
+                await open_page(page, url, NAVIGATION_TIMEOUT_MS)
                 await page.wait_for_timeout(1_500)  # let a JavaScript banner appear
 
                 inv, handles = await inventory_banner(page)

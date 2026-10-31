@@ -229,7 +229,8 @@ async def _run_audit_pipeline(audit_id: int) -> None:
                     consent_row, consent_findings, consent_score, consent_runtime_result = await _run_consent_checks(
                         audit, page, response, hostname
                     )
-                    breakdown["consent"] = consent_score
+                    if consent_score is not None:
+                        breakdown["consent"] = consent_score
                     findings += consent_findings
 
                 if "analytics" in (audit.modules or []) and not blocked:
@@ -458,6 +459,9 @@ def _compute_overall_score(breakdown: dict) -> Optional[int]:
         return None
     total_weight = 0.0
     weighted_sum = 0.0
+    breakdown = {m: v for m, v in breakdown.items() if v is not None}
+    if not breakdown:
+        return None
     for module, score in breakdown.items():
         weight = MODULE_WEIGHTS.get(module, DEFAULT_MODULE_WEIGHT)
         weighted_sum += (score or 0) * weight
@@ -549,11 +553,17 @@ async def _run_consent_checks(
             f"{len(result.summary.consent_controls)} control(s)"
         )
         consent = Consent(audit_id=audit.id, **vars(result.summary))
-        return consent, result.findings, result.score.overall, result.runtime_result
+        # Not tested in a browser (site didn't open): no consent score rather than a false low one.
+        score = result.score.overall if getattr(result, "browser_tested", True) else None
+        return consent, result.findings, score, result.runtime_result
     except Exception as exc:  # noqa: BLE001 — a failed consent scan shouldn't fail the whole audit
         logger.warning(f"_run_consent_checks: consent scan failed for {audit.url}: {exc}")
         consent = Consent(audit_id=audit.id, has_cookie_banner=False, consent_score=0)
-        return consent, [], 0, None
+        return consent, [{"module": "consent", "category": "scan_coverage", "severity": "info",
+                          "title": "Consent banner could not be tested in a browser",
+                          "description": "The consent scan did not finish, so it is left out of the score. "
+                                         f"Reason: {str(exc)[:200]}",
+                          "recommendation": "Run the audit again."}], None, None
 
 
 def _backfill_analytics_from_journey(analytics_row, journey_row) -> None:

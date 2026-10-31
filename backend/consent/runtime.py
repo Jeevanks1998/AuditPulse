@@ -49,6 +49,7 @@ from cookies.categories import CONSENT_MANAGEMENT, ESSENTIAL, UNKNOWN, classify_
 from consent.screenshots import capture_page_or_element
 from crawler.screenshots import DEFAULT_VIEWPORT, NAVIGATION_TIMEOUT_MS
 from config.browser import launch_chromium
+from consent.navigation import open_page, reload_page  # noqa: E402
 
 MODULE = "consent"
 CATEGORY = "runtime"
@@ -613,7 +614,7 @@ async def _run_leg_one(browser, url: str, hostname: str, result: ConsentRuntimeR
         sink: List[NetworkRequest] = []
         page.on("request", lambda r: sink.append(_classify(r.url, r.resource_type, hostname)))
 
-        await page.goto(url, wait_until="load", timeout=NAVIGATION_TIMEOUT_MS)
+        await open_page(page, url, NAVIGATION_TIMEOUT_MS)
         inv, handles = await _wait_for_banner(page)
         if SETTLE_MS > BANNER_RENDER_MS:
             await page.wait_for_timeout(SETTLE_MS - BANNER_RENDER_MS)
@@ -677,7 +678,7 @@ async def _run_leg_one(browser, url: str, hostname: str, result: ConsentRuntimeR
         # Load the next page with Reject stored: tags that fire on page load show up here.
         mark = len(sink)
         try:
-            await page.reload(wait_until="load", timeout=NAVIGATION_TIMEOUT_MS)
+            await reload_page(page, NAVIGATION_TIMEOUT_MS)
             await page.wait_for_timeout(SETTLE_MS + CLICK_SETTLE_MS)
             result.after_reject_reload = await _state(context, page, sink[mark:])
             n = len(result.after_reject_reload.tracker_requests)
@@ -760,7 +761,7 @@ async def _run_leg_two(browser, url: str, hostname: str, result: ConsentRuntimeR
         page = await context.new_page()
         sink: List[NetworkRequest] = []
         page.on("request", lambda r: sink.append(_classify(r.url, r.resource_type, hostname)))
-        await page.goto(url, wait_until="load", timeout=NAVIGATION_TIMEOUT_MS)
+        await open_page(page, url, NAVIGATION_TIMEOUT_MS)
         inv, handles = await _wait_for_banner(page)
         _record_inventory(result, inv)
         result.before_accept = await _state(context, page, sink)
@@ -772,7 +773,7 @@ async def _run_leg_two(browser, url: str, hostname: str, result: ConsentRuntimeR
                 if panel.first(REJECT_CLICK_ORDER):
                     result.reject_layer = 2
             try:
-                await page.reload(wait_until="load", timeout=NAVIGATION_TIMEOUT_MS)
+                await reload_page(page, NAVIGATION_TIMEOUT_MS)
                 inv, handles = await _wait_for_banner(page)
             except Exception as exc:  # noqa: BLE001
                 result.leg_log.append(f"leg 2: reload after preferences failed: {str(exc)[:120]}")
@@ -784,7 +785,7 @@ async def _run_leg_two(browser, url: str, hostname: str, result: ConsentRuntimeR
                 page = await context.new_page()
                 sink = []
                 page.on("request", lambda r: sink.append(_classify(r.url, r.resource_type, hostname)))
-                await page.goto(url, wait_until="load", timeout=NAVIGATION_TIMEOUT_MS)
+                await open_page(page, url, NAVIGATION_TIMEOUT_MS)
                 inv, handles = await _wait_for_banner(page)
                 result.leg_log.append("leg 2: banner reloaded in a fresh context for the Accept test")
 
@@ -862,7 +863,7 @@ async def _browse_for_cookies(context, page, urls: List[str], result: ConsentRun
             break
         try:
             try:
-                await page.goto(target, wait_until="load", timeout=BROWSE_NAV_TIMEOUT_MS)
+                await open_page(page, target, BROWSE_NAV_TIMEOUT_MS)
             except Exception:  # noqa: BLE001 — slow "load" (endless trackers): use what has rendered
                 if not page.url or page.url == "about:blank":
                     raise

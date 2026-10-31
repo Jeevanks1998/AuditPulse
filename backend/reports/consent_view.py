@@ -207,6 +207,8 @@ def build_consent_view(consent: Optional[dict]) -> Optional[dict]:
     confidence = app.get("confidence") or consent.get("region_confidence") or ("low" if not legacy else None)
     assessed = bool(applicable) if not legacy else None
     scan = ts.get("scan") or {}
+    # The browser could not open the site: consent was not tested (no score, banner unknown).
+    untested = scan.get("browser_tested") is False
 
     # Laws
     frameworks: List[dict] = []
@@ -296,9 +298,10 @@ def build_consent_view(consent: Optional[dict]) -> Optional[dict]:
     pref = ts.get("preferences") or {}
     tiles = [
         {"key": "banner", "label": "Consent banner",
-         "value": "Detected" if consent.get("has_cookie_banner") else "Not detected",
-         "sub": _banner_description(ts.get("banner") or {}, ts.get("network")),
-         "state": "pass" if consent.get("has_cookie_banner") else "fail"},
+         "value": ("Not tested" if untested else "Detected" if consent.get("has_cookie_banner") else "Not detected"),
+         "sub": ("The browser could not open the site during this scan" if untested
+                else _banner_description(ts.get("banner") or {}, ts.get("network"))),
+         "state": "not_tested" if untested else "pass" if consent.get("has_cookie_banner") else "fail"},
         {"key": "region", "label": "Region",
          "value": region_label,
          "sub": (f"{confidence} confidence" if confidence else ""),
@@ -343,7 +346,8 @@ def build_consent_view(consent: Optional[dict]) -> Optional[dict]:
             "regional_compliance": ("assessed" if assessed else "not_assessed") if not legacy else "legacy",
             "regional_compliance_label": ("Assessed" if assessed else "Not assessed") if not legacy else "Legacy audit",
             "note": app.get("note") or "",
-            "score": consent.get("consent_score"),
+            "score": None if untested else consent.get("consent_score"),
+            "browser_tested": not untested,
             "scan_id": scan.get("scan_id"),
             "scanned_at": scan.get("started_at"),
             "fresh_browser_contexts": scan.get("fresh_browser_contexts"),

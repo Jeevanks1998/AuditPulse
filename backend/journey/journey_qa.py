@@ -173,6 +173,13 @@ def build_findings(interactions: List[Interaction], pages_meta: List[dict], anal
                     f"The download “{it.label}” on {it.page_url} points to {it.destination}, which "
                     + (f"responded HTTP {it.http_status}." if it.http_status else "could not be reached."),
                     "Fix the file URL or remove the link.", tracking=_events_text(it)))
+            elif it.outcome == "contact_link_activated":
+                # A phone / e-mail link whose address is written wrongly: phones may not dial it.
+                findings.append(_finding(
+                    "warning", "contact", f"Contact link address looks malformed: {name}", it,
+                    f"“{it.label}” on {it.page_url} points to {it.destination}. {it.observed}",
+                    "Write phone links as tel:+<country code><number> and e-mail links as mailto:name@domain.",
+                    tracking=_events_text(it)))
             elif kind in (CTA, SIGNUP, APPOINTMENT, LOGIN) or it.importance >= 3:
                 findings.append(_finding(
                     "critical", "cta", f"Important {label} does not work: {name}", it,

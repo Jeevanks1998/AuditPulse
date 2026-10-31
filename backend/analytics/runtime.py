@@ -185,6 +185,17 @@ def _tiktok_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedReq
     return CapturedRequest(url=url, phase="", vendor_key="tiktok", event_name="page_view", is_page_view=True)
 
 
+def _has_duplicate_page_view(vendor_key: str, page_views: List[CapturedRequest]) -> bool:
+    """More than one Page View to the same property/ID on one load. TagCommander containers are not page views of their own."""
+    if vendor_key in ("tagcommander", "gtm") or len(page_views) < 2:
+        return False
+    per_id: Dict[str, int] = {}
+    for r in page_views:
+        key = r.identifier or ""
+        per_id[key] = per_id.get(key, 0) + 1
+    return any(n > 1 for n in per_id.values())
+
+
 def _tagcommander_classify(url: str, qs: Dict[str, List[str]]) -> Optional[CapturedRequest]:
     """TagCommander container (cdn.tagcommander.com/.../tc_Name_n.js or *.commander1.com). Its own signal is the container load."""
     p = urlparse(url)
@@ -550,7 +561,8 @@ def _build_vendor_results(
             custom_event_status=PASSED if any(
                 r.event_name and not r.is_page_view for r in requests
             ) else NOT_APPLICABLE,
-            duplicate_page_view=len(page_views_on_load) > 1,
+            # Per property: one Page View to each of two GA4 properties (dual tagging) is not a duplicate.
+            duplicate_page_view=_has_duplicate_page_view(vendor_key, page_views_on_load),
             captured_request_count=len(requests),
             request_urls=[r.url for r in requests][:25],  # capped
             event_names=sorted({r.event_name for r in requests if r.event_name}),

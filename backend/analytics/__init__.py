@@ -417,7 +417,9 @@ def _drop_static_warnings_disproved_at_runtime(findings: List[dict], runtime_res
 
 def _build_tracker_loads(ga4, gtm, adobe, piano, clarity, hotjar, meta_pixel, linkedin, tiktok) -> List[TrackerLoad]:
     return [
-        TrackerLoad("ga4", "Google Analytics 4", ga4.measurement_ids, ga4.script_tag_count),
+        TrackerLoad("ga4", "Google Analytics 4", ga4.measurement_ids,
+                    # one loader per property is expected (dual tagging); only repeats of the same loader count
+                    (max(1, len(ga4.measurement_ids)) + ga4.repeated_loader_count) if ga4.script_tag_count else 0),
         TrackerLoad("gtm", "Google Tag Manager", gtm.container_ids, gtm.script_tag_count),
         TrackerLoad("adobe", "Adobe Analytics", adobe.report_suites, 0),
         TrackerLoad("piano", "Piano Analytics", piano.site_ids, 0),

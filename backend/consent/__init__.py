@@ -130,6 +130,23 @@ class ConsentAuditResult:
     region: Optional[RegionResult] = None
     scan_id: Optional[str] = None
     pipeline: List[dict] = field(default_factory=list)
+    # False when the live browser could not open the site: consent was not tested (no score).
+    browser_tested: bool = True
+
+
+def _browser_reached_site(live: bool, runtime: bool, static_banner: bool,
+                          network_result, runtime_result) -> bool:
+    """False only when live checks were on and no browser visit opened the page."""
+    if not (live or runtime) or static_banner:
+        return True
+    if network_result is not None and network_result.available:
+        return True
+    if runtime_result is None:
+        return not runtime
+    if runtime_result.banner_detected:
+        return True
+    return any(cap.available for cap in (runtime_result.before_consent, runtime_result.before_accept,
+                                         runtime_result.after_reject, runtime_result.after_accept))
 
 
 _DPDP_FINDINGS = {
@@ -291,6 +308,35 @@ async def analyze_site(
             findings = [f for f in findings if f not in static_button_findings]
             findings += check_buttons(page, banner_detected=True, detection=runtime_result.buttons_detection())
 
+    # The live browser could not open the site at all (e.g. it timed out or was
+    # blocked by a firewall): the banner, its buttons and the preferences panel
+    # were never seen, so "no banner" would be a false finding. Report the
+    # consent check as not tested instead, and leave it out of the score.
+    browser_tested = _browser_reached_site(enable_live_checks, enable_runtime_checks,
+                                           banner.detected, network_result, runtime_result)
+    if not browser_tested:
+        untested = {id(f) for f in banner_findings + static_button_findings}
+        findings = [f for f in findings if id(f) not in untested
+                    and f.get("category") not in ("banner", "buttons", "preferences")]
+        reason = ((runtime_result.error if runtime_result and runtime_result.error else None)
+                  or (network_result.error if network_result and network_result.error else None)
+                  or "the page did not open in time")
+        findings.append({
+            "module": "consent",
+            "category": "scan_coverage",
+            "severity": "info",
+            "title": "Consent banner could not be tested in a browser",
+            "description": ("The browser could not open the site during this scan, so the consent banner, "
+                            "its Accept / Reject buttons and the requests sent before consent were not checked. "
+                            "The consent score is left out of this audit rather than shown as a failure. "
+                            f"Reason: {str(reason)[:200]}"),
+            "recommendation": ("Run the audit again. If it keeps happening, the site may be blocking the "
+                               "scanner (a firewall or bot protection): ask for the scanner to be allowed."),
+        })
+        for entry in pipeline:
+            if entry["step"] == 6:
+                entry.update(status="not_tested", detail="browser could not open the site; consent not scored")
+
     # India DPDP notice checks become scored findings.
     if region.applies("dpdp"):
         findings += _dpdp_notice_findings(site_evidence, url)
@@ -305,6 +351,7 @@ async def analyze_site(
                                   + (1 if network_result is not None and network_result.available else 0),
         "legs": list(runtime_result.leg_log) if runtime_result else [],
         "pipeline": pipeline,
+        "browser_tested": browser_tested,
     }
     summary = build_consent_summary(
         page=page,
@@ -344,6 +391,7 @@ async def analyze_site(
     scan_meta["finished_at"] = datetime.now(timezone.utc).isoformat()
 
     return ConsentAuditResult(
+        browser_tested=browser_tested,
         findings=findings,
         score=score,
         summary=summary,

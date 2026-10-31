@@ -28,6 +28,7 @@ class GA4Detection:
     detected: bool = False
     measurement_ids: List[str] = field(default_factory=list)
     script_tag_count: int = 0  # gtag.js loader tags found
+    repeated_loader_count: int = 0  # extra copies of the same gtag.js loader (same address)
     config_call_count: int = 0  # gtag('config', ...) calls found
     legacy_ua_ids: List[str] = field(default_factory=list)  # old Universal Analytics IDs still on the page
 
@@ -39,6 +40,7 @@ def detect_ga4(page: ParsedPage) -> GA4Detection:
 
     measurement_ids: List[str] = []
     ua_ids: List[str] = []
+    loader_srcs: List[str] = []
 
     for tag in scripts:
         src = tag.get("src") or ""
@@ -48,9 +50,11 @@ def detect_ga4(page: ParsedPage) -> GA4Detection:
         if loader_match:
             result.script_tag_count += 1
             measurement_ids.append(loader_match.group(1))
+            loader_srcs.append(src.split("#")[0].strip().lower())
         elif GA4_ID_IN_SRC_RE.search(src):
             result.script_tag_count += 1
             measurement_ids += GA4_ID_IN_SRC_RE.findall(src)
+            loader_srcs.append(src.split("#")[0].strip().lower())
 
         if UA_LOADER_RE.search(src):
             result.script_tag_count += 1
@@ -61,6 +65,8 @@ def detect_ga4(page: ParsedPage) -> GA4Detection:
 
         ua_ids += UA_ID_RE.findall(body) + UA_ID_RE.findall(src)
 
+    # The same loader address twice is a real duplicate; one loader per property is not.
+    result.repeated_loader_count = len(loader_srcs) - len(set(loader_srcs))
     # remove duplicates, keep order
     result.measurement_ids = list(dict.fromkeys(measurement_ids))
     result.legacy_ua_ids = list(dict.fromkeys(ua_ids))

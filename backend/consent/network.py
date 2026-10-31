@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 
 from config.logging import logger
 from config.browser import launch_chromium
+from consent.navigation import open_page  # noqa: E402
 
 NAVIGATION_TIMEOUT_MS = 20_000
 SETTLE_MS = 1_500  # short wait after load for delayed requests
@@ -341,7 +342,7 @@ async def capture_pre_consent_requests(url: str, settle_ms: int = SETTLE_MS) -> 
 
                 page.on("request", lambda request: captured.append(_classify(request.url, request.resource_type, hostname)))
 
-                await page.goto(url, wait_until="load", timeout=NAVIGATION_TIMEOUT_MS)
+                await open_page(page, url, NAVIGATION_TIMEOUT_MS)
                 await page.wait_for_timeout(settle_ms)
             finally:
                 await browser.close()

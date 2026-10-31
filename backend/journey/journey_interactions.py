@@ -80,6 +80,26 @@ _TAB_CLASS_RE = re.compile(r"(^|[\s_-])(tab|tabs|tab-item|tablink|tab-link|nav-t
 _DISABLED_CLASS_RE = re.compile(r"(^|[\s_-])(disabled|is-disabled)([\s_-]|$)", re.I)
 
 
+
+def contact_link_check(dest: Optional[str]) -> tuple:
+    """(valid, note) for a tel: / mailto: link. Phones accept tel:// and spaced or %20 numbers too."""
+    from urllib.parse import unquote
+    raw = unquote((dest or "").strip())
+    scheme, _, rest = raw.partition(":")
+    scheme = scheme.lower()
+    if scheme == "tel":
+        number = rest.split("?")[0].split(";")[0]
+        digits = re.sub(r"\D", "", number)
+        if len(digits) >= 3 and re.fullmatch(r"[/\s+\d().\-]*", number or "x"):
+            note = (" Number written as tel:// (non-standard but dialled by phones; tel:+39… is preferred)."
+                    if number.startswith("//") else "")
+            return True, note
+        return False, ""
+    if scheme == "mailto":
+        address = rest.split("?")[0].lstrip("/")
+        return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", address)), ""
+    return False, ""
+
 def is_disabled(attrs: Dict[str, str], aria: Dict[str, str]) -> bool:
     return ("disabled" in (attrs or {}) or (aria or {}).get("aria-disabled") == "true"
             or bool(_DISABLED_CLASS_RE.search((attrs or {}).get("class") or "")))
@@ -814,10 +834,11 @@ async def test_interaction(tc: TestContext, it: Interaction, page_prefix: str) -
             elif after.get("selected") != before_state.get("selected") or mutations.get("self_changed"):
                 it.status, it.outcome, it.observed = "success", "tab_selected", "The control switched to its selected/active state."
             elif urlparse(dest or "").scheme in ("tel", "mailto"):
-                ok = bool(re.match(r"^(tel:\+?[\d\s().-]{5,}|mailto:[^@\s]+@[^@\s]+\.[^@\s]+)", dest or "", re.I))
+                ok, note = contact_link_check(dest)
                 it.status = "success" if ok else "failed"
                 it.outcome = "contact_link_activated"
-                it.observed = f"{'Valid' if ok else 'Malformed'} {urlparse(dest).scheme}: link activated (no app opened in the test browser)."
+                it.observed = (f"{'Valid' if ok else 'Malformed'} {urlparse(dest).scheme}: link activated "
+                               f"(no app opened in the test browser).{note}")
             elif abs((after.get("visible") or 0) - (before_state.get("visible") or 0)) > 3 \
                     or abs((after.get("textLen") or 0) - (before_state.get("textLen") or 0)) > 5 \
                     or (mutations.get("count") or 0) >= 3 + baseline * 6:
